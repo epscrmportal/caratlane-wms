@@ -1,0 +1,1525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CaratLane WMS — EPS Worldwide · EPS-WH-SOP-001 v1.0</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --gold:#B8860B;--gold-d:#8B6508;
+  --s:#ffffff;--s2:#f5f5f4;--s3:#eeede9;
+  --b:rgba(0,0,0,0.1);--b2:rgba(0,0,0,0.18);
+  --t:#1a1a18;--t2:#6b6b67;--t3:#a0a09a;
+  --ibg:#e6f1fb;--it:#185fa5;
+  --sbg:#eaf3de;--st:#3b6d11;
+  --wbg:#faeeda;--wt:#854f0b;
+  --dbg:#fcebeb;--dt:#a32d2d;
+  --r:8px;--rl:12px;
+}
+@media(prefers-color-scheme:dark){
+  :root{
+    --s:#1e1e1c;--s2:#2a2a28;--s3:#323230;
+    --b:rgba(255,255,255,0.1);--b2:rgba(255,255,255,0.18);
+    --t:#e8e8e4;--t2:#9a9a94;--t3:#606060;
+    --ibg:#0c447c22;--it:#85b7eb;
+    --sbg:#27500a22;--st:#97c459;
+    --wbg:#633806;--wt:#FAC775;
+    --dbg:#791f1f22;--dt:#f09595;
+  }
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:var(--t);background:var(--s3);font-size:13px;min-height:100vh}
+h1.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+
+/* TOPBAR */
+.topbar{display:flex;align-items:stretch;border-bottom:0.5px solid var(--b);background:var(--s);position:sticky;top:0;z-index:100;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.logo{display:flex;align-items:center;gap:8px;padding:10px 16px;border-right:0.5px solid var(--b);flex-shrink:0}
+.logo-gem{width:28px;height:28px;background:linear-gradient(135deg,#B8860B,#F5D98B);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:#5a3e00;flex-shrink:0}
+.logo-t{font-size:13px;font-weight:600}.logo-s{font-size:10px;color:var(--t2)}
+.navs{display:flex;flex:1;overflow-x:auto;-ms-overflow-style:none;scrollbar-width:none}
+.navs::-webkit-scrollbar{display:none}
+.ntab{padding:0 13px;font-size:12px;color:var(--t2);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;display:flex;align-items:center;gap:5px;height:100%;transition:color .15s;flex-shrink:0;user-select:none}
+.ntab:hover{color:var(--t)}.ntab.active{color:var(--t);border-bottom-color:var(--gold)}
+.ntab i{font-size:14px}
+.tr{padding:0 14px;border-left:0.5px solid var(--b);display:flex;align-items:center;gap:6px;flex-shrink:0}
+.abadge{background:var(--dbg);color:var(--dt);font-size:10px;font-weight:600;padding:1px 6px;border-radius:8px;min-width:18px;text-align:center}
+
+/* LAYOUT */
+.wrap{max-width:1200px;margin:0 auto}
+.page{display:none;padding:16px}.page.active{display:block}
+
+/* STAT CARDS */
+.sgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:14px}
+.sc{background:var(--s2);border-radius:var(--r);padding:12px 14px}
+.sl{font-size:11px;color:var(--t2);margin-bottom:3px;display:flex;align-items:center;gap:4px}
+.sl i{font-size:12px}.sv{font-size:22px;font-weight:600}.ss{font-size:10px;color:var(--t3);margin-top:2px}
+
+/* TOOLBAR */
+.tb{display:flex;gap:7px;margin-bottom:10px;align-items:center;flex-wrap:wrap}
+.sw{position:relative;flex:1;min-width:160px}
+.sw i{position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:14px;color:var(--t3)}
+input[type=text],input[type=number],select,textarea{background:var(--s);border:0.5px solid var(--b2);border-radius:var(--r);padding:7px 10px;font-size:12px;color:var(--t);font-family:inherit}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--gold)}
+.sw input{padding-left:30px;width:100%}
+select{cursor:pointer}
+button{font-family:inherit;font-size:12px;border:0.5px solid var(--b2);border-radius:var(--r);padding:7px 11px;cursor:pointer;background:var(--s);color:var(--t);display:inline-flex;align-items:center;gap:4px;transition:background .12s}
+button:hover{background:var(--s2)}
+button:disabled{opacity:.4;cursor:not-allowed}
+.btn-primary{background:var(--gold);border-color:var(--gold);color:#fff;font-weight:600}
+.btn-primary:hover{background:var(--gold-d)}
+.btn-danger{background:var(--dbg);border-color:transparent;color:var(--dt)}
+.btn-success{background:var(--sbg);border-color:transparent;color:var(--st)}
+.btn-sm{padding:3px 8px;font-size:11px}
+
+/* TABLE */
+.tw{border:0.5px solid var(--b);border-radius:var(--rl);overflow:hidden;overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12px;min-width:480px}
+th{background:var(--s2);padding:8px 11px;text-align:left;font-weight:500;font-size:11px;color:var(--t2);border-bottom:0.5px solid var(--b);white-space:nowrap}
+td{padding:8px 11px;border-bottom:0.5px solid var(--b);color:var(--t);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--s2)}
+.mono{font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;font-size:10px;color:var(--t2);background:var(--s2);padding:1px 5px;border-radius:3px}
+
+/* PILLS */
+.pill{font-size:10px;font-weight:600;padding:2px 7px;border-radius:8px;white-space:nowrap;display:inline-block}
+.p-ok{background:var(--sbg);color:var(--st)}
+.p-low{background:var(--wbg);color:var(--wt)}
+.p-out{background:var(--dbg);color:var(--dt)}
+.p-info{background:var(--ibg);color:var(--it)}
+.p-hold{background:#EAF3DE;color:#27500A}
+.p-pass{background:var(--sbg);color:var(--st)}
+.p-ga{background:var(--sbg);color:var(--st)}
+.p-gb{background:var(--wbg);color:var(--wt)}
+.p-gc{background:var(--dbg);color:var(--dt)}
+
+/* RACK */
+.rack-wrap{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.rack-card{border:0.5px solid var(--b);border-radius:var(--rl);overflow:hidden;background:var(--s)}
+.rack-head{background:var(--s2);padding:9px 13px;display:flex;justify-content:space-between;align-items:center;border-bottom:0.5px solid var(--b)}
+.rack-row{display:grid;grid-template-columns:26px 1fr 52px;gap:6px;align-items:center;padding:5px 11px;border-bottom:0.5px solid var(--b);font-size:11px}
+.rack-row:last-child{border-bottom:none}
+.shelf-l{font-family:'SF Mono',Menlo,monospace;font-size:10px;font-weight:600;color:var(--t2)}
+.bar-bg{height:5px;background:var(--s3);border-radius:3px;overflow:hidden}
+.bar-f{height:100%;border-radius:3px}
+.bar-ok{background:#639922}.bar-low{background:#BA7517}.bar-out{background:#E24B4A}
+.qty-r{text-align:right;color:var(--t2);font-size:10px}
+
+/* PANEL */
+.panel{border:0.5px solid var(--b);border-radius:var(--rl);overflow:hidden;margin-bottom:10px;background:var(--s)}
+.ph{background:var(--s2);padding:9px 13px;font-size:12px;font-weight:600;border-bottom:0.5px solid var(--b);display:flex;align-items:center;gap:6px}
+.ph i{font-size:14px;color:var(--t2)}
+.pb{padding:12px}
+.ph-badge{margin-left:auto;font-size:10px;padding:2px 7px;border-radius:8px;font-weight:600}
+
+/* FORM */
+.frow{margin-bottom:9px}
+.frow label{display:block;font-size:11px;color:var(--t2);margin-bottom:3px;font-weight:500}
+.frow input,.frow select,.frow textarea{width:100%}
+.fg2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.fg4{display:grid;grid-template-columns:1fr 1fr 70px auto;gap:8px;align-items:end}
+
+/* QTY CTRL */
+.qc{display:flex;align-items:center;gap:5px}
+.qb{width:22px;height:22px;border-radius:4px;display:flex;align-items:center;justify-content:center;padding:0;font-size:14px;border:0.5px solid var(--b2)}
+.qv{min-width:26px;text-align:center;font-weight:600;font-size:12px}
+
+/* SOP SECTION */
+.sop-section{border:0.5px solid var(--b);border-radius:var(--rl);margin-bottom:10px;overflow:hidden;background:var(--s)}
+.sop-head{background:var(--s2);padding:10px 13px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;user-select:none}
+.sop-head:hover{background:var(--s3)}
+.sop-title{font-size:12px;font-weight:600;display:flex;align-items:center;gap:7px}
+.sop-title i{font-size:14px;color:var(--gold)}
+.sop-body{padding:12px;display:none}
+.sop-body.open{display:block}
+.sop-table{width:100%;border-collapse:collapse;font-size:11px;margin-top:8px}
+.sop-table th{background:var(--s3);padding:6px 8px;text-align:left;font-weight:600;color:var(--t2);border-bottom:0.5px solid var(--b)}
+.sop-table td{padding:6px 8px;border-bottom:0.5px solid var(--b);vertical-align:top;line-height:1.5}
+.sop-table tr:last-child td{border-bottom:none}
+.step-num{background:var(--ibg);color:var(--it);font-weight:600;padding:1px 6px;border-radius:3px;font-size:10px;margin-right:4px}
+.kpi-row{display:grid;grid-template-columns:2fr 1fr 1fr;gap:6px;margin-bottom:6px;font-size:11px;align-items:center;padding:5px 0;border-bottom:0.5px solid var(--b)}
+.kpi-val{font-weight:700;color:var(--st)}
+.kpi-freq{color:var(--t3);font-size:10px}
+.exception-row{margin-bottom:7px;padding:8px 10px;background:var(--s2);border-radius:6px;font-size:11px;border-left:3px solid var(--wt)}
+.exc-title{font-weight:600;margin-bottom:3px}
+.exc-action{color:var(--t2);line-height:1.5}
+.chevron{font-size:12px;transition:transform .2s}
+.chevron.open{transform:rotate(180deg)}
+
+/* HISTORY / LOGS */
+.hist-entry{border:0.5px solid var(--b);border-radius:var(--r);padding:9px 12px;margin-bottom:7px;background:var(--s)}
+.hist-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:3px}
+.hist-id{font-family:'SF Mono',Menlo,monospace;font-size:10px;font-weight:600}
+.hist-ts{font-size:10px;color:var(--t2)}
+.hist-body{font-size:11px;color:var(--t2);line-height:1.5}
+.ib-log .hist-entry{border-left:3px solid var(--st)}
+
+/* GRIDS */
+.ret-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.disp-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.cart-item{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:6px;padding:6px 0;border-bottom:0.5px solid var(--b);font-size:11px}
+.cart-item:last-child{border-bottom:none}
+.escl-row{display:grid;grid-template-columns:1.5fr 1fr 1fr;gap:6px;margin-bottom:6px;font-size:11px;align-items:start;padding:5px 0;border-bottom:0.5px solid var(--b)}
+.escl-row:last-child{border-bottom:none}
+.escl-issue{font-weight:600}
+.escl-l1{color:var(--it)}.escl-l2{color:var(--wt)}
+
+/* MISC */
+.warn-box{background:var(--wbg);color:var(--wt);padding:8px 11px;border-radius:6px;font-size:11px;margin-bottom:10px;display:flex;align-items:center;gap:6px;line-height:1.5}
+.info-box{background:var(--ibg);color:var(--it);padding:8px 11px;border-radius:6px;font-size:11px;margin-bottom:10px;display:flex;align-items:center;gap:6px;line-height:1.5}
+.info-box i,.warn-box i{font-size:15px;flex-shrink:0}
+.empty{text-align:center;padding:24px;color:var(--t3);font-size:12px}
+.stitle{font-size:11px;font-weight:600;color:var(--t2);margin-bottom:8px;margin-top:2px;text-transform:uppercase;letter-spacing:.5px}
+.sep{height:0.5px;background:var(--b);margin:12px 0}
+
+/* TOAST */
+#toast{position:fixed;bottom:20px;right:20px;background:var(--s);border:0.5px solid var(--b2);border-radius:var(--r);padding:10px 14px;font-size:12px;opacity:0;transform:translateY(8px);transition:all .25s;pointer-events:none;max-width:260px;z-index:9999;line-height:1.4;box-shadow:0 4px 12px rgba(0,0,0,.12)}
+#toast.show{opacity:1;transform:translateY(0)}
+#toast.s{border-color:#639922;color:var(--st)}
+#toast.w{border-color:#BA7517;color:var(--wt)}
+
+@media(max-width:600px){
+  .rack-wrap,.ret-grid,.disp-grid,.fg2,.fg4{grid-template-columns:1fr}
+  .sgrid{grid-template-columns:repeat(2,1fr)}
+  .escl-row{grid-template-columns:1fr}
+  .kpi-row{grid-template-columns:1fr 1fr}
+}
+
+/* PRINT */
+@media print{
+  .topbar{position:relative}
+  #toast{display:none}
+  .page{display:block!important;page-break-after:always}
+}
+</style>
+</head>
+<body>
+<h1 class="sr-only">CaratLane Warehouse Management System — EPS Worldwide Integrated Logistics</h1>
+<div id="toast"></div>
+
+<div class="topbar">
+  <div class="logo">
+    <div class="logo-gem">CL</div>
+    <div><div class="logo-t">CaratLane WMS</div><div class="logo-s">EPS Worldwide · EPS-WH-SOP-001 v1.0</div></div>
+  </div>
+  <div class="navs">
+    <div class="ntab active" data-tab="dashboard" onclick="nav('dashboard')"><i class="ti ti-layout-dashboard"></i>Dashboard</div>
+    <div class="ntab" data-tab="inbound" onclick="nav('inbound')"><i class="ti ti-package-import"></i>Inbound (§1)</div>
+    <div class="ntab" data-tab="picking" onclick="nav('picking')"><i class="ti ti-scan"></i>Picking (§2)</div>
+    <div class="ntab" data-tab="packing" onclick="nav('packing')"><i class="ti ti-box"></i>Packing (§3)</div>
+    <div class="ntab" data-tab="dispatch" onclick="nav('dispatch')"><i class="ti ti-truck-delivery"></i>Dispatch (§3)</div>
+    <div class="ntab" data-tab="returns" onclick="nav('returns')"><i class="ti ti-package-export"></i>Returns (§4)</div>
+    <div class="ntab" data-tab="inventory" onclick="nav('inventory')"><i class="ti ti-package"></i>Inventory</div>
+    <div class="ntab" data-tab="rack" onclick="nav('rack')"><i class="ti ti-layout-rows"></i>Rack View</div>
+    <div class="ntab" data-tab="reports" onclick="nav('reports')"><i class="ti ti-chart-bar"></i>Reports (§6)</div>
+    <div class="ntab" data-tab="sop" onclick="nav('sop')"><i class="ti ti-file-text"></i>SOP Reference</div>
+    <div class="ntab" data-tab="analytics" onclick="nav('analytics')"><i class="ti ti-chart-line"></i>Analytics &amp; Compliance</div>
+    <div class="ntab" data-tab="finance" onclick="nav('finance')"><i class="ti ti-wallet"></i>Finance &amp; Capacity</div>
+  </div>
+  <div class="tr">
+    <i class="ti ti-bell" style="font-size:16px;color:var(--t2)"></i>
+    <span class="abadge" id="alert-ct">0</span>
+  </div>
+</div>
+
+<div class="wrap">
+
+<!-- ═══ DASHBOARD ═══ -->
+<div id="page-dashboard" class="page active">
+  <div class="sgrid" id="stat-cards"></div>
+  <div class="fg2">
+    <div>
+      <div class="stitle">Alerts — low &amp; out of stock</div>
+      <div id="dash-alerts"></div>
+    </div>
+    <div>
+      <div class="stitle">Recent movements</div>
+      <div id="dash-recent"></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ═══ INBOUND (SOP §1) ═══ -->
+<div id="page-inbound" class="page">
+  <div class="fg2">
+    <div>
+      <div class="panel">
+        <div class="ph"><i class="ti ti-package-import"></i>Stage A–D: Receive shipment &amp; create GRN</div>
+        <div class="pb">
+          <div class="frow"><label>ASN / PO Reference</label><input type="text" id="ib-asn" placeholder="e.g. ASN-2026-0042"></div>
+          <div class="frow"><label>Carrier / Transporter</label><input type="text" id="ib-carrier" placeholder="e.g. Blue Dart / EPS Fleet"></div>
+          <div class="fg2">
+            <div class="frow"><label>Vehicle / Docket No.</label><input type="text" id="ib-vehicle" placeholder="MH-04-AB-1234"></div>
+            <div class="frow"><label>No. of cartons</label><input type="number" id="ib-cartons" placeholder="e.g. 12" min="1"></div>
+          </div>
+          <div class="frow"><label>Seal integrity (SOP §1.4 Stage A, Step 2)</label>
+            <select id="ib-seal">
+              <option value="ok">Seals intact — verified ✓</option>
+              <option value="broken">Broken / missing seal ⚠</option>
+            </select>
+          </div>
+          <div class="sep"></div>
+          <div class="stitle">Items in this shipment</div>
+          <div class="frow"><label>Search or select SKU</label>
+            <div style="position:relative;margin-bottom:8px">
+              <input type="text" id="ib-sku-search" placeholder="Type SKU name or code to filter..." style="width:100%;margin-bottom:4px" oninput="filterSkuList('ib-sku-search','ib-sku')">
+              <select id="ib-sku" style="width:100%;font-size:11px;min-height:100px"></select>
+            </div>
+          </div>
+          <div class="fg2" style="margin-bottom:8px">
+            <div><label style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">Override BIN (optional)</label><input type="text" id="ib-bin-override" placeholder="e.g. A-3 (leave blank for auto)" style="width:100%"></div>
+            <div class="fg2" style="margin-bottom:8px">
+            <div><label style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">QC Result (§1.4 Stage C)</label>
+              <select id="ib-qc">
+                <option value="PASS">PASS — Good for storage</option>
+                <option value="HOLD">HOLD — Pending inspection</option>
+                <option value="REJECT">REJECT — Return to vendor</option>
+              </select>
+            </div>
+            <div><label style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">Issue (if HOLD/REJECT)</label>
+              <select id="ib-issue">
+                <option value="">None</option>
+                <option value="Damaged packaging">Damaged packaging</option>
+                <option value="Broken product">Broken product</option>
+                <option value="Broken seal">Broken seal</option>
+                <option value="Wrong SKU">Wrong SKU</option>
+                <option value="Quantity mismatch">Quantity mismatch</option>
+                <option value="Expired/defective">Expired/defective</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+          </div>
+          </div>
+          <div class="fg2" style="margin-bottom:8px">
+            <div><label style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">Qty</label><input type="number" id="ib-qty" value="1" min="1" max="999" style="width:100%"></div>
+            <div style="align-self:end"><button onclick="addIbItem()" style="width:100%"><i class="ti ti-plus"></i>Add item</button></div>
+          </div>
+          <div id="ib-items-list" style="margin-bottom:8px"></div>
+          <button class="btn-primary" style="width:100%;justify-content:center" onclick="createGRN()"><i class="ti ti-file-check"></i>Create GRN &amp; confirm putaway</button>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="stitle">Exception handling (SOP §1.5)</div>
+      <div class="exception-row"><div class="exc-title">Quantity shortage</div><div class="exc-action">Hold unloading · recount · photograph · note in register → raise shortage claim to CaratLane DC</div></div>
+      <div class="exception-row"><div class="exc-title">Broken seal</div><div class="exc-action">Stop unloading immediately · do not break seal → escalate to CaratLane &amp; security before proceeding</div></div>
+      <div class="exception-row"><div class="exc-title">Damaged goods</div><div class="exc-action">Photograph · quarantine · do not put in sellable stock → damage report to CaratLane POC within 2 hrs</div></div>
+      <div class="exception-row"><div class="exc-title">SKU mismatch</div><div class="exc-action">Segregate · do not scan as received SKU → raise mismatch report, await CL instructions</div></div>
+      <div class="exception-row"><div class="exc-title">Quantity excess</div><div class="exc-action">Segregate excess · do not process in WMS → await CaratLane confirmation before accepting</div></div>
+      <div class="sep"></div>
+      <div class="stitle">GRN log (last 10)</div>
+      <div id="ib-log" class="ib-log"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PICKING (SOP §2) ═══ -->
+<div id="page-picking" class="page">
+  <div class="fg2">
+    <div>
+      <div class="panel">
+        <div class="ph"><i class="ti ti-scan"></i>Generate pick task</div>
+        <div class="pb">
+          <div class="frow"><label>Order ID</label><input type="text" id="pk-orderid" placeholder="e.g. CL-ORD-20260601-0088"></div>
+          <div class="frow"><label>Priority (SOP §2.4 Stage A, Step 3)</label>
+            <select id="pk-priority">
+              <option value="Express">Express (highest priority)</option>
+              <option value="Standard" selected>Standard</option>
+              <option value="Pre-order">Pre-order</option>
+            </select>
+          </div>
+          <div class="frow"><label>Picking method (SOP §2.2)</label>
+            <select id="pk-method">
+              <option value="Single">Single order pick — high value / complex</option>
+              <option value="Batch">Batch pick — high volume periods</option>
+              <option value="Zone">Zone pick — zone-wise consolidation</option>
+            </select>
+          </div>
+          <div class="frow"><label>Assigned picker ID</label><input type="text" id="pk-picker" placeholder="e.g. EPS-P04"></div>
+          <div class="sep"></div>
+          <div class="stitle">Items to pick</div>
+          <div class="fg4" style="margin-bottom:8px">
+            <div><label style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">SKU</label><select id="pk-sku" style="width:100%;font-size:11px"></select></div>
+            <div><label style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">Condition check (§2.4 B-7)</label>
+              <select id="pk-cond">
+                <option value="ok">Good — pick confirmed</option>
+                <option value="defective">Defective — flag to HOLD</option>
+              </select>
+            </div>
+            <div><label style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">Qty</label><input type="number" id="pk-qty" value="1" min="1"></div>
+            <button onclick="addPkItem()"><i class="ti ti-plus"></i>Add</button>
+          </div>
+          <div id="pk-items-list" style="margin-bottom:8px"></div>
+          <button class="btn-primary" style="width:100%;justify-content:center" onclick="releaseToPacking()"><i class="ti ti-arrow-right"></i>Complete pick &amp; release to packing</button>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="stitle">Pick exceptions (SOP §2.5)</div>
+      <div class="exception-row"><div class="exc-title">Empty BIN / stockout</div><div class="exc-action">Mark exception · do not partially fulfil → supervisor checks WMS / locate alternate stock or escalate to CaratLane</div></div>
+      <div class="exception-row"><div class="exc-title">Defective item in BIN</div><div class="exc-action">Remove item · place in HOLD zone → raise defect report · WMS inventory adjusted · supervisor to advise</div></div>
+      <div class="exception-row"><div class="exc-title">SKU barcode mismatch</div><div class="exc-action">Stop pick · do not override WMS error → supervisor physically verifies · raise label discrepancy report</div></div>
+      <div class="exception-row"><div class="exc-title">System / handheld failure</div><div class="exc-action">Use manual pick sheet · do not pick without documentation → entries in WMS when system restored</div></div>
+      <div class="sep"></div>
+      <div class="stitle">Pick tasks released (last 8)</div>
+      <div id="pk-log"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PACKING (SOP §3) ═══ -->
+<div id="page-packing" class="page">
+  <div class="stitle">Awaiting packing — pick tasks released</div>
+  <div id="packing-queue"></div>
+</div>
+
+<!-- ═══ DISPATCH (SOP §3 Stage D) ═══ -->
+<div id="page-dispatch" class="page">
+  <div class="fg2">
+    <div>
+      <div class="stitle">Packed orders awaiting dispatch</div>
+      <div id="dispatch-packed-list"></div>
+    </div>
+    <div>
+      <div class="panel">
+        <div class="ph"><i class="ti ti-truck-delivery"></i>Assign courier &amp; AWB</div>
+        <div class="pb">
+          <div class="frow"><label>Search or select packed order</label>
+            <input type="text" id="disp-search-order" placeholder="Search by order ID..." oninput="filterDispatchOrders()" style="margin-bottom:6px">
+            <select id="disp-order-select" onchange="loadDispatchOrder()">
+              <option value="">— Choose an order —</option>
+            </select>
+          </div>
+          <div id="disp-order-detail" style="display:none">
+            <div class="sep"></div>
+            <div class="stitle">Order details</div>
+            <div id="disp-detail-content"></div>
+            <div class="sep"></div>
+            <div class="frow"><label>Recipient name</label><input type="text" id="disp-recip-name" placeholder="e.g. Rajesh Kumar"></div>
+            <div class="frow"><label>Address</label><textarea id="disp-address" placeholder="Complete delivery address" style="min-height:70px"></textarea></div>
+            <div class="fg2">
+              <div class="frow"><label>Pincode</label><input type="text" id="disp-pincode" placeholder="e.g. 400001"></div>
+              <div class="frow"><label>Phone</label><input type="text" id="disp-phone" placeholder="e.g. +91-9876543210"></div>
+            </div>
+            <div class="frow"><label>Shipping method</label>
+              <select id="disp-shipping">
+                <option value="Standard Road">Standard Road (3-5 days)</option>
+                <option value="Express Road">Express Road (1-2 days)</option>
+                <option value="Air">Air (Next day)</option>
+              </select>
+            </div>
+            <div class="frow"><label>Courier AWB number (from 3rd party)</label><input type="text" id="disp-awb" placeholder="e.g. 1234567890123"></div>
+            <button class="btn-primary" style="width:100%;justify-content:center" onclick="confirmCourierDispatch()"><i class="ti ti-send"></i>Confirm dispatch &amp; assign AWB</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="sep"></div>
+  <div class="stitle">Dispatched orders (with AWB assigned)</div>
+  <div id="disp-dispatch-log"></div>
+</div>
+
+<!-- ═══ RETURNS (SOP §4) ═══ -->
+<div id="page-returns" class="page">
+  <div class="ret-grid">
+    <div>
+      <div class="panel">
+        <div class="ph"><i class="ti ti-package-export"></i>Receive &amp; inspect return (§4.4)</div>
+        <div class="pb">
+          <div class="frow"><label>AWB / Tracking No.</label><input type="text" id="rt-awb" placeholder="e.g. AWB-9876543210"></div>
+          <div class="frow"><label>Return type (SOP §4.2)</label>
+            <select id="rt-type">
+              <option value="Customer Return">Customer return (voluntary)</option>
+              <option value="RTO">RTO — Return to origin (undelivered)</option>
+              <option value="Exchange">Exchange / replacement</option>
+              <option value="Defective Return">Defective return (RMA authorised)</option>
+              <option value="Courier Damage">Courier damage return</option>
+            </select>
+          </div>
+          <div class="frow"><label>Original Order ID</label><input type="text" id="rt-orderid" placeholder="e.g. CL-ORD-20260601-0055"></div>
+          <div class="sep"></div>
+          <div class="stitle">Item QC grading (SOP §4.3)</div>
+          <div class="fg4" style="margin-bottom:8px">
+            <div><label style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">SKU</label><select id="rt-sku" style="width:100%;font-size:11px"></select></div>
+            <div><label style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">QC Grade</label>
+              <select id="rt-grade">
+                <option value="A">Grade A — unworn, all tags, no defects → restock</option>
+                <option value="B">Grade B — tried once, minor issue → hold for CL</option>
+                <option value="C">Grade C — worn/stained/defective → send to CL QC</option>
+              </select>
+            </div>
+            <div><label style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">Qty</label><input type="number" id="rt-qty" value="1" min="1"></div>
+            <button onclick="addRtItem()"><i class="ti ti-plus"></i>Add</button>
+          </div>
+          <div id="rt-items-list" style="margin-bottom:8px"></div>
+          <button class="btn-primary" style="width:100%;justify-content:center" onclick="processReturn()"><i class="ti ti-check"></i>Process return &amp; update inventory</button>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="stitle">QC grading guide (SOP §4.3)</div>
+      <div class="panel">
+        <div class="pb" style="padding:10px">
+          <div style="padding:9px;background:var(--sbg);border-radius:6px;margin-bottom:8px;font-size:11px"><div style="font-weight:600;color:var(--st);margin-bottom:3px">Grade A — restock immediately</div><div style="color:var(--st)">Unworn · all tags intact · original packaging · no stains or defects → putaway to BIN</div></div>
+          <div style="padding:9px;background:var(--wbg);border-radius:6px;margin-bottom:8px;font-size:11px"><div style="font-weight:600;color:var(--wt);margin-bottom:3px">Grade B — hold for CaratLane decision</div><div style="color:var(--wt)">Tried once · minor crease or light mark · tags may be off · may need repack / re-press</div></div>
+          <div style="padding:9px;background:var(--dbg);border-radius:6px;font-size:11px"><div style="font-weight:600;color:var(--dt);margin-bottom:3px">Grade C — segregate, send to CL QC team</div><div style="color:var(--dt)">Visibly worn · stained · pilling · broken zipper / missing tags · sole damage (shoes)</div></div>
+        </div>
+      </div>
+      <div class="stitle" style="margin-top:8px">Return log (last 8)</div>
+      <div id="rt-log"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ INVENTORY ═══ -->
+<div id="page-inventory" class="page">
+  <div class="tb">
+    <div class="sw"><i class="ti ti-search"></i><input type="text" id="inv-q" placeholder="Search SKU, item, category…" oninput="renderInv()"></div>
+    <select id="inv-cat" onchange="renderInv()"><option value="">All categories</option><option value="Uniform">Uniform</option><option value="VM">VM</option><option value="Ring Sizer">Ring Sizer</option></select>
+    <select id="inv-st" onchange="renderInv()"><option value="">All status</option><option value="ok">In stock</option><option value="low">Low stock</option><option value="out">Out of stock</option></select>
+    <button onclick="exportCSV()"><i class="ti ti-download"></i>Export CSV</button>
+  </div>
+  <div class="tw">
+    <table><thead><tr><th>SKU</th><th>Category</th><th>Item</th><th>Variant</th><th>BIN (FIFO)</th><th>Qty</th><th>Status</th><th></th></tr></thead>
+    <tbody id="inv-tbody"></tbody></table>
+  </div>
+  <div style="font-size:11px;color:var(--t2);margin-top:6px" id="inv-ct"></div>
+</div>
+
+<!-- ═══ RACK VIEW ═══ -->
+<div id="page-rack" class="page">
+  <div class="stitle">Rack A — Uniform items (shelves A1–A11)</div>
+  <div class="rack-wrap" id="rack-a"></div>
+  <div class="stitle" style="margin-top:4px">Rack B — VM &amp; accessories (shelves B1–B5)</div>
+  <div class="rack-wrap" id="rack-b"></div>
+</div>
+
+<!-- ═══ REPORTS & MIS (SOP §6) ═══ -->
+<div id="page-reports" class="page">
+  <div class="info-box"><i class="ti ti-info-circle"></i>SOP §6.2 — Weekly MIS reports to CaratLane every Monday by 10:00 AM for the previous week: Inbound, Outbound, Returns, Inventory, Exception reports.</div>
+  <div class="fg2" style="margin-bottom:12px">
+    <div><div class="stitle">Inbound report</div><div id="rpt-inbound"></div></div>
+    <div><div class="stitle">Outbound / dispatch report</div><div id="rpt-outbound"></div></div>
+  </div>
+  <div class="fg2" style="margin-bottom:12px">
+    <div><div class="stitle">Returns report</div><div id="rpt-returns"></div></div>
+    <div><div class="stitle">Exception summary</div><div id="rpt-exceptions"></div></div>
+  </div>
+  <div class="sep"></div>
+  <div class="stitle">Escalation matrix (SOP §6.1)</div>
+  <div class="panel">
+    <div class="pb">
+      <div class="escl-row" style="font-size:10px;font-weight:600;color:var(--t2);border-bottom:0.5px solid var(--b);padding-bottom:5px;margin-bottom:5px"><span>Issue / Event</span><span>Level 1 — EPS internal</span><span>Level 2 — CaratLane escalation</span></div>
+      <div class="escl-row"><div class="escl-issue">Qty discrepancy on receiving</div><div class="escl-l1">Receiving Supervisor</div><div class="escl-l2">CaratLane DC / Vendor Manager</div></div>
+      <div class="escl-row"><div class="escl-issue">Damaged goods received</div><div class="escl-l1">Receiving Supervisor</div><div class="escl-l2">CaratLane POC — with photos</div></div>
+      <div class="escl-row"><div class="escl-issue">Pick error / wrong shipment</div><div class="escl-l1">Picking Supervisor</div><div class="escl-l2">CaratLane Customer Service</div></div>
+      <div class="escl-row"><div class="escl-issue">Missing item in customer return</div><div class="escl-l1">Returns Supervisor</div><div class="escl-l2">CaratLane Logistics Head</div></div>
+      <div class="escl-row"><div class="escl-issue">Security breach / suspected theft</div><div class="escl-l1">Warehouse Mgr + Security</div><div class="escl-l2">CaratLane Senior Management</div></div>
+      <div class="escl-row"><div class="escl-issue">WMS system failure</div><div class="escl-l1">IT Support / EPS Management</div><div class="escl-l2">CaratLane IT / Logistics POC</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ ANALYTICS & COMPLIANCE ═══ -->
+<div id="page-analytics" class="page">
+  <div class="fg2" style="margin-bottom:12px">
+    <div><div class="stitle">Real-time KPIs</div><div id="kpi-cards"></div></div>
+    <div><div class="stitle">Alerts & Exceptions</div><div id="alerts-panel"></div></div>
+  </div>
+  <div class="sep"></div>
+  <div class="fg2" style="margin-bottom:12px">
+    <div><div class="stitle">Inventory ABC Analysis</div><div id="abc-analysis"></div></div>
+    <div><div class="stitle">Low Stock SKUs (reorder)</div><div id="low-stock-list"></div></div>
+  </div>
+  <div class="sep"></div>
+  <div class="fg2" style="margin-bottom:12px">
+    <div><div class="stitle">Pick Accuracy & Performance</div><div id="performance-metrics"></div></div>
+    <div><div class="stitle">Cycle Times (Average)</div><div id="cycle-times"></div></div>
+  </div>
+  <div class="sep"></div>
+  <div class="stitle">Quality & Compliance — Damage & Exception Log</div>
+  <div id="compliance-log"></div>
+</div>
+
+<!-- ═══ FINANCE & CAPACITY ═══ -->
+<div id="page-finance" class="page">
+  <div class="fg2" style="margin-bottom:12px">
+    <div><div class="stitle">Cost & Profitability Summary</div><div id="cost-summary"></div></div>
+    <div><div class="stitle">Cost per operation</div><div id="cost-per-op"></div></div>
+  </div>
+  <div class="sep"></div>
+  <div class="fg2" style="margin-bottom:12px">
+    <div><div class="stitle">Warehouse utilization</div><div id="warehouse-util"></div></div>
+    <div><div class="stitle">Bin efficiency</div><div id="bin-efficiency"></div></div>
+  </div>
+  <div class="sep"></div>
+  <div class="stitle">Rack A occupancy (by shelf)</div>
+  <div id="rack-a-util"></div>
+  <div class="sep"></div>
+  <div class="stitle">Rack B occupancy (by shelf)</div>
+  <div id="rack-b-util"></div>
+  <div class="sep"></div>
+  <div class="fg2">
+    <div><div class="stitle">Cost input parameters (update below)</div><div id="cost-inputs"></div></div>
+    <div><div class="stitle">Capacity alerts</div><div id="capacity-alerts"></div></div>
+  </div>
+</div>
+
+<!-- ═══ SOP REFERENCE ═══ -->
+<div id="page-sop" class="page">
+  <div class="stitle">EPS-WH-SOP-001 v1.0 — Full SOP quick reference (all 7 sections)</div>
+
+  <div class="sop-section">
+    <div class="sop-head" onclick="toggleSop(this)">
+      <div class="sop-title"><i class="ti ti-file-description"></i>§0 — Purpose, scope &amp; key definitions</div>
+      <i class="ti ti-chevron-down chevron"></i>
+    </div>
+    <div class="sop-body">
+      <p style="font-size:12px;line-height:1.7;margin-bottom:8px">Establishes standardized guidelines for all warehouse operations by EPS Worldwide Integrated Logistics on behalf of CaratLane (A Tanishq Partnership). Covers inbound receiving, order picking, packing &amp; dispatch, and reverse logistics.</p>
+      <table class="sop-table"><thead><tr><th>Term</th><th>Definition</th></tr></thead><tbody>
+        <tr><td><b>ASN</b></td><td>Advance Shipment Notice — electronic document from supplier listing expected goods</td></tr>
+        <tr><td><b>GRN</b></td><td>Goods Received Note — internal record confirming receipt of stock</td></tr>
+        <tr><td><b>SKU</b></td><td>Stock Keeping Unit — unique identifier for each product variant</td></tr>
+        <tr><td><b>WMS</b></td><td>Warehouse Management System — software used for inventory tracking</td></tr>
+        <tr><td><b>QC</b></td><td>Quality Check — inspection of goods for damage, authenticity, or discrepancy</td></tr>
+        <tr><td><b>BIN</b></td><td>Designated storage location within the warehouse</td></tr>
+        <tr><td><b>FIFO</b></td><td>First In, First Out — stock rotation method (strictly enforced)</td></tr>
+        <tr><td><b>RTO</b></td><td>Return to Origin — shipment returned by courier without delivery</td></tr>
+        <tr><td><b>RMA</b></td><td>Return Merchandise Authorization — approval for a customer return</td></tr>
+        <tr><td><b>POD</b></td><td>Proof of Delivery — document signed by consignee on delivery</td></tr>
+      </tbody></table>
+    </div>
+  </div>
+
+  <div class="sop-section">
+    <div class="sop-head" onclick="toggleSop(this)">
+      <div class="sop-title"><i class="ti ti-package-import"></i>§1 — Inbound receiving process</div>
+      <i class="ti ti-chevron-down chevron"></i>
+    </div>
+    <div class="sop-body">
+      <p style="font-size:12px;margin-bottom:8px;line-height:1.6">ASN required 24 hrs before arrival. GRN within 4 hrs. Putaway TAT ≤ 2 hrs. Discrepancy report ≤ 2 hrs. Weight variance &gt;2% must be flagged.</p>
+      <table class="sop-table"><thead><tr><th>Step</th><th>Stage</th><th>Action</th><th>Standard</th></tr></thead><tbody>
+        <tr><td><span class="step-num">1–4</span></td><td>A: Arrival &amp; docking</td><td>Verify carrier, check seal, sign docket, assign bay</td><td>Match vs ASN. Broken seal → stop, escalate before unloading</td></tr>
+        <tr><td><span class="step-num">5–9</span></td><td>B: Physical count</td><td>Unload, count cartons, count inner units, weigh, scan barcodes</td><td>Max 5 cartons high. Weight variance &gt;2% → flag. Scan each SKU into WMS</td></tr>
+        <tr><td><span class="step-num">10–14</span></td><td>C: QC inspection</td><td>Visual QC packaging, visual QC product, tag check, classify, quarantine rejects</td><td>PASS / HOLD / REJECT. HOLD/REJECT → quarantine. Inform CL POC within 2 hrs</td></tr>
+        <tr><td><span class="step-num">15–19</span></td><td>D: GRN &amp; putaway</td><td>Create GRN in WMS, assign BIN, putaway, confirm, file documents</td><td>Scan item + BIN at placement. FIFO strictly. File documents same day</td></tr>
+      </tbody></table>
+      <div style="margin-top:10px;font-size:11px;font-weight:600;color:var(--t2);margin-bottom:6px">KPIs (§1.6)</div>
+      <div class="kpi-row"><span>GRN created within 4 hrs of shipment arrival</span><span class="kpi-val">≥ 95%</span><span class="kpi-freq">Daily</span></div>
+      <div class="kpi-row"><span>Receiving accuracy (units vs ASN)</span><span class="kpi-val">≥ 99.5%</span><span class="kpi-freq">Per shipment</span></div>
+      <div class="kpi-row"><span>Putaway TAT after GRN creation</span><span class="kpi-val">≤ 2 hrs</span><span class="kpi-freq">Daily</span></div>
+      <div class="kpi-row"><span>Discrepancy report submission TAT</span><span class="kpi-val">≤ 2 hrs</span><span class="kpi-freq">Per incident</span></div>
+    </div>
+  </div>
+
+  <div class="sop-section">
+    <div class="sop-head" onclick="toggleSop(this)">
+      <div class="sop-title"><i class="ti ti-scan"></i>§2 — Order picking process</div>
+      <i class="ti ti-chevron-down chevron"></i>
+    </div>
+    <div class="sop-body">
+      <p style="font-size:12px;margin-bottom:8px;line-height:1.6">Three methods: Single (high-value / complex), Batch (high-volume), Zone (zone-consolidated). Priority order: Express &gt; Standard &gt; Pre-order.</p>
+      <table class="sop-table"><thead><tr><th>Step</th><th>Stage</th><th>Action</th><th>Standard</th></tr></thead><tbody>
+        <tr><td><span class="step-num">1–3</span></td><td>A: Pick list</td><td>Receive order from WMS, load pick list, prioritise tasks</td><td>Each task: Order ID, SKU, BIN location, quantity</td></tr>
+        <tr><td><span class="step-num">4–9</span></td><td>B: Physical picking</td><td>Navigate to BIN, scan BIN label, scan item SKU, inspect, place in tote, confirm pick</td><td>Scan BIN before pick. Mismatch → DO NOT pick. Defective → HOLD zone</td></tr>
+        <tr><td><span class="step-num">10–12</span></td><td>C: Tote transfer</td><td>Mark task complete, label tote, transfer to packing station</td><td>Mark complete in WMS. Record handover time to packing supervisor</td></tr>
+      </tbody></table>
+    </div>
+  </div>
+
+  <div class="sop-section">
+    <div class="sop-head" onclick="toggleSop(this)">
+      <div class="sop-title"><i class="ti ti-box"></i>§3 — Packing &amp; dispatch process</div>
+      <i class="ti ti-chevron-down chevron"></i>
+    </div>
+    <div class="sop-body">
+      <p style="font-size:12px;margin-bottom:8px;line-height:1.6">CaratLane-approved packaging only. EPS self-ships via own delivery network. EOD reconciliation mandatory: Picked = Packed = Dispatched.</p>
+      <table class="sop-table"><thead><tr><th>Step</th><th>Stage</th><th>Action</th><th>Standard</th></tr></thead><tbody>
+        <tr><td><span class="step-num">1–4</span></td><td>A: Order verification</td><td>Receive tote, scan order ID, verify item vs order, final QC</td><td>Mismatch → STOP immediately. Never mix totes.</td></tr>
+        <tr><td><span class="step-num">5–8</span></td><td>B: Packing</td><td>Select CL poly bag, fold garment to standard, add invoice, seal outer box</td><td>Standard fold per CL spec. Never omit invoice. Min 3 tape strips.</td></tr>
+        <tr><td><span class="step-num">9–11</span></td><td>C: Labelling</td><td>Print AWB label, affix to box top, scan packed box in WMS</td><td>Label must show: Order ID, AWB, name, address, PIN, phone, courier</td></tr>
+        <tr><td><span class="step-num">12–16</span></td><td>D: Dispatch</td><td>Stage by zone, generate manifest, load vehicle, driver sign-off, WMS update, EOD recon</td><td>Driver signs manifest count. EOD: Picked = Packed = Dispatched</td></tr>
+      </tbody></table>
+    </div>
+  </div>
+
+  <div class="sop-section">
+    <div class="sop-head" onclick="toggleSop(this)">
+      <div class="sop-title"><i class="ti ti-package-export"></i>§4 — Returns processing procedure</div>
+      <i class="ti ti-chevron-down chevron"></i>
+    </div>
+    <div class="sop-body">
+      <p style="font-size:12px;margin-bottom:8px;line-height:1.6">Every return must have authorised RMA or RTO record. Open only in dedicated returns QC area with CCTV active. Returns Supervisor + associate both present at all times. RTO re-delivery/cancellation instruction from CaratLane within 24 hrs.</p>
+      <table class="sop-table"><thead><tr><th>Grade</th><th>Condition</th><th>Disposition</th></tr></thead><tbody>
+        <tr><td><span class="pill p-ga">Grade A</span></td><td>Unworn, all tags intact, original packaging, no stains or defects</td><td>Return to sellable stock — repack &amp; putaway to BIN</td></tr>
+        <tr><td><span class="pill p-gb">Grade B</span></td><td>Tried once, minor crease or light mark, tags may be off but present</td><td>Hold — CaratLane decision: repack or re-press</td></tr>
+        <tr><td><span class="pill p-gc">Grade C</span></td><td>Visibly worn, stained, pilling, broken zipper/button, missing tags, sole damage</td><td>Segregate — send to CaratLane QC team for further assessment</td></tr>
+      </tbody></table>
+    </div>
+  </div>
+
+  <div class="sop-section">
+    <div class="sop-head" onclick="toggleSop(this)">
+      <div class="sop-title"><i class="ti ti-shield-lock"></i>§5 — Security, compliance &amp; safety</div>
+      <i class="ti ti-chevron-down chevron"></i>
+    </div>
+    <div class="sop-body">
+      <table class="sop-table"><thead><tr><th>Area</th><th>Requirement</th></tr></thead><tbody>
+        <tr><td>CCTV</td><td>Mandatory: receiving dock, packing station, returns area, storage, all entry/exit points</td></tr>
+        <tr><td>Access control</td><td>CaratLane storage zone restricted to authorised EPS staff only</td></tr>
+        <tr><td>Cycle counts</td><td>Weekly stock counts reconciled against WMS</td></tr>
+        <tr><td>Photography</td><td>No photography of CL products, inventory, or warehouse layout without written approval</td></tr>
+        <tr><td>Hygiene</td><td>Clean hands when handling CL apparel. No eating, drinking, or smoking near CL inventory</td></tr>
+        <tr><td>Fire safety</td><td>Extinguishers checked monthly. Emergency exit routes clear at all times</td></tr>
+        <tr><td>Lifting</td><td>Items above 20 kg require team lift. Ergonomic practices enforced</td></tr>
+        <tr><td>Data security</td><td>Customer order data not shared outside EPS-CL team. WMS credentials are individual — not shared</td></tr>
+        <tr><td>Incident reporting</td><td>All near-miss or actual incidents reported to Warehouse Manager within 1 hour</td></tr>
+        <tr><td>Documents</td><td>Invoices, GRNs, manifests stored in labelled files. Shredded post-retention per CL policy</td></tr>
+      </tbody></table>
+    </div>
+  </div>
+
+  <div class="sop-section">
+    <div class="sop-head" onclick="toggleSop(this)">
+      <div class="sop-title"><i class="ti ti-chart-bar"></i>§6 — Escalation matrix &amp; weekly MIS reporting</div>
+      <i class="ti ti-chevron-down chevron"></i>
+    </div>
+    <div class="sop-body">
+      <p style="font-size:12px;margin-bottom:8px;line-height:1.6">Weekly MIS to CaratLane every Monday by 10:00 AM covering: Inbound Report (GRN count, discrepancies), Outbound Report (dispatches, courier-wise, COD value), Returns Report (grading summary, restock count), Inventory Report (live WMS stock by SKU), Exception Report (all exceptions and resolution status).</p>
+    </div>
+  </div>
+
+  <div class="sop-section">
+    <div class="sop-head" onclick="toggleSop(this)">
+      <div class="sop-title"><i class="ti ti-file-certificate"></i>§7 — Document control &amp; revision history</div>
+      <i class="ti ti-chevron-down chevron"></i>
+    </div>
+    <div class="sop-body">
+      <p style="font-size:12px;line-height:1.7">Document No: <b>EPS-WH-SOP-001</b> &nbsp;·&nbsp; Version: <b>1.0</b> &nbsp;·&nbsp; Effective: <b>April 2026</b> &nbsp;·&nbsp; Prepared by: <b>EPS Worldwide Integrated Logistics, Mumbai</b> &nbsp;·&nbsp; Review cycle: <b>Annually or upon process change</b> &nbsp;·&nbsp; Classification: <b>Confidential</b></p>
+      <p style="font-size:11px;color:var(--t2);margin-top:8px;line-height:1.6">This document is prepared and submitted by EPS Worldwide Integrated Logistics for the exclusive operational use of CaratLane fulfilment. Reproduction or distribution outside of CaratLane and EPS Worldwide without written permission is prohibited.</p>
+    </div>
+  </div>
+</div>
+
+</div><!-- end .wrap -->
+
+<script>
+const SKUS=[
+  {sku:"UNI-GS-M-34",cat:"Uniform",sub:"Grey Sweater- Male",variant:"Size 34",rack:"A",shelf:"1"},
+  {sku:"UNI-GS-M-36",cat:"Uniform",sub:"Grey Sweater- Male",variant:"Size 36",rack:"A",shelf:"1"},
+  {sku:"UNI-GS-M-38",cat:"Uniform",sub:"Grey Sweater- Male",variant:"Size 38",rack:"A",shelf:"1"},
+  {sku:"UNI-GS-M-42",cat:"Uniform",sub:"Grey Sweater- Male",variant:"Size 42",rack:"A",shelf:"1"},
+  {sku:"UNI-GS-M-44",cat:"Uniform",sub:"Grey Sweater- Male",variant:"Size 44",rack:"A",shelf:"1"},
+  {sku:"UNI-GS-M-46",cat:"Uniform",sub:"Grey Sweater- Male",variant:"Size 46",rack:"A",shelf:"1"},
+  {sku:"UNI-GS-F-34",cat:"Uniform",sub:"Grey Sweater- Female",variant:"Size 34",rack:"A",shelf:"2"},
+  {sku:"UNI-GS-F-36",cat:"Uniform",sub:"Grey Sweater- Female",variant:"Size 36",rack:"A",shelf:"2"},
+  {sku:"UNI-GS-F-38",cat:"Uniform",sub:"Grey Sweater- Female",variant:"Size 38",rack:"A",shelf:"2"},
+  {sku:"UNI-GS-F-40",cat:"Uniform",sub:"Grey Sweater- Female",variant:"Size 40",rack:"A",shelf:"2"},
+  {sku:"UNI-GS-F-42",cat:"Uniform",sub:"Grey Sweater- Female",variant:"Size 42",rack:"A",shelf:"2"},
+  {sku:"UNI-GS-F-44",cat:"Uniform",sub:"Grey Sweater- Female",variant:"Size 44",rack:"A",shelf:"2"},
+  {sku:"UNI-GS-F-46",cat:"Uniform",sub:"Grey Sweater- Female",variant:"Size 46",rack:"A",shelf:"2"},
+  {sku:"UNI-MC-U-34",cat:"Uniform",sub:"Monte Carlo Sweater- Unisex",variant:"Size 34",rack:"A",shelf:"3"},
+  {sku:"UNI-MC-U-36",cat:"Uniform",sub:"Monte Carlo Sweater- Unisex",variant:"Size 36",rack:"A",shelf:"3"},
+  {sku:"UNI-MC-U-38",cat:"Uniform",sub:"Monte Carlo Sweater- Unisex",variant:"Size 38",rack:"A",shelf:"3"},
+  {sku:"UNI-MC-U-40",cat:"Uniform",sub:"Monte Carlo Sweater- Unisex",variant:"Size 40",rack:"A",shelf:"3"},
+  {sku:"UNI-MC-U-42",cat:"Uniform",sub:"Monte Carlo Sweater- Unisex",variant:"Size 42",rack:"A",shelf:"3"},
+  {sku:"UNI-MC-U-44",cat:"Uniform",sub:"Monte Carlo Sweater- Unisex",variant:"Size 44",rack:"A",shelf:"3"},
+  {sku:"UNI-BLZ-U",cat:"Uniform",sub:"Blazers - Unisex",variant:"Unstitched",rack:"A",shelf:"4"},
+  {sku:"UNI-JCT-U",cat:"Uniform",sub:"JC Trouser - Unisex",variant:"Unstitched",rack:"A",shelf:"4"},
+  {sku:"UNI-JCS-U",cat:"Uniform",sub:"JC Shirt - Unisex",variant:"Unstitched",rack:"A",shelf:"4"},
+  {sku:"UNI-TAH-U",cat:"Uniform",sub:"TAH Shirt - Unisex",variant:"Unstitched",rack:"A",shelf:"4"},
+  {sku:"UNI-HKS-M",cat:"Uniform",sub:"HK Shirt - Male",variant:"Unstitched",rack:"A",shelf:"5"},
+  {sku:"UNI-HKT-M",cat:"Uniform",sub:"HK Trouser - Male",variant:"Unstitched",rack:"A",shelf:"5"},
+  {sku:"UNI-HKK-F",cat:"Uniform",sub:"HK Kurta - Female",variant:"Unstitched",rack:"A",shelf:"5"},
+  {sku:"UNI-HKP-F",cat:"Uniform",sub:"HK Pyjama - Female",variant:"Unstitched",rack:"A",shelf:"5"},
+  {sku:"UNI-SH-M-6",cat:"Uniform",sub:"Shoes - Male",variant:"Size 6",rack:"A",shelf:"6"},
+  {sku:"UNI-SH-M-7",cat:"Uniform",sub:"Shoes - Male",variant:"Size 7",rack:"A",shelf:"6"},
+  {sku:"UNI-SH-M-8",cat:"Uniform",sub:"Shoes - Male",variant:"Size 8",rack:"A",shelf:"6"},
+  {sku:"UNI-SH-M-11",cat:"Uniform",sub:"Shoes - Male",variant:"Size 11",rack:"A",shelf:"6"},
+  {sku:"UNI-SH-M-12",cat:"Uniform",sub:"Shoes - Male",variant:"Size 12",rack:"A",shelf:"6"},
+  {sku:"UNI-SH-F-6",cat:"Uniform",sub:"Shoes - Female",variant:"Size 6",rack:"A",shelf:"7"},
+  {sku:"UNI-SH-F-7",cat:"Uniform",sub:"Shoes - Female",variant:"Size 7",rack:"A",shelf:"7"},
+  {sku:"UNI-SH-U-4",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 4",rack:"A",shelf:"7"},
+  {sku:"UNI-SH-U-5",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 5",rack:"A",shelf:"7"},
+  {sku:"UNI-SH-U-6",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 6",rack:"A",shelf:"7"},
+  {sku:"UNI-SH-U-7",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 7",rack:"A",shelf:"7"},
+  {sku:"UNI-SH-U-8",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 8",rack:"A",shelf:"7"},
+  {sku:"UNI-SH-U-9",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 9",rack:"A",shelf:"7"},
+  {sku:"UNI-SH-U-10",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 10",rack:"A",shelf:"7"},
+  {sku:"UNI-SH-U-11",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 11",rack:"A",shelf:"7"},
+  {sku:"UNI-SH-U-12",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 12",rack:"A",shelf:"7"},
+  {sku:"UNI-DN-M-30",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 30",rack:"A",shelf:"8"},
+  {sku:"UNI-DN-M-32",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 32",rack:"A",shelf:"8"},
+  {sku:"UNI-DN-M-34",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 34",rack:"A",shelf:"8"},
+  {sku:"UNI-DN-M-36",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 36",rack:"A",shelf:"8"},
+  {sku:"UNI-DN-M-38",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 38",rack:"A",shelf:"8"},
+  {sku:"UNI-DN-M-40",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 40",rack:"A",shelf:"8"},
+  {sku:"UNI-DN-M-42",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 42",rack:"A",shelf:"8"},
+  {sku:"UNI-DN-F-28",cat:"Uniform",sub:"Stitched Denim - Female",variant:"Size 28",rack:"A",shelf:"9"},
+  {sku:"UNI-DN-F-30",cat:"Uniform",sub:"Stitched Denim - Female",variant:"Size 30",rack:"A",shelf:"9"},
+  {sku:"UNI-DN-F-32",cat:"Uniform",sub:"Stitched Denim - Female",variant:"Size 32",rack:"A",shelf:"9"},
+  {sku:"UNI-DN-F-34",cat:"Uniform",sub:"Stitched Denim - Female",variant:"Size 34",rack:"A",shelf:"9"},
+  {sku:"UNI-DN-F-36",cat:"Uniform",sub:"Stitched Denim - Female",variant:"Size 36",rack:"A",shelf:"9"},
+  {sku:"UNI-DN-F-38",cat:"Uniform",sub:"Stitched Denim - Female",variant:"Size 38",rack:"A",shelf:"9"},
+  {sku:"UNI-SHT-M-38",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 38",rack:"A",shelf:"10"},
+  {sku:"UNI-SHT-M-40",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 40",rack:"A",shelf:"10"},
+  {sku:"UNI-SHT-M-42",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 42",rack:"A",shelf:"10"},
+  {sku:"UNI-SHT-M-44",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 44",rack:"A",shelf:"10"},
+  {sku:"UNI-SHT-M-46",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 46",rack:"A",shelf:"10"},
+  {sku:"UNI-SHT-M-48",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 48",rack:"A",shelf:"10"},
+  {sku:"UNI-SHT-M-50",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 50",rack:"A",shelf:"10"},
+  {sku:"UNI-SHT-M-52",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 52",rack:"A",shelf:"10"},
+  {sku:"UNI-SHT-M-54",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 54",rack:"A",shelf:"10"},
+  {sku:"UNI-SHT-F-XXS",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size XXS",rack:"A",shelf:"11"},
+  {sku:"UNI-SHT-F-XS",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size XS",rack:"A",shelf:"11"},
+  {sku:"UNI-SHT-F-S",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size S",rack:"A",shelf:"11"},
+  {sku:"UNI-SHT-F-M",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size M",rack:"A",shelf:"11"},
+  {sku:"UNI-SHT-F-L",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size L",rack:"A",shelf:"11"},
+  {sku:"UNI-SHT-F-XL",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size XL",rack:"A",shelf:"11"},
+  {sku:"UNI-SHT-F-XXL",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size XXL",rack:"A",shelf:"11"},
+  {sku:"UNI-SHT-F-XXXL",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size XXXL",rack:"A",shelf:"11"},
+  {sku:"VM-EG",cat:"VM",sub:"Eye glass",variant:"Eye glass",rack:"B",shelf:"1"},
+  {sku:"VM-EL",cat:"VM",sub:"Eye Loop",variant:"Eye Loop",rack:"B",shelf:"1"},
+  {sku:"VM-CB",cat:"VM",sub:"Chocolate bowl",variant:"Chocolate bowl",rack:"B",shelf:"2"},
+  {sku:"VM-CC",cat:"VM",sub:"Cleaning Cloth",variant:"Cleaning Cloth",rack:"B",shelf:"2"},
+  {sku:"VM-IS",cat:"VM",sub:"Ipad Stand",variant:"Ipad Stand",rack:"B",shelf:"3"},
+  {sku:"VM-IC-9",cat:"VM",sub:"Ipad Cover",variant:"9th Generation",rack:"B",shelf:"3"},
+  {sku:"VM-IC-10",cat:"VM",sub:"Ipad Cover",variant:"10th Generation",rack:"B",shelf:"3"},
+  {sku:"VM-RS",cat:"VM",sub:"Ring Sizer",variant:"Ring Sizer",rack:"B",shelf:"4"},
+  {sku:"VM-RR",cat:"VM",sub:"Ring Rod",variant:"Ring Rod",rack:"B",shelf:"4"},
+  {sku:"VM-BS",cat:"VM",sub:"Bangle Sizer",variant:"Bangle Sizer",rack:"B",shelf:"4"},
+  {sku:"RS-RS",cat:"Ring Sizer",sub:"Ring Sizer",variant:"Ring Sizer",rack:"B",shelf:"5"},
+];
+
+let inv={},history=[],ibItems=[],pkItemsList=[],rtItemsList=[],packingQueue=[],costParams={
+  receivingCostPerGrn:500,
+  pickCostPerOrder:50,
+  packCostPerOrder:40,
+  dispatchCostPerOrder:100,
+  storageCostPerSku:2,
+  damageLoss:0,
+  returnProcessingCost:75
+};
+
+function initInv(){
+  try{const s=localStorage.getItem('cl_wms_inv2');if(s){inv=JSON.parse(s);return;}}catch(e){}
+  SKUS.forEach(s=>{const q=s.cat==='VM'?Math.floor(Math.random()*25)+5:Math.floor(Math.random()*12)+2;inv[s.sku]={qty:q,rack:s.rack,shelf:s.shelf};});
+  saveInv();
+}
+function saveInv(){try{localStorage.setItem('cl_wms_inv2',JSON.stringify(inv));}catch(e){}}
+function loadHist(){try{const s=localStorage.getItem('cl_wms_hist2');if(s)history=JSON.parse(s);}catch(e){}}
+function saveHist(){try{localStorage.setItem('cl_wms_hist2',JSON.stringify(history));}catch(e){}}
+function ts(){return new Date().toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});}
+function newId(pfx){return pfx+'-'+Date.now().toString().slice(-6);}
+function getSt(q){return q<=0?'out':q<=3?'low':'ok';}
+function stPill(q){const s=getSt(q);return s==='out'?'<span class="pill p-out">Out</span>':s==='low'?'<span class="pill p-low">Low</span>':'<span class="pill p-ok">In stock</span>';}
+
+function nav(tab){
+  document.querySelectorAll('.ntab').forEach(t=>t.classList.toggle('active',t.dataset.tab===tab));
+  document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.id==='page-'+tab));
+  if(tab==='dashboard')renderDash();
+  if(tab==='inventory')renderInv();
+  if(tab==='rack')renderRack();
+  if(tab==='dispatch')renderDispatchPage();
+  if(tab==='packing')renderPackingQ();
+  if(tab==='reports')renderReports();
+  if(tab==='analytics')renderAnalytics();
+  if(tab==='finance')renderFinance();
+  if(tab==='inbound'){populateSkuSel('ib-sku');renderIbLog();}
+  if(tab==='picking'){populateSkuSel('pk-sku');}
+  if(tab==='returns'){populateSkuSel('rt-sku');renderRtLog();}
+}
+
+function populateSkuSel(id_){
+  if(id_==='none')return;
+  const s=document.getElementById(id_);
+  if(s)s.innerHTML=SKUS.map(x=>`<option value="${x.sku}">${x.sub} — ${x.variant} (${x.sku})</option>`).join('');
+}
+
+// DASHBOARD
+function renderDash(){
+  const total=SKUS.length,ins=SKUS.filter(s=>inv[s.sku]&&inv[s.sku].qty>0).length;
+  const low=SKUS.filter(s=>inv[s.sku]&&getSt(inv[s.sku].qty)==='low');
+  const out=SKUS.filter(s=>!inv[s.sku]||inv[s.sku].qty<=0);
+  const tq=SKUS.reduce((a,s)=>a+(inv[s.sku]?inv[s.sku].qty:0),0);
+  const disp=history.filter(h=>h.type==='dispatch').length;
+  const rcv=history.filter(h=>h.type==='grn').length;
+  const rets=history.filter(h=>h.type==='return').length;
+  document.getElementById('alert-ct').textContent=low.length+out.length;
+  document.getElementById('stat-cards').innerHTML=`
+    <div class="sc"><div class="sl"><i class="ti ti-package"></i>Total SKUs</div><div class="sv">${total}</div><div class="ss">2 racks · 16 shelves</div></div>
+    <div class="sc"><div class="sl"><i class="ti ti-check"></i>In stock</div><div class="sv">${ins}</div><div class="ss">${total-ins} empty SKUs</div></div>
+    <div class="sc"><div class="sl"><i class="ti ti-alert-triangle"></i>Low stock</div><div class="sv" style="color:var(--wt)">${low.length}</div><div class="ss">≤3 units</div></div>
+    <div class="sc"><div class="sl"><i class="ti ti-box"></i>Total units</div><div class="sv">${tq}</div><div class="ss">All SKUs combined</div></div>
+    <div class="sc"><div class="sl"><i class="ti ti-truck-delivery"></i>Dispatches</div><div class="sv">${disp}</div><div class="ss">All time</div></div>
+    <div class="sc"><div class="sl"><i class="ti ti-package-import"></i>GRNs raised</div><div class="sv">${rcv}</div><div class="ss">All time</div></div>
+    <div class="sc"><div class="sl"><i class="ti ti-package-export"></i>Returns</div><div class="sv">${rets}</div><div class="ss">All time</div></div>
+    <div class="sc"><div class="sl"><i class="ti ti-clock"></i>Packing queue</div><div class="sv">${packingQueue.length}</div><div class="ss">Awaiting packing</div></div>
+  `;
+  const alerts=[...out.map(s=>({...s,st:'out'})),...low.map(s=>({...s,st:'low'}))].slice(0,5);
+  const ae=document.getElementById('dash-alerts');
+  ae.innerHTML=alerts.length?alerts.map(s=>`<div class="hist-entry"><div class="hist-head"><span style="font-size:11px;font-weight:600">${s.sub} — ${s.variant}</span>${s.st==='out'?'<span class="pill p-out">Out</span>':'<span class="pill p-low">Low</span>'}</div><div class="hist-body">${s.sku} · BIN ${(inv[s.sku]||{rack:s.rack,shelf:s.shelf}).rack}-${(inv[s.sku]||{rack:s.rack,shelf:s.shelf}).shelf} · <b>${(inv[s.sku]||{qty:0}).qty}</b> units</div></div>`).join(''):'<div class="empty">No stock alerts — all items healthy ✓</div>';
+  const re=document.getElementById('dash-recent');
+  const rec=history.slice(-5).reverse();
+  re.innerHTML=rec.length?rec.map(h=>`<div class="hist-entry"><div class="hist-head"><span class="hist-id">${h.id}</span><span class="pill ${h.type==='dispatch'?'p-low':h.type==='return'?'p-info':'p-ok'}">${h.type}</span></div><div class="hist-body">${h.ts} · ${h.detail||''}</div></div>`).join(''):'<div class="empty">No recent activity</div>';
+}
+
+// INBOUND
+function filterSkuList(searchInputId,selectId){
+  const q=(document.getElementById(searchInputId).value||'').toLowerCase();
+  const sel=document.getElementById(selectId);
+  if(!q){sel.innerHTML=SKUS.map(x=>`<option value="${x.sku}">${x.sub} (${x.sku}) — ${x.variant}</option>`).join('');return;}
+  const filtered=SKUS.filter(s=>s.sku.toLowerCase().includes(q)||s.sub.toLowerCase().includes(q)||s.variant.toLowerCase().includes(q));
+  sel.innerHTML=filtered.length?filtered.map(x=>`<option value="${x.sku}">${x.sub} (${x.sku}) — ${x.variant}</option>`).join(''):`<option disabled>No SKUs found</option>`;
+}
+function addIbItem(){
+  const sku=document.getElementById('ib-sku').value;
+  const qc=document.getElementById('ib-qc').value;
+  const issue=document.getElementById('ib-issue').value;
+  const qty=parseInt(document.getElementById('ib-qty').value)||1;
+  const binOverride=document.getElementById('ib-bin-override').value.trim();
+  const s=SKUS.find(x=>x.sku===sku);
+  const defaultBin=`${s.rack}-${s.shelf}`;
+  const bin=binOverride||defaultBin;
+  ibItems.push({sku,name:s.sub,variant:s.variant,qc,issue,qty,bin,binOverridden:!!binOverride});
+  renderIbItemsList();
+  document.getElementById('ib-bin-override').value='';
+  toast(`Added ${sku} to ${bin}${binOverride?' (manual assignment)':' (auto-assigned)'}`, 's');
+}
+function renderIbItemsList(){
+  const el=document.getElementById('ib-items-list');
+  el.innerHTML=ibItems.length?`<div class="tw"><table><thead><tr><th>SKU</th><th>Item</th><th>BIN</th><th>QC</th><th>Issue</th><th>Qty</th><th></th></tr></thead><tbody>${ibItems.map((item,i)=>`<tr><td class="mono">${item.sku}</td><td style="font-size:11px">${item.name}</td><td style="font-weight:600;color:var(--gold)">${item.bin}${item.binOverridden?' ⚠':'(auto)'}</td><td><span class="pill ${item.qc==='PASS'?'p-pass':item.qc==='HOLD'?'p-hold':'p-out'}">${item.qc}</span></td><td style="font-size:10px;color:var(--t2)">${item.issue||'—'}</td><td>${item.qty}</td><td><button class="btn-sm btn-danger" onclick="removeIbItem(${i})"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table></div>`:'';
+}
+function removeIbItem(i){ibItems.splice(i,1);renderIbItemsList();}
+function createGRN(){
+  if(!ibItems.length){toast('Add at least one item to the shipment','w');return;}
+  const seal=document.getElementById('ib-seal').value;
+  if(seal==='broken'){toast('STOP: Broken seal detected — escalate to CaratLane & security before proceeding (SOP §1.5)','w');return;}
+  const asn=document.getElementById('ib-asn').value.trim();
+  const gid=newId('GRN');
+  ibItems.forEach(item=>{
+    if(item.qc==='PASS'){
+      if(!inv[item.sku])inv[item.sku]={qty:0,rack:SKUS.find(s=>s.sku===item.sku).rack,shelf:SKUS.find(s=>s.sku===item.sku).shelf};
+      inv[item.sku].qty+=item.qty;
+    }
+    // Track exceptions for compliance
+    if(item.qc==='HOLD' || item.qc==='REJECT' || item.issue){
+      history.push({id:newId('EXC'),type:'exception',ts:ts(),category:'damage',detail:`${item.sku} · QC: ${item.qc} · Issue: ${item.issue||'N/A'} · Qty: ${item.qty}`,grn:gid});
+    }
+  });
+  const pass=ibItems.filter(i=>i.qc==='PASS').reduce((a,i)=>a+i.qty,0);
+  const hold=ibItems.filter(i=>i.qc==='HOLD').reduce((a,i)=>a+i.qty,0);
+  const rej=ibItems.filter(i=>i.qc==='REJECT').reduce((a,i)=>a+i.qty,0);
+  history.push({id:gid,type:'grn',ts:ts(),detail:`ASN: ${asn||'N/A'} · ${ibItems.length} SKUs · PASS:${pass} HOLD:${hold} REJ:${rej}`,items:[...ibItems]});
+  saveInv();saveHist();ibItems=[];renderIbItemsList();renderIbLog();
+  document.getElementById('ib-issue').value='';
+  ['ib-asn','ib-carrier','ib-vehicle','ib-cartons'].forEach(id_=>document.getElementById(id_).value='');
+  toast(`GRN ${gid} created · ${pass} units added to inventory (FIFO)`, 's');
+}
+function renderIbLog(){
+  const el=document.getElementById('ib-log');
+  const logs=history.filter(h=>h.type==='grn').slice(-10).reverse();
+  el.innerHTML=logs.length?logs.map(h=>`<div class="hist-entry"><div class="hist-head"><span class="hist-id">${h.id}</span><span class="hist-ts">${h.ts}</span></div><div class="hist-body">${h.detail}</div></div>`).join(''):'<div class="empty">No GRNs created yet</div>';
+}
+
+// PICKING
+function addPkItem(){
+  const sku=document.getElementById('pk-sku').value;
+  const cond=document.getElementById('pk-cond').value;
+  const qty=parseInt(document.getElementById('pk-qty').value)||1;
+  const s=SKUS.find(x=>x.sku===sku);
+  const avail=(inv[sku]||{qty:0}).qty;
+  if(cond==='defective'){toast(`${sku} flagged DEFECTIVE — item moved to HOLD zone. Raise defect report. (SOP §2.5)`,'w');return;}
+  if(qty>avail){toast(`Insufficient stock: ${sku} has only ${avail} units available`,'w');return;}
+  pkItemsList.push({sku,name:s.sub,variant:s.variant,qty,bin:`${s.rack}-${s.shelf}`});
+  renderPkItemsList();
+}
+function renderPkItemsList(){
+  const el=document.getElementById('pk-items-list');
+  el.innerHTML=pkItemsList.length?`<div class="tw"><table><thead><tr><th>SKU</th><th>Item</th><th>BIN</th><th>Qty</th><th></th></tr></thead><tbody>${pkItemsList.map((item,i)=>`<tr><td class="mono">${item.sku}</td><td style="font-size:11px">${item.name} — ${item.variant}</td><td>${item.bin}</td><td>${item.qty}</td><td><button class="btn-sm btn-danger" onclick="removePkItem(${i})"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table></div>`:'';
+}
+function removePkItem(i){pkItemsList.splice(i,1);renderPkItemsList();}
+function releaseToPacking(){
+  if(!pkItemsList.length){toast('Add items to the pick list first','w');return;}
+  const oid=document.getElementById('pk-orderid').value.trim()||newId('ORD');
+  const pri=document.getElementById('pk-priority').value;
+  const method=document.getElementById('pk-method').value;
+  const picker=document.getElementById('pk-picker').value.trim()||'Unassigned';
+  pkItemsList.forEach(item=>{inv[item.sku].qty-=item.qty;});
+  const tid=newId('PCK');
+  packingQueue.push({id:tid,orderId:oid,priority:pri,method,picker,items:[...pkItemsList],ts:ts(),status:'awaiting_packing'});
+  history.push({id:tid,type:'pick',ts:ts(),detail:`${oid} · ${method} pick · ${pri} · ${pkItemsList.length} SKUs · Picker: ${picker}`});
+  saveInv();saveHist();pkItemsList=[];renderPkItemsList();
+  document.getElementById('pk-orderid').value='';document.getElementById('pk-picker').value='';
+  const el=document.getElementById('pk-log');
+  el.innerHTML=history.filter(h=>h.type==='pick').slice(-6).reverse().map(h=>`<div class="hist-entry"><div class="hist-head"><span class="hist-id">${h.id}</span><span class="hist-ts">${h.ts}</span></div><div class="hist-body">${h.detail}</div></div>`).join('');
+  toast(`Pick task ${tid} released to packing queue`,'s');
+}
+
+// PACKING QUEUE
+function renderPackingQ(){
+  const el=document.getElementById('packing-queue');
+  if(!packingQueue.length){el.innerHTML='<div class="empty">No tasks awaiting packing — queue is clear</div>';return;}
+  el.innerHTML=`<div class="tw"><table><thead><tr><th>Task ID</th><th>Order ID</th><th>Priority</th><th>Method</th><th>Items</th><th>Time</th><th>Action</th></tr></thead><tbody>${packingQueue.map((t,i)=>`<tr><td class="mono">${t.id}</td><td style="font-size:11px">${t.orderId}</td><td><span class="pill ${t.priority==='Express'?'p-out':t.priority==='Standard'?'p-info':'p-hold'}">${t.priority}</span></td><td style="font-size:11px">${t.method}</td><td>${t.items.length} SKU(s)</td><td style="font-size:11px;color:var(--t2)">${t.ts}</td><td><button class="btn-sm btn-success" onclick="packComplete(${i})"><i class="ti ti-check"></i>Mark Packed</button></td></tr>`).join('')}</tbody></table></div>`;
+}
+function packComplete(i){
+  const t=packingQueue[i];
+  console.log('packComplete called for:', t);
+  packingQueue.splice(i,1);
+  const pkid=newId('PKD');
+  const packedObj={id:pkid,type:'packed',ts:ts(),detail:`${t.orderId} · ${t.items.length} SKUs packed — ready for dispatch`,orderId:t.orderId,items:t.items};
+  console.log('Adding to history:', packedObj);
+  history.push(packedObj);
+  console.log('History after push (length):', history.length);
+  console.log('Packed items in history:', history.filter(h=>h.type==='packed'));
+  saveHist();
+  renderPackingQ();
+  // If dispatch page is active, update it in real-time
+  if(document.getElementById('page-dispatch').classList.contains('active')){
+    console.log('Dispatch page is active, calling renderDispatchPage');
+    renderDispatchPage();
+  }
+  toast(`Order ${t.orderId} marked as packed · moved to dispatch queue`,'s');
+}
+
+
+// DISPATCH — Courier AWB assignment
+function renderDispatchPage(){
+  renderPackedOrdersList();
+  updateDispatchOrderSelect();
+  renderDispatchCompletedLog();
+}
+function renderPackedOrdersList(){
+  const el=document.getElementById('dispatch-packed-list');
+  if(!el){console.log('ERROR: dispatch-packed-list element not found');return;}
+  const packed=history.filter(h=>h.type==='packed');
+  console.log('renderPackedOrdersList called');
+  console.log('Total history items:', history.length);
+  console.log('Packed orders found:', packed.length);
+  console.log('Packed orders data:', packed);
+  el.innerHTML=packed.length?packed.slice(-8).reverse().map(p=>{
+    const itemCount=(p.items&&p.items.length)?p.items.length:0;
+    return `<div class="hist-entry" onclick="selectDispatchOrder('${p.id}')" style="cursor:pointer"><div class="hist-head"><span class="hist-id">${p.id}</span><span class="pill p-info">Awaiting AWB</span></div><div class="hist-body">${p.ts} · Order: ${p.orderId} · ${itemCount} SKUs</div></div>`;
+  }).join(''):'<div class="empty">No packed orders yet — create and pack orders first</div>';
+}
+function filterDispatchOrders(){
+  const q=(document.getElementById('disp-search-order').value||'').toLowerCase();
+  const sel=document.getElementById('disp-order-select');
+  const packed=history.filter(h=>h.type==='packed');
+  if(!q){
+    sel.innerHTML=`<option value="">— Choose an order —</option>${packed.map(p=>{
+      const itemCount=(p.items&&p.items.length)?p.items.length:0;
+      return `<option value="${p.id}">${p.orderId} · ${itemCount} SKU(s) · ${p.ts}</option>`;
+    }).join('')}`;
+  }else{
+    const filtered=packed.filter(p=>p.orderId.toLowerCase().includes(q)||p.id.toLowerCase().includes(q));
+    sel.innerHTML=`<option value="">— Choose an order —</option>${filtered.map(p=>{
+      const itemCount=(p.items&&p.items.length)?p.items.length:0;
+      return `<option value="${p.id}">${p.orderId} · ${itemCount} SKU(s) · ${p.ts}</option>`;
+    }).join('')}`;
+  }
+}
+function updateDispatchOrderSelect(){
+  const sel=document.getElementById('disp-order-select');
+  if(!sel)return;
+  const packed=history.filter(h=>h.type==='packed');
+  sel.innerHTML=`<option value="">— Choose an order —</option>${packed.map(p=>{
+    const itemCount=(p.items&&p.items.length)?p.items.length:0;
+    return `<option value="${p.id}">${p.orderId} · ${itemCount} SKU(s) · ${p.ts}</option>`;
+  }).join('')}`;
+}
+function selectDispatchOrder(pkdId){
+  document.getElementById('disp-order-select').value=pkdId;
+  loadDispatchOrder();
+}
+function loadDispatchOrder(){
+  const pkdId=document.getElementById('disp-order-select').value;
+  if(!pkdId){document.getElementById('disp-order-detail').style.display='none';return;}
+  const packed=history.find(h=>h.id===pkdId);
+  if(!packed){toast('Order not found','w');return;}
+  const detail=document.getElementById('disp-detail-content');
+  const items=packed.items||[];
+  const totalUnits=items.reduce((a,i)=>a+(i.qty||0),0);
+  detail.innerHTML=`
+    <div style="font-size:11px;line-height:1.8">
+      <div style="margin-bottom:6px"><span style="color:var(--t2)">Order ID:</span> <span style="font-weight:600">${packed.orderId}</span></div>
+      <div style="margin-bottom:6px"><span style="color:var(--t2)">Items:</span> ${items.length?items.map(i=>`<span class="mono">${i.sku}</span>`).join(', '):'—'}</div>
+      <div style="color:var(--t2)">Total units: <span style="font-weight:600">${totalUnits}</span></div>
+    </div>
+  `;
+  document.getElementById('disp-order-detail').style.display='block';
+  document.getElementById('disp-recip-name').value='';
+  document.getElementById('disp-address').value='';
+  document.getElementById('disp-pincode').value='';
+  document.getElementById('disp-phone').value='';
+  document.getElementById('disp-shipping').value='Standard Road';
+  document.getElementById('disp-awb').value='';
+}
+function confirmCourierDispatch(){
+  const pkdId=document.getElementById('disp-order-select').value;
+  const name=document.getElementById('disp-recip-name').value.trim();
+  const addr=document.getElementById('disp-address').value.trim();
+  const pin=document.getElementById('disp-pincode').value.trim();
+  const phone=document.getElementById('disp-phone').value.trim();
+  const shipping=document.getElementById('disp-shipping').value;
+  const awb=document.getElementById('disp-awb').value.trim();
+  if(!pkdId||!name||!addr||!pin||!phone||!awb){toast('Please fill all fields including courier AWB number','w');return;}
+  const packed=history.find(h=>h.id===pkdId);
+  const items=packed.items||[];
+  const did=newId('DSP');
+  // Mark packed order as dispatched by changing its type
+  packed.type='dispatched';
+  packed.dispatchedAt=ts();
+  packed.awb=awb;
+  packed.recipientName=name;
+  packed.address=addr;
+  packed.pincode=pin;
+  packed.phone=phone;
+  packed.shippingMethod=shipping;
+  // Add dispatch record
+  history.push({id:did,type:'dispatch',ts:ts(),detail:`AWB: ${awb} · To: ${name}, ${pin} · Shipping: ${shipping} · Phone: ${phone} · ${items.length} SKUs`,packedId:pkdId});
+  saveHist();
+  renderDispatchPage();
+  document.getElementById('disp-search-order').value='';
+  toast(`Dispatch ${did} confirmed · AWB ${awb} assigned to ${name}`,'s');
+}
+function renderDispatchCompletedLog(){
+  const el=document.getElementById('disp-dispatch-log');
+  if(!el)return;
+  const dispatched=history.filter(h=>h.type==='dispatched');
+  el.innerHTML=dispatched.length?dispatched.slice(-8).reverse().map(d=>`<div class="hist-entry"><div class="hist-head"><span class="hist-id">${d.id}</span><span class="pill p-ok">Dispatched</span></div><div class="hist-body"><div style="margin-bottom:4px"><span style="font-weight:600">${d.orderId}</span> · AWB: <span class="mono">${d.awb}</span></div><div style="font-size:10px;color:var(--t2);line-height:1.6">To: ${d.recipientName}, ${d.pincode} · ${d.shippingMethod} · ${d.dispatchedAt}</div></div></div>`).join(''):'<div class="empty">No dispatches completed yet</div>';
+}
+
+// ANALYTICS & COMPLIANCE
+function renderAnalytics(){
+  renderKPICards();
+  renderAlertsPanel();
+  renderABCAnalysis();
+  renderLowStockList();
+  renderPerformanceMetrics();
+  renderCycleTimes();
+  renderComplianceLog();
+}
+function renderKPICards(){
+  const el=document.getElementById('kpi-cards');
+  if(!el)return;
+  const grns=history.filter(h=>h.type==='grn').length;
+  const picks=history.filter(h=>h.type==='pick').length;
+  const packed=history.filter(h=>h.type==='packed').length;
+  const dispatched=history.filter(h=>h.type==='dispatched').length;
+  const returns=history.filter(h=>h.type==='return').length;
+  const exceptions=history.filter(h=>h.type==='exception').length;
+  const totalSku=SKUS.length;
+  const inStock=SKUS.filter(s=>(inv[s.sku]||{qty:0}).qty>0).length;
+  const lowStock=SKUS.filter(s=>(inv[s.sku]||{qty:0}).qty<=3&&(inv[s.sku]||{qty:0}).qty>0).length;
+  const outStock=SKUS.filter(s=>!(inv[s.sku])||inv[s.sku].qty<=0).length;
+  el.innerHTML=`
+    <div class="sc"><div class="sl"><i class="ti ti-package-import"></i>GRNs Created</div><div class="sv">${grns}</div></div>
+    <div class="sc"><div class="sl"><i class="ti ti-scan"></i>Pick Tasks</div><div class="sv">${picks}</div></div>
+    <div class="sc"><div class="sl"><i class="ti ti-box"></i>Orders Packed</div><div class="sv">${packed}</div></div>
+    <div class="sc"><div class="sl"><i class="ti ti-truck-delivery"></i>Dispatched</div><div class="sv">${dispatched}</div></div>
+    <div class="sc"><div class="sl"><i class="ti ti-package-export"></i>Returns</div><div class="sv">${returns}</div></div>
+    <div class="sc"><div class="sl" style="color:var(--dt)"><i class="ti ti-alert-circle"></i>Exceptions</div><div class="sv" style="color:var(--dt)">${exceptions}</div></div>
+    <div class="sc"><div class="sl"><i class="ti ti-check"></i>In Stock</div><div class="sv">${inStock}/${totalSku}</div></div>
+    <div class="sc"><div class="sl" style="color:var(--wt)"><i class="ti ti-alert-triangle"></i>Low/Out</div><div class="sv" style="color:var(--wt)">${lowStock+outStock}</div></div>
+  `;
+}
+function renderAlertsPanel(){
+  const el=document.getElementById('alerts-panel');
+  if(!el)return;
+  const alerts=[];
+  const lowStock=SKUS.filter(s=>(inv[s.sku]||{qty:0}).qty<=3&&(inv[s.sku]||{qty:0}).qty>0);
+  const outStock=SKUS.filter(s=>!(inv[s.sku])||inv[s.sku].qty<=0);
+  const exceptions=history.filter(h=>h.type==='exception').slice(-5);
+  lowStock.forEach(s=>alerts.push({type:'low',msg:`${s.sub} (${s.sku}): ${(inv[s.sku]||{qty:0}).qty} units left`}));
+  outStock.slice(0,3).forEach(s=>alerts.push({type:'out',msg:`${s.sub} (${s.sku}): OUT OF STOCK`}));
+  exceptions.forEach(e=>alerts.push({type:'exc',msg:`Exception: ${e.detail}`}));
+  el.innerHTML=alerts.length?alerts.map(a=>`<div class="warn-box" style="background:${a.type==='out'?'var(--dbg)':a.type==='exc'?'var(--wbg)':'var(--sbg)'};color:${a.type==='out'?'var(--dt)':a.type==='exc'?'var(--wt)':'var(--st)'}"><i class="ti ${a.type==='out'?'ti-x':a.type==='exc'?'ti-alert-triangle':'ti-alert-circle'}"></i>${a.msg}</div>`).join(''):'<div class="empty">No alerts — all systems operational ✓</div>';
+}
+function renderABCAnalysis(){
+  const el=document.getElementById('abc-analysis');
+  if(!el)return;
+  const analysis=[];
+  const totQty=SKUS.reduce((a,s)=>a+(inv[s.sku]||{qty:0}).qty,0);
+  SKUS.forEach(s=>{
+    const qty=(inv[s.sku]||{qty:0}).qty;
+    const pct=((qty/totQty)*100);
+    s.abcPct=pct;
+    analysis.push(s);
+  });
+  analysis.sort((a,b)=>b.abcPct-a.abcPct);
+  const a=analysis.slice(0,Math.ceil(analysis.length*0.2));
+  const b=analysis.slice(Math.ceil(analysis.length*0.2),Math.ceil(analysis.length*0.5));
+  const c=analysis.slice(Math.ceil(analysis.length*0.5));
+  el.innerHTML=`
+    <div style="margin-bottom:8px;font-size:11px">
+      <div style="margin-bottom:6px;padding:8px;background:var(--sbg);border-radius:6px"><span style="font-weight:600;color:var(--st)">A Items (High value) — ${a.length} SKUs · ${a.reduce((x,s)=>x+(inv[s.sku]||{qty:0}).qty,0)} units</span><div style="font-size:10px;color:var(--st);margin-top:3px">High-priority stock, frequent movement</div></div>
+      <div style="margin-bottom:6px;padding:8px;background:var(--wbg);border-radius:6px"><span style="font-weight:600;color:var(--wt)">B Items (Medium value) — ${b.length} SKUs · ${b.reduce((x,s)=>x+(inv[s.sku]||{qty:0}).qty,0)} units</span><div style="font-size:10px;color:var(--wt);margin-top:3px">Standard inventory management</div></div>
+      <div style="padding:8px;background:var(--ibg);border-radius:6px"><span style="font-weight:600;color:var(--it)">C Items (Low value) — ${c.length} SKUs · ${c.reduce((x,s)=>x+(inv[s.sku]||{qty:0}).qty,0)} units</span><div style="font-size:10px;color:var(--it);margin-top:3px">Slow-moving, periodic review</div></div>
+    </div>
+  `;
+}
+function renderLowStockList(){
+  const el=document.getElementById('low-stock-list');
+  if(!el)return;
+  const low=SKUS.filter(s=>{const q=(inv[s.sku]||{qty:0}).qty;return q<=3&&q>0;});
+  const out=SKUS.filter(s=>!(inv[s.sku])||inv[s.sku].qty<=0);
+  const reorder=[...low,...out].slice(0,8);
+  el.innerHTML=reorder.length?`<div class="tw"><table style="font-size:11px"><thead><tr><th>SKU</th><th>Item</th><th>Current</th><th>Status</th></tr></thead><tbody>${reorder.map(s=>{const q=(inv[s.sku]||{qty:0}).qty;return `<tr><td class="mono">${s.sku}</td><td>${s.sub}</td><td>${q}</td><td>${q<=0?'<span class="pill p-out">Reorder</span>':'<span class="pill p-low">Low</span>'}</td></tr>`;}).join('')}</tbody></table></div>`:'<div class="empty">All items well-stocked ✓</div>';
+}
+function renderPerformanceMetrics(){
+  const el=document.getElementById('performance-metrics');
+  if(!el)return;
+  const picks=history.filter(h=>h.type==='pick');
+  const errors=history.filter(h=>h.type==='exception'&&h.category==='pick_error');
+  const accuracy=picks.length?Math.round(((picks.length-errors.length)/picks.length)*100):0;
+  el.innerHTML=`
+    <div style="font-size:11px;line-height:1.8">
+      <div style="margin-bottom:8px;padding:8px;background:var(--s2);border-radius:6px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="color:var(--t2)">Pick Accuracy</span><span style="font-weight:600;color:var(--st)">${accuracy}%</span></div>
+        <div style="height:6px;background:var(--b);border-radius:3px;overflow:hidden"><div style="height:100%;width:${accuracy}%;background:var(--st);border-radius:3px"></div></div>
+      </div>
+      <div style="padding:8px;background:var(--s2);border-radius:6px;font-size:10px;color:var(--t2)">
+        <div style="margin-bottom:3px"><span style="color:var(--t)">Total Picks:</span> ${picks.length}</div>
+        <div><span style="color:var(--t)">Errors:</span> ${errors.length}</div>
+      </div>
+    </div>
+  `;
+}
+function renderCycleTimes(){
+  const el=document.getElementById('cycle-times');
+  if(!el)return;
+  const grns=history.filter(h=>h.type==='grn');
+  const picks=history.filter(h=>h.type==='pick');
+  const packed=history.filter(h=>h.type==='packed');
+  el.innerHTML=`
+    <div style="font-size:11px;line-height:2">
+      <div><span style="color:var(--t2)">Receiving (Inbound):</span> <span style="font-weight:600">~2-4 hrs</span></div>
+      <div><span style="color:var(--t2)">Pick TAT:</span> <span style="font-weight:600">~15 min/order</span></div>
+      <div><span style="color:var(--t2)">Pack TAT:</span> <span style="font-weight:600">~10 min/order</span></div>
+      <div><span style="color:var(--t2)">Total (GRN to Dispatch):</span> <span style="font-weight:600">~3-5 days</span></div>
+      <div style="margin-top:8px;font-size:10px;color:var(--t2)">Based on ${grns.length} inbound · ${picks.length} picks · ${packed.length} packs</div>
+    </div>
+  `;
+}
+function renderComplianceLog(){
+  const el=document.getElementById('compliance-log');
+  if(!el)return;
+  const exceptions=history.filter(h=>h.type==='exception').slice(-10);
+  el.innerHTML=exceptions.length?`<div>${exceptions.reverse().map(e=>`<div class="hist-entry"><div class="hist-head"><span class="hist-id">${e.id}</span><span class="pill p-out">${e.category}</span></div><div class="hist-body"><div style="font-size:11px">${e.detail}</div><div style="font-size:10px;color:var(--t2);margin-top:3px">${e.ts} · GRN: ${e.grn||'—'}</div></div></div>`).join('')}</div>`:'<div class="empty">No exceptions recorded ✓</div>';
+}
+
+// FINANCE & CAPACITY
+function renderFinance(){
+  renderCostSummary();
+  renderCostPerOp();
+  renderWarehouseUtil();
+  renderBinEfficiency();
+  renderRackAUtil();
+  renderRackBUtil();
+  renderCostInputs();
+  renderCapacityAlerts();
+}
+function renderCostSummary(){
+  const el=document.getElementById('cost-summary');
+  if(!el)return;
+  const grns=history.filter(h=>h.type==='grn').length;
+  const picks=history.filter(h=>h.type==='pick').length;
+  const packs=history.filter(h=>h.type==='packed').length;
+  const returns=history.filter(h=>h.type==='return').length;
+  const totalCost=(grns*costParams.receivingCostPerGrn)+(picks*costParams.pickCostPerOrder)+(packs*costParams.packCostPerOrder)+(returns*costParams.returnProcessingCost);
+  const totalSku=SKUS.length;
+  const storageCost=totalSku*costParams.storageCostPerSku;
+  const totalWithStorage=totalCost+storageCost;
+  const dispatches=history.filter(h=>h.type==='dispatched').length;
+  const dispatchRevenue=dispatches*costParams.dispatchCostPerOrder;
+  const roi=dispatchRevenue>0?Math.round(((dispatchRevenue-totalWithStorage)/totalWithStorage)*100):0;
+  el.innerHTML=`
+    <div style="font-size:11px;line-height:2;margin-bottom:8px">
+      <div style="padding:8px;background:var(--s2);border-radius:6px;margin-bottom:6px">
+        <div><span style="color:var(--t2)">Operations cost:</span> <span style="font-weight:600">₹${totalCost}</span></div>
+        <div><span style="color:var(--t2)">Storage cost (${totalSku} SKUs):</span> <span style="font-weight:600">₹${storageCost}</span></div>
+        <div style="border-top:0.5px solid var(--b);padding-top:6px;margin-top:6px"><span style="color:var(--t2)">Total cost:</span> <span style="font-weight:600;font-size:13px">₹${totalWithStorage}</span></div>
+      </div>
+      <div style="padding:8px;background:var(--sbg);border-radius:6px">
+        <div><span style="color:var(--st)">Dispatch revenue:</span> <span style="font-weight:600;color:var(--st)">₹${dispatchRevenue}</span></div>
+        <div><span style="color:var(--st)">ROI:</span> <span style="font-weight:600;color:var(--st);font-size:13px">${roi}%</span></div>
+      </div>
+    </div>
+  `;
+}
+function renderCostPerOp(){
+  const el=document.getElementById('cost-per-op');
+  if(!el)return;
+  el.innerHTML=`
+    <div style="font-size:11px;line-height:2">
+      <div style="padding:8px;background:var(--s2);border-radius:6px;margin-bottom:6px">
+        <div><span style="color:var(--t2)">Receiving (per GRN):</span> <span style="font-weight:600">₹${costParams.receivingCostPerGrn}</span></div>
+        <div><span style="color:var(--t2)">Picking (per order):</span> <span style="font-weight:600">₹${costParams.pickCostPerOrder}</span></div>
+        <div><span style="color:var(--t2)">Packing (per order):</span> <span style="font-weight:600">₹${costParams.packCostPerOrder}</span></div>
+        <div><span style="color:var(--t2)">Dispatch (per order):</span> <span style="font-weight:600">₹${costParams.dispatchCostPerOrder}</span></div>
+        <div style="border-top:0.5px solid var(--b);padding-top:6px;margin-top:6px"><span style="color:var(--t2)">Return processing:</span> <span style="font-weight:600">₹${costParams.returnProcessingCost}</span></div>
+      </div>
+      <div style="font-size:10px;color:var(--t3);padding:6px;background:var(--s3);border-radius:4px">Edit values in "Cost input parameters" section below</div>
+    </div>
+  `;
+}
+function renderWarehouseUtil(){
+  const el=document.getElementById('warehouse-util');
+  if(!el)return;
+  const rackA=11,rackB=5;
+  const totalShelf=rackA+rackB;
+  const occupiedA=SKUS.filter(s=>s.rack==='A'&&(inv[s.sku]||{qty:0}).qty>0).length;
+  const occupiedB=SKUS.filter(s=>s.rack==='B'&&(inv[s.sku]||{qty:0}).qty>0).length;
+  const totalOccupied=occupiedA+occupiedB;
+  const utilPct=Math.round((totalOccupied/totalShelf)*100);
+  const capCat=utilPct>=80?'High':utilPct>=50?'Medium':'Low';
+  el.innerHTML=`
+    <div style="font-size:11px">
+      <div style="margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+          <span style="color:var(--t2)">Warehouse occupancy</span>
+          <span style="font-weight:600">${utilPct}%</span>
+        </div>
+        <div style="height:8px;background:var(--b);border-radius:4px;overflow:hidden">
+          <div style="height:100%;width:${utilPct}%;background:${utilPct>=80?'var(--dt)':utilPct>=50?'var(--wt)':'var(--st)'};border-radius:4px"></div>
+        </div>
+      </div>
+      <div style="padding:8px;background:var(--s2);border-radius:6px;font-size:10px;color:var(--t2)">
+        <div>Rack A (11 shelves): ${occupiedA} occupied</div>
+        <div>Rack B (5 shelves): ${occupiedB} occupied</div>
+        <div style="margin-top:4px;padding-top:4px;border-top:0.5px solid var(--b)">Capacity: <span style="font-weight:600">${capCat}</span></div>
+      </div>
+    </div>
+  `;
+}
+function renderBinEfficiency(){
+  const el=document.getElementById('bin-efficiency');
+  if(!el)return;
+  const totalSku=SKUS.length;
+  const skuWithStock=SKUS.filter(s=>(inv[s.sku]||{qty:0}).qty>0).length;
+  const avgUnitsPerSku=totalSku>0?Math.round(SKUS.reduce((a,s)=>a+(inv[s.sku]||{qty:0}).qty,0)/totalSku):0;
+  const utilRate=Math.round((skuWithStock/totalSku)*100);
+  el.innerHTML=`
+    <div style="font-size:11px;padding:8px;background:var(--s2);border-radius:6px;line-height:2">
+      <div><span style="color:var(--t2)">Total SKUs:</span> <span style="font-weight:600">${totalSku}</span></div>
+      <div><span style="color:var(--t2)">SKUs with stock:</span> <span style="font-weight:600">${skuWithStock}</span></div>
+      <div><span style="color:var(--t2)">Utilization rate:</span> <span style="font-weight:600">${utilRate}%</span></div>
+      <div><span style="color:var(--t2)">Avg units/SKU:</span> <span style="font-weight:600">${avgUnitsPerSku}</span></div>
+      <div style="margin-top:6px;padding-top:6px;border-top:0.5px solid var(--b);font-size:10px;color:var(--t2)">
+        ${utilRate>=70?'✓ Efficient bin usage':'⚠ Optimize bin placement'}
+      </div>
+    </div>
+  `;
+}
+function renderRackAUtil(){
+  const el=document.getElementById('rack-a-util');
+  if(!el)return;
+  const shelves={};
+  for(let i=1;i<=11;i++)shelves[i]={total:0,occupied:0};
+  SKUS.filter(s=>s.rack==='A').forEach(s=>{
+    const shelf=parseInt(s.shelf);
+    shelves[shelf].total++;
+    if((inv[s.sku]||{qty:0}).qty>0)shelves[shelf].occupied++;
+  });
+  let html='';
+  for(let i=1;i<=11;i++){
+    const pct=shelves[i].total>0?Math.round((shelves[i].occupied/shelves[i].total)*100):0;
+    html+=`<div style="display:grid;grid-template-columns:40px 1fr 50px;gap:6px;align-items:center;margin-bottom:6px;font-size:11px">
+      <span style="font-weight:600;color:var(--t2)">A${i}</span>
+      <div style="height:6px;background:var(--b);border-radius:3px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--st);border-radius:3px"></div></div>
+      <span style="text-align:right;color:var(--t2)">${shelves[i].occupied}/${shelves[i].total}</span>
+    </div>`;
+  }
+  el.innerHTML=html;
+}
+function renderRackBUtil(){
+  const el=document.getElementById('rack-b-util');
+  if(!el)return;
+  const shelves={};
+  for(let i=1;i<=5;i++)shelves[i]={total:0,occupied:0};
+  SKUS.filter(s=>s.rack==='B').forEach(s=>{
+    const shelf=parseInt(s.shelf);
+    shelves[shelf].total++;
+    if((inv[s.sku]||{qty:0}).qty>0)shelves[shelf].occupied++;
+  });
+  let html='';
+  for(let i=1;i<=5;i++){
+    const pct=shelves[i].total>0?Math.round((shelves[i].occupied/shelves[i].total)*100):0;
+    html+=`<div style="display:grid;grid-template-columns:40px 1fr 50px;gap:6px;align-items:center;margin-bottom:6px;font-size:11px">
+      <span style="font-weight:600;color:var(--t2)">B${i}</span>
+      <div style="height:6px;background:var(--b);border-radius:3px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--st);border-radius:3px"></div></div>
+      <span style="text-align:right;color:var(--t2)">${shelves[i].occupied}/${shelves[i].total}</span>
+    </div>`;
+  }
+  el.innerHTML=html;
+}
+function renderCostInputs(){
+  const el=document.getElementById('cost-inputs');
+  if(!el)return;
+  el.innerHTML=`
+    <div style="font-size:11px;display:grid;gap:8px">
+      <div><label style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Receiving cost/GRN (₹)</label><input type="number" id="cost-grn" value="${costParams.receivingCostPerGrn}" onchange="updateCost('receivingCostPerGrn',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
+      <div><label style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Pick cost/order (₹)</label><input type="number" id="cost-pick" value="${costParams.pickCostPerOrder}" onchange="updateCost('pickCostPerOrder',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
+      <div><label style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Pack cost/order (₹)</label><input type="number" id="cost-pack" value="${costParams.packCostPerOrder}" onchange="updateCost('packCostPerOrder',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
+      <div><label style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Dispatch revenue/order (₹)</label><input type="number" id="cost-dispatch" value="${costParams.dispatchCostPerOrder}" onchange="updateCost('dispatchCostPerOrder',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
+      <div><label style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Storage cost/SKU/month (₹)</label><input type="number" id="cost-storage" value="${costParams.storageCostPerSku}" onchange="updateCost('storageCostPerSku',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
+      <div><label style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Return processing (₹)</label><input type="number" id="cost-return" value="${costParams.returnProcessingCost}" onchange="updateCost('returnProcessingCost',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
+      <button onclick="renderFinance()" style="width:100%;padding:8px;background:var(--gold);color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:11px">Recalculate</button>
+    </div>
+  `;
+}
+function updateCost(param,val){
+  costParams[param]=parseInt(val)||0;
+  renderFinance();
+  toast(`Updated ${param}`,'s');
+}
+function renderCapacityAlerts(){
+  const el=document.getElementById('capacity-alerts');
+  if(!el)return;
+  const alerts=[];
+  const rackA=11,rackB=5;
+  const totalShelf=rackA+rackB;
+  const occupiedA=SKUS.filter(s=>s.rack==='A'&&(inv[s.sku]||{qty:0}).qty>0).length;
+  const occupiedB=SKUS.filter(s=>s.rack==='B'&&(inv[s.sku]||{qty:0}).qty>0).length;
+  const utilPct=Math.round(((occupiedA+occupiedB)/totalShelf)*100);
+  if(utilPct>=80)alerts.push({type:'high',msg:'⚠️ Warehouse at 80%+ capacity — consider offloading or reorganizing'});
+  if(occupiedA===rackA)alerts.push({type:'high',msg:'🔴 Rack A is FULL — no space for new items'});
+  if(occupiedB===rackB)alerts.push({type:'high',msg:'🔴 Rack B is FULL — no space for new items'});
+  const lowStock=SKUS.filter(s=>(inv[s.sku]||{qty:0}).qty<=3&&(inv[s.sku]||{qty:0}).qty>0).length;
+  if(lowStock>5)alerts.push({type:'warn',msg:`⚠️ ${lowStock} SKUs at low stock — prioritize reordering`});
+  el.innerHTML=alerts.length?alerts.map(a=>`<div class="warn-box" style="background:${a.type==='high'?'var(--dbg)':'var(--wbg)'};color:${a.type==='high'?'var(--dt)':'var(--wt)'}"><i class="ti ti-alert-triangle"></i>${a.msg}</div>`).join(''):'<div class="empty">All capacity metrics normal ✓</div>';
+}
+
+function addRtItem(){
+  const sku=document.getElementById('rt-sku').value;
+  const grade=document.getElementById('rt-grade').value;
+  const qty=parseInt(document.getElementById('rt-qty').value)||1;
+  const s=SKUS.find(x=>x.sku===sku);
+  rtItemsList.push({sku,name:s.sub,variant:s.variant,grade,qty});
+  renderRtItemsList();
+}
+function renderRtItemsList(){
+  const el=document.getElementById('rt-items-list');
+  el.innerHTML=rtItemsList.length?`<div class="tw"><table><thead><tr><th>SKU</th><th>Item</th><th>Grade</th><th>Qty</th><th></th></tr></thead><tbody>${rtItemsList.map((item,i)=>`<tr><td class="mono">${item.sku}</td><td style="font-size:11px">${item.name} — ${item.variant}</td><td><span class="pill p-g${item.grade}">Grade ${item.grade}</span></td><td>${item.qty}</td><td><button class="btn-sm btn-danger" onclick="removeRtItem(${i})"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table></div>`:'';
+}
+function removeRtItem(i){rtItemsList.splice(i,1);renderRtItemsList();}
+function processReturn(){
+  if(!rtItemsList.length){toast('Add at least one item to process','w');return;}
+  const awb=document.getElementById('rt-awb').value.trim();
+  if(!awb){toast('Enter AWB / tracking number','w');return;}
+  const rtype=document.getElementById('rt-type').value;
+  rtItemsList.forEach(item=>{
+    if(item.grade==='A'){
+      if(!inv[item.sku])inv[item.sku]={qty:0,rack:SKUS.find(s=>s.sku===item.sku).rack,shelf:SKUS.find(s=>s.sku===item.sku).shelf};
+      inv[item.sku].qty+=item.qty;
+    }
+  });
+  const gradeA=rtItemsList.filter(i=>i.grade==='A').reduce((a,i)=>a+i.qty,0);
+  const gradeB=rtItemsList.filter(i=>i.grade==='B').reduce((a,i)=>a+i.qty,0);
+  const gradeC=rtItemsList.filter(i=>i.grade==='C').reduce((a,i)=>a+i.qty,0);
+  const rid=newId('RET');
+  history.push({id:rid,type:'return',ts:ts(),detail:`AWB: ${awb} · ${rtype} · Grade A:${gradeA} B:${gradeB} C:${gradeC} · ${gradeA} units restocked`});
+  saveInv();saveHist();rtItemsList=[];renderRtItemsList();renderRtLog();
+  document.getElementById('rt-awb').value='';document.getElementById('rt-orderid').value='';
+  toast(`Return ${rid} processed · ${gradeA} Grade-A units restocked to inventory`,'s');
+}
+function renderRtLog(){
+  const el=document.getElementById('rt-log');
+  const logs=history.filter(h=>h.type==='return').slice(-8).reverse();
+  el.innerHTML=logs.length?logs.map(h=>`<div class="hist-entry"><div class="hist-head"><span class="hist-id">${h.id}</span><span class="hist-ts">${h.ts}</span></div><div class="hist-body">${h.detail}</div></div>`).join(''):'<div class="empty">No returns processed yet</div>';
+}
+
+// INVENTORY
+function renderInv(){
+  const q=(document.getElementById('inv-q').value||'').toLowerCase();
+  const cat=document.getElementById('inv-cat').value;
+  const st=document.getElementById('inv-st').value;
+  const rows=SKUS.filter(s=>{
+    if(cat&&s.cat!==cat)return false;
+    const qty=(inv[s.sku]||{qty:0}).qty;
+    if(st&&getSt(qty)!==st)return false;
+    if(q&&!(s.sku.toLowerCase().includes(q)||s.sub.toLowerCase().includes(q)||s.variant.toLowerCase().includes(q)))return false;
+    return true;
+  });
+  document.getElementById('inv-tbody').innerHTML=rows.map(s=>{
+    const i2=inv[s.sku]||{qty:0,rack:s.rack,shelf:s.shelf};
+    return`<tr><td class="mono">${s.sku}</td><td><span class="pill p-info">${s.cat}</span></td><td style="font-weight:600;font-size:12px">${s.sub}</td><td style="color:var(--t2);font-size:11px">${s.variant}</td><td style="font-size:11px;font-weight:500">${i2.rack}-${i2.shelf}</td>
+    <td><div class="qc"><button class="qb" onclick="adjQ('${s.sku}',-1)">−</button><span class="qv">${i2.qty}</span><button class="qb" onclick="adjQ('${s.sku}',1)">+</button></div></td>
+    <td>${stPill(i2.qty)}</td>
+    <td><button class="btn-sm" onclick="quickDisp('${s.sku}','${s.sub.replace(/'/g,"\\'").replace(/"/g,'&quot;')}','${s.variant.replace(/'/g,"\\'")}',${i2.qty})" ${i2.qty<=0?'disabled':''}><i class="ti ti-send"></i></button></td></tr>`;
+  }).join('');
+  document.getElementById('inv-ct').textContent=`Showing ${rows.length} of ${SKUS.length} SKUs`;
+}
+function adjQ(sku,d){
+  if(!inv[sku])inv[sku]={qty:0,rack:SKUS.find(s=>s.sku===sku).rack,shelf:SKUS.find(s=>s.sku===sku).shelf};
+  inv[sku].qty=Math.max(0,inv[sku].qty+d);
+  saveInv();renderInv();
+}
+function quickDisp(sku,name,variant,avail){addToCart(sku,name,variant,avail);nav('dispatch');}
+function exportCSV(){
+  const rows=[['SKU','Category','Item','Variant','Rack','Shelf','Qty','Status']];
+  SKUS.forEach(s=>{const i2=inv[s.sku]||{qty:0,rack:s.rack,shelf:s.shelf};rows.push([s.sku,s.cat,s.sub,s.variant,i2.rack,i2.shelf,i2.qty,getSt(i2.qty)]);});
+  const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n'));a.download='CaratLane_Inventory_'+new Date().toISOString().slice(0,10)+'.csv';a.click();
+  toast('CSV exported successfully','s');
+}
+
+// RACK VIEW
+function renderRack(){
+  const rA={},rB={};
+  SKUS.forEach(s=>{const qty=(inv[s.sku]||{qty:0}).qty;if(s.rack==='A'){if(!rA[s.shelf])rA[s.shelf]=[];rA[s.shelf].push({...s,qty});}else{if(!rB[s.shelf])rB[s.shelf]=[];rB[s.shelf].push({...s,qty});}});
+  buildRack(rA,'rack-a');buildRack(rB,'rack-b');
+}
+function buildRack(data,elId){
+  const keys=Object.keys(data).sort((a,b)=>+a-+b);
+  const mid=Math.ceil(keys.length/2);
+  document.getElementById(elId).innerHTML=[keys.slice(0,mid),keys.slice(mid)].map((col,ci)=>`<div class="rack-card"><div class="rack-head"><span style="font-size:12px;font-weight:600">Bay ${ci+1}</span><span style="font-size:10px;color:var(--t2)">${col.length} shelves</span></div>${col.map(sh=>{const items=data[sh];const tot=items.reduce((a,i)=>a+i.qty,0);const mx=items.length*10;const pct=Math.min(100,Math.round(tot/mx*100));const bc=pct===0?'bar-out':pct<30?'bar-low':'bar-ok';const lbl=items[0].sub.replace(/ - .*/,'').replace(/- .*/,'').trim();return`<div class="rack-row"><span class="shelf-l">S${sh}</span><div><div style="font-size:11px;font-weight:600;margin-bottom:3px">${lbl}</div><div class="bar-bg"><div class="bar-f ${bc}" style="width:${pct}%"></div></div></div><span class="qty-r">${tot}u</span></div>`;}).join('')}</div>`).join('');
+}
+
+// REPORTS
+function renderReports(){
+  const grns=history.filter(h=>h.type==='grn');
+  const disps=history.filter(h=>h.type==='dispatch');
+  const rets=history.filter(h=>h.type==='return');
+  const low=SKUS.filter(s=>inv[s.sku]&&getSt(inv[s.sku].qty)==='low').length;
+  const out=SKUS.filter(s=>!inv[s.sku]||inv[s.sku].qty<=0).length;
+  document.getElementById('rpt-inbound').innerHTML=`<div class="sc" style="margin-bottom:8px"><div class="sl">GRNs raised</div><div class="sv">${grns.length}</div></div>${grns.slice(-4).reverse().map(h=>`<div class="hist-entry"><div class="hist-head"><span class="hist-id">${h.id}</span><span class="hist-ts">${h.ts}</span></div><div class="hist-body">${h.detail}</div></div>`).join('')||'<div class="empty">No inbound records yet</div>'}`;
+  document.getElementById('rpt-outbound').innerHTML=`<div class="sc" style="margin-bottom:8px"><div class="sl">Dispatches</div><div class="sv">${disps.length}</div></div>${disps.slice(-4).reverse().map(h=>`<div class="hist-entry"><div class="hist-head"><span class="hist-id">${h.id}</span><span class="hist-ts">${h.ts}</span></div><div class="hist-body">${h.detail}</div></div>`).join('')||'<div class="empty">No dispatch records yet</div>'}`;
+  document.getElementById('rpt-returns').innerHTML=`<div class="sc" style="margin-bottom:8px"><div class="sl">Returns processed</div><div class="sv">${rets.length}</div></div>${rets.slice(-4).reverse().map(h=>`<div class="hist-entry"><div class="hist-head"><span class="hist-id">${h.id}</span><span class="hist-ts">${h.ts}</span></div><div class="hist-body">${h.detail}</div></div>`).join('')||'<div class="empty">No return records yet</div>'}`;
+  document.getElementById('rpt-exceptions').innerHTML=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div class="sc"><div class="sl"><i class="ti ti-alert-triangle"></i>Low stock SKUs</div><div class="sv" style="color:var(--wt)">${low}</div><div class="ss">≤3 units remaining</div></div><div class="sc"><div class="sl"><i class="ti ti-x"></i>Out of stock</div><div class="sv" style="color:var(--dt)">${out}</div><div class="ss">Zero inventory</div></div></div>`;
+}
+
+// SOP TOGGLE
+function toggleSop(el){
+  const body=el.nextElementSibling;
+  const chev=el.querySelector('.chevron');
+  body.classList.toggle('open');
+  chev.classList.toggle('open');
+}
+
+// TOAST
+let toastTimer;
+function toast(msg,type='s'){
+  const el=document.getElementById('toast');
+  el.textContent=msg;el.className='show '+type;
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>{el.className='';},3500);
+}
+
+// INIT
+initInv();
+loadHist();
+renderDash();
+renderInv();
+renderRack();
+renderReports();
+renderAnalytics();
+renderFinance();
+// Pre-populate SKU dropdowns
+populateSkuSel('ib-sku');
+filterSkuList('ib-sku-search','ib-sku');
+</script>
+</body>
+</html>
