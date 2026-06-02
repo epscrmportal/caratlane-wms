@@ -958,7 +958,278 @@ function createGRN(){
 function renderIbLog(){
   const el=document.getElementById('ib-log');
   const logs=history.filter(h=>h.type==='grn').slice(-10).reverse();
-  el.innerHTML=logs.length?logs.map(h=>`<div class="hist-entry"><div class="hist-head"><span class="hist-id">${h.id}</span><span class="hist-ts">${h.ts}</span></div><div class="hist-body">${h.detail}</div></div>`).join(''):'<div class="empty">No GRNs created yet</div>';
+  el.innerHTML=logs.length?logs.map(h=>`<div class="hist-entry"><div class="hist-head"><span class="hist-id">${h.id}</span><span class="hist-ts">${h.ts}</span><button onclick="printGRN('${h.id}')" style="background:none;border:none;cursor:pointer;color:var(--t2);font-size:11px;padding:4px 8px;border-radius:3px;transition:all 0.2s" onmouseover="this.style.background='var(--s2)';this.style.color='var(--t)'" onmouseout="this.style.background='transparent';this.style.color='var(--t2)'"><i class="ti ti-printer"></i>Print</button></span></div><div class="hist-body">${h.detail}</div></div>`).join(''):'<div class="empty">No GRNs created yet</div>';
+}
+
+function printGRN(grnId){
+  const grn=history.find(h=>h.id===grnId&&h.type==='grn');
+  if(!grn){toast('GRN not found','w');return;}
+  const items=grn.items||[];
+  const pass=items.filter(i=>i.qc==='PASS').reduce((a,i)=>a+i.qty,0);
+  const hold=items.filter(i=>i.qc==='HOLD').reduce((a,i)=>a+i.qty,0);
+  const reject=items.filter(i=>i.qc==='REJECT').reduce((a,i)=>a+i.qty,0);
+  
+  const printWindow=window.open('','GRN_'+grnId,'width=900,height=1000');
+  if(!printWindow){toast('Please allow popups to print GRN','w');return;}
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>GRN ${grnId}</title>
+      <style>
+        body{font-family:Arial,sans-serif;margin:20px;line-height:1.6;color:#333}
+        .header{border-bottom:3px solid #000;padding-bottom:15px;margin-bottom:20px}
+        .company{font-size:20px;font-weight:bold;margin-bottom:5px}
+        .subtitle{font-size:12px;color:#666;margin-bottom:15px}
+        .grn-title{font-size:24px;font-weight:bold;margin:20px 0}
+        .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px}
+        .info-box{border:1px solid #ddd;padding:10px;border-radius:4px}
+        .info-label{font-weight:bold;font-size:12px;color:#666;text-transform:uppercase}
+        .info-value{font-size:14px;font-weight:bold;margin-top:5px}
+        table{width:100%;border-collapse:collapse;margin:20px 0}
+        th{background:#f0f0f0;padding:10px;text-align:left;border:1px solid #ddd;font-weight:bold;font-size:12px}
+        td{padding:10px;border:1px solid #ddd;font-size:12px}
+        .total-row{background:#f9f9f9;font-weight:bold}
+        .signature-area{margin-top:40px;display:grid;grid-template-columns:1fr 1fr;gap:40px}
+        .signature-box{text-align:center;border-top:1px solid #000;padding-top:10px;margin-top:30px}
+        .footer{margin-top:30px;border-top:1px solid #ddd;padding-top:15px;font-size:10px;color:#999;text-align:center}
+        @media print{
+          body{margin:0;padding:10mm}
+          .no-print{display:none}
+        }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <div class="company">CaratLane WMS</div>
+        <div class="subtitle">EPS Worldwide Integrated Logistics, Mumbai</div>
+      </div>
+      
+      <div class="grn-title">Goods Receipt Note (GRN)</div>
+      
+      <div class="info-grid">
+        <div class="info-box">
+          <div class="info-label">GRN Number</div>
+          <div class="info-value">${grnId}</div>
+        </div>
+        <div class="info-box">
+          <div class="info-label">Date & Time</div>
+          <div class="info-value">${grn.ts}</div>
+        </div>
+        <div class="info-box">
+          <div class="info-label">ASN/PO Number</div>
+          <div class="info-value">${grn.detail.includes('ASN:')?grn.detail.split('ASN: ')[1].split(' ·')[0]:'N/A'}</div>
+        </div>
+        <div class="info-box">
+          <div class="info-label">Total SKUs</div>
+          <div class="info-value">${items.length}</div>
+        </div>
+      </div>
+      
+      <h3 style="margin-top:20px;border-bottom:2px solid #000;padding-bottom:10px">Received Items</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>SKU Code</th>
+            <th>Item Name</th>
+            <th>Variant</th>
+            <th>QC Result</th>
+            <th>Issue</th>
+            <th>Qty</th>
+            <th>Bin Location</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items.map(i=>`<tr>
+            <td>${i.sku}</td>
+            <td>${i.name}</td>
+            <td>${i.variant}</td>
+            <td style="font-weight:bold;color:${i.qc==='PASS'?'green':i.qc==='HOLD'?'orange':'red'}">${i.qc}</td>
+            <td>${i.issue||'—'}</td>
+            <td style="text-align:center">${i.qty}</td>
+            <td>${i.bin}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+      
+      <table>
+        <tr class="total-row">
+          <td colspan="5" style="text-align:right">PASS (Accepted):</td>
+          <td style="text-align:center">${pass}</td>
+          <td></td>
+        </tr>
+        <tr class="total-row">
+          <td colspan="5" style="text-align:right">HOLD (Pending):</td>
+          <td style="text-align:center">${hold}</td>
+          <td></td>
+        </tr>
+        <tr class="total-row">
+          <td colspan="5" style="text-align:right">REJECT (Return):</td>
+          <td style="text-align:center">${reject}</td>
+          <td></td>
+        </tr>
+      </table>
+      
+      <div class="signature-area">
+        <div class="signature-box">
+          <span>Received By (Signature)</span>
+        </div>
+        <div class="signature-box">
+          <span>Verified By (Signature)</span>
+        </div>
+      </div>
+      
+      <div class="footer">
+        <p>This GRN was generated by CaratLane WMS on ${new Date().toLocaleString()}</p>
+        <p style="margin-top:10px">SOP Reference: EPS-WH-SOP-001 v1.0 | Section 1: Inbound Receiving</p>
+      </div>
+    </body>
+    </html>
+  `);
+  printWindow.document.close();
+  printWindow.focus();
+  setTimeout(()=>printWindow.print(),500);
+}
+
+function printDispatch(dispatchId){
+  const dispatch=history.find(h=>h.id===dispatchId&&h.type==='dispatched');
+  if(!dispatch){toast('Dispatch not found','w');return;}
+  const items=dispatch.items||[];
+  
+  const printWindow=window.open('','DISPATCH_'+dispatchId,'width=900,height=1000');
+  if(!printWindow){toast('Please allow popups to print dispatch','w');return;}
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Dispatch ${dispatchId}</title>
+      <style>
+        body{font-family:Arial,sans-serif;margin:20px;line-height:1.6;color:#333}
+        .header{border-bottom:3px solid #000;padding-bottom:15px;margin-bottom:20px}
+        .company{font-size:20px;font-weight:bold;margin-bottom:5px}
+        .subtitle{font-size:12px;color:#666;margin-bottom:15px}
+        .dispatch-title{font-size:24px;font-weight:bold;margin:20px 0}
+        .awb-box{background:#f0f0f0;padding:15px;border-radius:4px;margin:20px 0;text-align:center}
+        .awb-label{font-size:12px;color:#666;font-weight:bold;text-transform:uppercase}
+        .awb-number{font-size:28px;font-weight:bold;font-family:monospace;margin-top:10px}
+        .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px}
+        .info-box{border:1px solid #ddd;padding:10px;border-radius:4px}
+        .info-label{font-weight:bold;font-size:12px;color:#666;text-transform:uppercase}
+        .info-value{font-size:14px;font-weight:bold;margin-top:5px}
+        .address-box{border:1px solid #ddd;padding:15px;border-radius:4px;margin:20px 0;background:#f9f9f9}
+        .address-title{font-weight:bold;font-size:12px;margin-bottom:8px}
+        .address-content{font-size:13px;line-height:1.8}
+        table{width:100%;border-collapse:collapse;margin:20px 0}
+        th{background:#f0f0f0;padding:10px;text-align:left;border:1px solid #ddd;font-weight:bold;font-size:12px}
+        td{padding:10px;border:1px solid #ddd;font-size:12px}
+        .total-row{background:#f9f9f9;font-weight:bold}
+        .signature-area{margin-top:40px;display:grid;grid-template-columns:1fr 1fr;gap:40px}
+        .signature-box{text-align:center;border-top:1px solid #000;padding-top:10px;margin-top:30px}
+        .footer{margin-top:30px;border-top:1px solid #ddd;padding-top:15px;font-size:10px;color:#999;text-align:center}
+        @media print{
+          body{margin:0;padding:10mm}
+        }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <div class="company">CaratLane WMS</div>
+        <div class="subtitle">EPS Worldwide Integrated Logistics, Mumbai</div>
+      </div>
+      
+      <div class="dispatch-title">Dispatch Note</div>
+      
+      <div class="awb-box">
+        <div class="awb-label">Air Waybill / Tracking Number</div>
+        <div class="awb-number">${dispatch.awb}</div>
+      </div>
+      
+      <div class="info-grid">
+        <div class="info-box">
+          <div class="info-label">Dispatch ID</div>
+          <div class="info-value">${dispatchId}</div>
+        </div>
+        <div class="info-box">
+          <div class="info-label">Order ID</div>
+          <div class="info-value">${dispatch.orderId}</div>
+        </div>
+        <div class="info-box">
+          <div class="info-label">Dispatch Date & Time</div>
+          <div class="info-value">${dispatch.dispatchedAt}</div>
+        </div>
+        <div class="info-box">
+          <div class="info-label">Shipping Method</div>
+          <div class="info-value">${dispatch.shippingMethod}</div>
+        </div>
+      </div>
+      
+      <div class="address-box">
+        <div class="address-title">Recipient Address</div>
+        <div class="address-content">
+          <strong>${dispatch.recipientName}</strong><br>
+          ${dispatch.address}<br>
+          <strong>Pincode:</strong> ${dispatch.pincode}<br>
+          <strong>Phone:</strong> ${dispatch.phone}
+        </div>
+      </div>
+      
+      <h3 style="margin-top:20px;border-bottom:2px solid #000;padding-bottom:10px">Shipped Items</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>SKU Code</th>
+            <th>Item Name</th>
+            <th>Variant</th>
+            <th>Qty</th>
+            <th>Bin Location</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items.map(i=>`<tr>
+            <td>${i.sku}</td>
+            <td>${i.name}</td>
+            <td>${i.variant}</td>
+            <td style="text-align:center">${i.qty}</td>
+            <td>${i.bin}</td>
+          </tr>`).join('')}
+          <tr class="total-row">
+            <td colspan="3" style="text-align:right">Total Items:</td>
+            <td style="text-align:center">${items.reduce((a,i)=>a+i.qty,0)}</td>
+            <td></td>
+          </tr>
+        </tbody>
+      </table>
+      
+      <div class="info-grid">
+        <div class="info-box">
+          <div class="info-label">Total SKUs</div>
+          <div class="info-value">${items.length}</div>
+        </div>
+        <div class="info-box">
+          <div class="info-label">Total Units</div>
+          <div class="info-value">${items.reduce((a,i)=>a+i.qty,0)}</div>
+        </div>
+      </div>
+      
+      <div class="signature-area">
+        <div class="signature-box">
+          <span>Dispatched By (Signature)</span>
+        </div>
+        <div class="signature-box">
+          <span>Verified By (Signature)</span>
+        </div>
+      </div>
+      
+      <div class="footer">
+        <p>This Dispatch Note was generated by CaratLane WMS on ${new Date().toLocaleString()}</p>
+        <p style="margin-top:10px">SOP Reference: EPS-WH-SOP-001 v1.0 | Section 3: Packing & Dispatch</p>
+      </div>
+    </body>
+    </html>
+  `);
+  printWindow.document.close();
+  printWindow.focus();
+  setTimeout(()=>printWindow.print(),500);
 }
 
 // PICKING
@@ -1126,7 +1397,7 @@ function renderDispatchCompletedLog(){
   const el=document.getElementById('disp-dispatch-log');
   if(!el)return;
   const dispatched=history.filter(h=>h.type==='dispatched');
-  el.innerHTML=dispatched.length?dispatched.slice(-8).reverse().map(d=>`<div class="hist-entry"><div class="hist-head"><span class="hist-id">${d.id}</span><span class="pill p-ok">Dispatched</span></div><div class="hist-body"><div style="margin-bottom:4px"><span style="font-weight:600">${d.orderId}</span> · AWB: <span class="mono">${d.awb}</span></div><div style="font-size:10px;color:var(--t2);line-height:1.6">To: ${d.recipientName}, ${d.pincode} · ${d.shippingMethod} · ${d.dispatchedAt}</div></div></div>`).join(''):'<div class="empty">No dispatches completed yet</div>';
+  el.innerHTML=dispatched.length?dispatched.slice(-8).reverse().map(d=>`<div class="hist-entry"><div class="hist-head"><span class="hist-id">${d.id}</span><span class="pill p-ok">Dispatched</span><button onclick="printDispatch('${d.id}')" style="background:none;border:none;cursor:pointer;color:var(--t2);font-size:11px;padding:4px 8px;border-radius:3px;transition:all 0.2s" onmouseover="this.style.background='var(--s2)';this.style.color='var(--t)'" onmouseout="this.style.background='transparent';this.style.color='var(--t2)'"><i class="ti ti-printer"></i>Print</button></span></div><div class="hist-body"><div style="margin-bottom:4px"><span style="font-weight:600">${d.orderId}</span> · AWB: <span class="mono">${d.awb}</span></div><div style="font-size:10px;color:var(--t2);line-height:1.6">To: ${d.recipientName}, ${d.pincode} · ${d.shippingMethod} · ${d.dispatchedAt}</div></div></div>`).join(''):'<div class="empty">No dispatches completed yet</div>';
 }
 
 // ANALYTICS & COMPLIANCE
@@ -1731,8 +2002,8 @@ function runFullSystemTest(){
   console.log('🎉 System is fully operational and all modules are linked!');
 }
 
-// Run test
-runFullSystemTest();
+// Run test (comment out to disable auto-execution)
+// runFullSystemTest();
 initInv();
 loadHist();
 renderDash();
