@@ -1964,8 +1964,15 @@ function filterCountList(){
 }
 
 function updateCountSummary(){
+  // Safe element getter with null check
+  const getEl=id=>document.getElementById(id);
+  const setEl=(id,val)=>{const el=getEl(id);if(el)el.textContent=val;};
+  const setHTML=(id,val)=>{const el=getEl(id);if(el)el.innerHTML=val;};
+  const setStyle=(id,prop,val)=>{const el=getEl(id);if(el)el.style[prop]=val;};
+  const setDisplay=(id,val)=>{const el=getEl(id);if(el)el.style.display=val;};
+  
   if(!currentCount.counts){
-    document.getElementById('ic-summary').innerHTML='<div class="empty">No count in progress</div>';
+    setHTML('ic-summary','<div class="empty">No count in progress</div>');
     return;
   }
   
@@ -1984,26 +1991,27 @@ function updateCountSummary(){
   const progressPct=Math.round((counted/SKUS.length)*100);
   
   // Update progress bar
-  document.getElementById('ic-counted').textContent=counted+' / '+SKUS.length;
-  document.getElementById('ic-progress-pct').textContent=progressPct+'%';
-  document.getElementById('ic-progress-bar').style.width=progressPct+'%';
+  setEl('ic-counted',counted+' / '+SKUS.length);
+  setEl('ic-progress-pct',progressPct+'%');
+  setStyle('ic-progress-bar','width',progressPct+'%');
   
   // Update summary metrics
-  document.getElementById('ic-total-system').textContent=totalSystem;
-  document.getElementById('ic-total-physical').textContent=totalPhysical;
-  document.getElementById('ic-total-variance').textContent=(totalVariance>0?'+':'')+totalVariance;
-  document.getElementById('ic-variance-pct').textContent=(variancePct>0?'+':'')+variancePct+'%';
-  document.getElementById('ic-metric-counted').textContent=counted;
-  document.getElementById('ic-metric-disc').textContent=discrepancies.length;
-  document.getElementById('ic-metric-accuracy').textContent=accuracy+'%';
-  document.getElementById('ic-metric-high').textContent=highVariance.length;
+  setEl('ic-total-system',totalSystem);
+  setEl('ic-total-physical',totalPhysical);
+  setEl('ic-total-variance',(totalVariance>0?'+':'')+totalVariance);
+  setEl('ic-variance-pct',(variancePct>0?'+':'')+variancePct+'%');
+  setEl('ic-metric-counted',counted);
+  setEl('ic-metric-disc',discrepancies.length);
+  setEl('ic-metric-accuracy',accuracy+'%');
+  setEl('ic-metric-high',highVariance.length);
   
   // Show discrepancies section
   if(discrepancies.length>0){
-    document.getElementById('ic-discrepancies-section').style.display='block';
+    setDisplay('ic-discrepancies-section','block');
     const discList=Object.keys(currentCount.counts).filter(k=>currentCount.counts[k].physicalQty!==currentCount.counts[k].systemQty).map(sku=>{
       const count=currentCount.counts[sku];
       const item=SKUS.find(s=>s.sku===sku);
+      if(!item)return '';
       const variance=count.physicalQty-count.systemQty;
       const type=variance>0?'📈 EXCESS':'📉 SHORTAGE';
       const pct=count.systemQty>0?Math.round((variance/count.systemQty)*100):0;
@@ -2013,11 +2021,11 @@ function updateCountSummary(){
         <div style="text-align:right;white-space:nowrap"><span class="pill ${variance>0?'p-low':'p-out'}" style="font-size:9px">${type} ${variance>0?'+':''}${variance} (${pct>0?'+':''}${pct}%)</span></div>
       </div>`;
     }).join('');
-    document.getElementById('ic-discrepancies-list').innerHTML=discList;
+    setHTML('ic-discrepancies-list',discList);
   }
   
   // Rack analysis
-  document.getElementById('ic-rack-analysis').style.display='block';
+  setDisplay('ic-rack-analysis','block');
   const rackAData=SKUS.filter(s=>s.rack==='A').map(s=>currentCount.counts[s.sku]);
   const rackBData=SKUS.filter(s=>s.rack==='B').map(s=>currentCount.counts[s.sku]);
   const rackASystem=rackAData.reduce((a,c)=>a+c.systemQty,0);
@@ -2025,22 +2033,22 @@ function updateCountSummary(){
   const rackBSystem=rackBData.reduce((a,c)=>a+c.systemQty,0);
   const rackBPhysical=rackBData.reduce((a,c)=>a+c.physicalQty,0);
   
-  document.getElementById('ic-rack-a-stats').innerHTML=`
+  setHTML('ic-rack-a-stats',`
     <div><span style="color:var(--t2)">System Qty:</span> <strong>${rackASystem}</strong></div>
     <div><span style="color:var(--t2)">Physical Qty:</span> <strong>${rackAPhysical}</strong></div>
     <div><span style="color:var(--t2)">Variance:</span> <strong style="color:${rackAPhysical-rackASystem===0?'var(--st)':rackAPhysical-rackASystem>0?'var(--wt)':'var(--dt)'}">${(rackAPhysical-rackASystem)>0?'+':''}${rackAPhysical-rackASystem}</strong></div>
-  `;
+  `);
   
-  document.getElementById('ic-rack-b-stats').innerHTML=`
+  setHTML('ic-rack-b-stats',`
     <div><span style="color:var(--t2)">System Qty:</span> <strong>${rackBSystem}</strong></div>
     <div><span style="color:var(--t2)">Physical Qty:</span> <strong>${rackBPhysical}</strong></div>
     <div><span style="color:var(--t2)">Variance:</span> <strong style="color:${rackBPhysical-rackBSystem===0?'var(--st)':rackBPhysical-rackBSystem>0?'var(--wt)':'var(--dt)'}">${(rackBPhysical-rackBSystem)>0?'+':''}${rackBPhysical-rackBSystem}</strong></div>
-  `;
+  `);
   
   // Movement analysis
-  document.getElementById('ic-movement-section').style.display='block';
+  setDisplay('ic-movement-section','block');
   const movementDetail=`<div><strong>Why the variance?</strong> This shows inbound (GRN) and outbound (Dispatch) movements to explain the difference.</div>`;
-  document.getElementById('ic-movement-detail').innerHTML=movementDetail;
+  setHTML('ic-movement-detail',movementDetail);
 }
 
 function completeInventoryCount(){
@@ -2243,18 +2251,24 @@ function filterCountList(){
 
 function renderCountHistory(){
   const el=document.getElementById('ic-history');
+  if(!el)return;
   if(!inventoryCounts||inventoryCounts.length===0){
     el.innerHTML='<div style="color:var(--t2);font-size:11px">No previous counts recorded</div>';
     return;
   }
-  el.innerHTML=inventoryCounts.slice().reverse().map(count=>`<div style="padding:8px;background:var(--s2);border-radius:4px;margin-bottom:6px;font-size:10px">
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:4px">
-      <div><span style="color:var(--t2)">Month:</span> <strong>${count.month}</strong></div>
-      <div><span style="color:var(--t2)">Type:</span> <strong>${count.type}</strong></div>
-      <div><span style="color:var(--t2)">Counted By:</span> <strong>${count.counter}</strong></div>
-      <div><span style="color:var(--t2)">Accuracy:</span> <strong style="color:${(1-(Object.values(count.counts).filter(c=>c.physicalQty!==c.systemQty).length/SKUS.length))*100>=95?'var(--st)':'var(--wt)'}">${Math.round((1-(Object.values(count.counts).filter(c=>c.physicalQty!==c.systemQty).length/SKUS.length))*100)}%</strong></div>
-    </div>
-  </div>`).join('');
+  el.innerHTML=inventoryCounts.slice().reverse().map(count=>{
+    const discrepancies=Object.values(count.counts||{}).filter(c=>c.physicalQty!==c.systemQty);
+    const accuracy=Math.round((1-(discrepancies.length/SKUS.length))*100);
+    const accuracyColor=accuracy>=95?'var(--st)':'var(--wt)';
+    return `<div style="padding:8px;background:var(--s2);border-radius:4px;margin-bottom:6px;font-size:10px">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:4px">
+        <div><span style="color:var(--t2)">Month:</span> <strong>${count.month}</strong></div>
+        <div><span style="color:var(--t2)">Type:</span> <strong>${count.type||'full'}</strong></div>
+        <div><span style="color:var(--t2)">Counted By:</span> <strong>${count.counter||'N/A'}</strong></div>
+        <div><span style="color:var(--t2)">Accuracy:</span> <strong style="color:${accuracyColor}">${accuracy}%</strong></div>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function downloadCountReport(){
