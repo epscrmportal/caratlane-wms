@@ -2450,44 +2450,60 @@ function downloadAllReports(){
   const picks=history.filter(h=>h.type==='pick');
   masterCSV+='\n═══ PICKING REPORT ═══\nPick ID,Date,Order ID,Priority,Method,Picker,SKU Count\n';
   picks.forEach(p=>{
-    masterCSV+=`"${p.id}","${p.ts}","${p.detail.split(' · ')[0]}","${p.detail.includes('Priority')?'High':'Standard'}","${p.detail.includes('Batch')?'Batch':'Single'}","${p.detail.split('Picker: ')[1]||'N/A'}","${p.detail.split(' SKUs')[0].split('·').pop().trim()}"\n`;
+    const parts=p.detail.split(' · ');
+    const orderId=parts[0]||'N/A';
+    const hasBatch=p.detail.includes('Batch');
+    const priority=p.detail.includes('Express')?'Express':'Standard';
+    const pickerMatch=p.detail.match(/Picker: ([^\s]+)/);
+    const picker=pickerMatch?pickerMatch[1]:'N/A';
+    const skuMatch=p.detail.match(/(\d+)\s+SKUs/);
+    const skuCount=skuMatch?skuMatch[1]:0;
+    masterCSV+=`"${p.id}","${p.ts}","${orderId}","${priority}","${hasBatch?'Batch':'Single'}","${picker}","${skuCount}"\n`;
   });
   
   // PACKS
   const packs=history.filter(h=>h.type==='packed');
   masterCSV+='\n═══ PACKING REPORT ═══\nPack ID,Date,Order ID,SKU Count,Status\n';
   packs.forEach(pk=>{
-    masterCSV+=`"${pk.id}","${pk.ts}","${pk.orderId}",${pk.items.length},"Packed"\n`;
+    masterCSV+=`"${pk.id}","${pk.ts}","${pk.orderId||'N/A'}",${pk.items?pk.items.length:0},"Packed"\n`;
   });
   
   // DISPATCH
   const dispatches=history.filter(h=>h.type==='dispatched');
   masterCSV+='\n═══ DISPATCH REPORT ═══\nDispatch ID,Date,Order ID,AWB,Customer,Pincode,Shipping Method,Units\n';
   dispatches.forEach(d=>{
-    const qty=d.items.reduce((a,i)=>a+i.qty,0);
-    masterCSV+=`"${d.id}","${d.dispatchedAt}","${d.orderId}","${d.awb}","${d.recipientName}","${d.pincode}","${d.shippingMethod}",${qty}\n`;
+    const qty=d.items?d.items.reduce((a,i)=>a+i.qty,0):0;
+    masterCSV+=`"${d.id}","${d.dispatchedAt||d.ts}","${d.orderId||'N/A'}","${d.awb||'N/A'}","${d.recipientName||'N/A'}","${d.pincode||'N/A'}","${d.shippingMethod||'N/A'}",${qty}\n`;
   });
   
   // RETURNS
   const returns=history.filter(h=>h.type==='return');
   masterCSV+='\n═══ RETURNS REPORT ═══\nReturn ID,Date,AWB,Type,Grade A,Grade B,Grade C\n';
   returns.forEach(r=>{
-    const a=r.detail.split('Grade A:')[1].split(' ')[0]||0;
-    const b=r.detail.split('Grade B:')[1].split(' ')[0]||0;
-    const c=r.detail.split('Grade C:')[1].split(' ')[0]||0;
-    masterCSV+=`"${r.id}","${r.ts}","${r.detail.split('AWB: ')[1].split(' ')[0]}","${r.detail.split('· ')[1].split(' ')[0]}",${a},${b},${c}\n`;
+    let a=0,b=0,c=0;
+    try{
+      const aPart=r.detail.split('Grade A:')[1];
+      if(aPart)a=parseInt(aPart.split(/[^0-9]/)[0])||0;
+      const bPart=r.detail.split('Grade B:')[1];
+      if(bPart)b=parseInt(bPart.split(/[^0-9]/)[0])||0;
+      const cPart=r.detail.split('Grade C:')[1];
+      if(cPart)c=parseInt(cPart.split(/[^0-9]/)[0])||0;
+    }catch(e){}
+    const awbMatch=r.detail.match(/AWB: ([^\s·]+)/);
+    const awb=awbMatch?awbMatch[1]:'N/A';
+    masterCSV+=`"${r.id}","${r.ts}","${awb}","Return",${a},${b},${c}\n`;
   });
   
   // EXCEPTIONS
   const exceptions=history.filter(h=>h.type==='exception');
   masterCSV+='\n═══ EXCEPTION REPORT ═══\nException ID,Date,Category,Detail,GRN Reference\n';
   exceptions.forEach(e=>{
-    masterCSV+=`"${e.id}","${e.ts}","${e.category}","${e.detail.replace(/"/g,'')}","${e.grn||'N/A'}"\n`;
+    masterCSV+=`"${e.id}","${e.ts}","${e.category||'N/A'}","${(e.detail||'').replace(/"/g,'')}","${e.grn||'N/A'}"\n`;
   });
   
   // SUMMARY
-  const totalUnits=grns.reduce((a,g)=>a+g.items.reduce((b,i)=>b+i.qty,0),0);
-  const passUnits=grns.reduce((a,g)=>a+g.items.filter(i=>i.qc==='PASS').reduce((b,i)=>b+i.qty,0),0);
+  const totalUnits=grns.reduce((a,g)=>a+(g.items?g.items.reduce((b,i)=>b+(i.qty||0),0):0),0);
+  const passUnits=grns.reduce((a,g)=>a+(g.items?g.items.filter(i=>i.qc==='PASS').reduce((b,i)=>b+(i.qty||0),0):0),0);
   masterCSV+='\n═══ SUMMARY METRICS ═══\nMetric,Value\nTotal GRNs,'+grns.length+'\nTotal Pick Tasks,'+picks.length+'\nTotal Packs,'+packs.length+'\nTotal Dispatches,'+dispatches.length+'\nTotal Returns,'+returns.length+'\nTotal Exceptions,'+exceptions.length+'\nTotal Units Received,'+totalUnits+'\nUnits Passed QC,'+passUnits+'\n';
   
   downloadCSV(`CaratLane_WMS_Complete_Report_${new Date().toISOString().split('T')[0]}.csv`,masterCSV);
