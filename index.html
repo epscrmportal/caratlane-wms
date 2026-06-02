@@ -1830,11 +1830,30 @@ function completeInventoryCount(){
   
   currentCount.status='completed';
   currentCount.completedTs=ts();
+  
+  // Calculate movements for each SKU
+  currentCount.movements={};
+  Object.keys(currentCount.counts).forEach(sku=>{
+    const count=currentCount.counts[sku];
+    const variance=count.physicalQty-count.systemQty;
+    const grnItems=history.filter(h=>h.type==='grn').flatMap(g=>g.items.filter(i=>i.sku===sku)).reduce((a,i)=>a+i.qty,0);
+    const pickItems=history.filter(h=>h.type==='pick').reduce((a,h)=>a+(h.detail.includes(sku)?1:0),0);
+    const dispatchItems=history.filter(h=>h.type==='dispatched').flatMap(d=>d.items).filter(i=>i.sku===sku).reduce((a,i)=>a+i.qty,0);
+    const returnItems=history.filter(h=>h.type==='return').reduce((a,h)=>a+(h.detail.includes(sku)?1:0),0);
+    currentCount.movements[sku]={grnInbound:grnItems,pickOutbound:pickItems,dispatchOutbound:dispatchItems,returnInbound:returnItems,netMovement:grnItems-dispatchItems+returnItems};
+  });
+  
   inventoryCounts.push({...currentCount});
   localStorage.setItem('cl_wms_counts',JSON.stringify(inventoryCounts));
+  
+  const completedMonth=currentCount.month;
+  const completedCounter=currentCount.counter;
+  
   toast('Inventory count completed and saved!','s');
   currentCount={};
   document.getElementById('ic-status').textContent='Not Started';
+  document.getElementById('ic-month-display').textContent='—';
+  document.getElementById('ic-counter-display').textContent='—';
   renderCountList();
 }
 
@@ -2019,32 +2038,44 @@ function downloadCountReport(){
   csv+=`Accuracy,${Math.round((1-(discrepancies.length/SKUS.length))*100)}%\n\n`;
   
   csv+='Full Count Details\n';
-  csv+='SKU Code,Item Name,Variant,System Qty,Physical Qty,Variance,Status\n';
+  csv+='SKU Code,Item Name,Variant,System Qty,Physical Qty,Variance,Inbound GRN,Outbound Dispatch,Returns Inbound,Net Movement,Status\n';
   Object.keys(currentCount.counts).forEach(sku=>{
     const count=currentCount.counts[sku];
     const item=SKUS.find(s=>s.sku===sku);
     const variance=count.physicalQty-count.systemQty;
     const status=variance===0?'MATCH':variance>0?'EXCESS':'SHORTAGE';
-    csv+=`"${sku}","${item.sub}","${item.variant}",${count.systemQty},${count.physicalQty},${variance>0?'+':''}${variance},"${status}"\n`;
+    const movements=currentCount.movements?currentCount.movements[sku]:{grnInbound:0,dispatchOutbound:0,returnInbound:0,netMovement:0};
+    csv+=`"${sku}","${item.sub}","${item.variant}",${count.systemQty},${count.physicalQty},${variance>0?'+':''}${variance},"${status}",${movements.grnInbound||0},${movements.dispatchOutbound||0},${movements.returnInbound||0},${movements.netMovement||0}\n`;
   });
   
-  if(discrepancies.length>0){
-    csv+='\n\nDISCREPANCIES ONLY\n';
-    csv+='SKU Code,Item Name,System Qty,Physical Qty,Variance,Type\n';
-    Object.keys(currentCount.counts).forEach(sku=>{
-      const count=currentCount.counts[sku];
-      if(count.physicalQty!==count.systemQty){
-        const item=SKUS.find(s=>s.sku===sku);
-        const variance=count.physicalQty-count.systemQty;
-        const type=variance>0?'EXCESS':'SHORTAGE';
-        csv+=`"${sku}","${item.sub}",${count.systemQty},${count.physicalQty},${variance>0?'+':''}${variance},"${type}"\n`;
-      }
-    });
-  }
+  csv+='\n\nDISCREPANCY ANALYSIS (Why the variance?)\n';
+  csv+='SKU Code,Item Name,System Qty,Physical Qty,Variance,Expected (based on movements),Unexplained Loss/Gain,Analysis\n';
+  Object.keys(currentCount.counts).forEach(sku=>{
+    const count=currentCount.counts[sku];
+    const item=SKUS.find(s=>s.sku===sku);
+    const variance=count.physicalQty-count.systemQty;
+    const movements=currentCount.movements?currentCount.movements[sku]:{grnInbound:0,dispatchOutbound:0,returnInbound:0,netMovement:0};
+    const expectedQty=count.systemQty+movements.netMovement;
+    const unexplained=count.physicalQty-expectedQty;
+    if(unexplained!==0){
+      const analysis=unexplained>0?'Excess (possible data entry error or undocumented receipt)':'Shortage (possible theft, damage not recorded, or documentation error)';
+      csv+=`"${sku}","${item.sub}",${count.systemQty},${count.physicalQty},${variance>0?'+':''}${variance},${expectedQty},${unexplained>0?'+':''}${unexplained},"${analysis}"\n`;
+    }
+  });
+  
+  csv+='\n\nMOVEMENT SUMMARY (Transaction History)\n';
+  csv+='SKU Code,GRN Inbound,Pick/Dispatch Outbound,Returns Inbound,Net Movement,Expected System Qty\n';
+  Object.keys(currentCount.counts).forEach(sku=>{
+    const count=currentCount.counts[sku];
+    const movements=currentCount.movements?currentCount.movements[sku]:{grnInbound:0,dispatchOutbound:0,returnInbound:0,netMovement:0};
+    const expectedQty=count.systemQty+movements.netMovement;
+    csv+=`"${sku}",${movements.grnInbound||0},${movements.dispatchOutbound||0},${movements.returnInbound||0},${movements.netMovement||0},${expectedQty}\n`;
+  });
   
   csv+='\n\nSignatures\n';
   csv+=`Counted By,${currentCount.counter}\n`;
   csv+=`Verified By,${currentCount.verifier}\n`;
+  csv+=`Date,${currentCount.completedTs||'In Progress'}\n`;
   
   const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
   const link=document.createElement('a');
@@ -2096,6 +2127,19 @@ function printCountReport(){
         const item=SKUS.find(s=>s.sku===sku);
         const variance=d.physicalQty-d.systemQty;
         return `<tr><td>${sku}</td><td>${item.sub}</td><td>${d.systemQty}</td><td>${d.physicalQty}</td><td class="${variance>0?'variance-pos':'variance-neg'}">${variance>0?'+':''}${variance}</td></tr>`;
+      }).join('')}
+    </tbody></table>
+    <h3>Movement Analysis (Understanding the Variance)</h3>
+    <p style="font-size:12px;color:#666;margin-bottom:10px">This shows how much inventory came in (GRN) and went out (Dispatch) to explain the variance</p>
+    <table><thead><tr><th>SKU</th><th>GRN Inbound</th><th>Dispatch Outbound</th><th>Returns</th><th>Net Movement</th><th>Expected Qty</th><th>Actual Qty</th><th>Unexplained</th></tr></thead><tbody>
+      ${Object.keys(currentCount.counts).filter(sku=>currentCount.movements&&currentCount.movements[sku]).map(sku=>{
+        const count=currentCount.counts[sku];
+        const movements=currentCount.movements[sku];
+        const expectedQty=count.systemQty+movements.netMovement;
+        const unexplained=count.physicalQty-expectedQty;
+        if(unexplained!==0){
+          return `<tr><td>${sku}</td><td>${movements.grnInbound||0}</td><td>${movements.dispatchOutbound||0}</td><td>${movements.returnInbound||0}</td><td>${movements.netMovement}</td><td>${expectedQty}</td><td>${count.physicalQty}</td><td class="${unexplained>0?'variance-pos':'variance-neg'}">${unexplained>0?'+':''}${unexplained}</td></tr>`;
+        }
       }).join('')}
     </tbody></table>
     <div style="margin-top:40px;padding-top:20px;border-top:1px solid #ddd">
