@@ -721,55 +721,166 @@ tr:hover td{background:var(--s2)}
 
 <!-- ═══ INVENTORY COUNT & AUDIT ═══ -->
 <div id="page-invcount" class="page">
+  <!-- SETUP & CONFIG -->
   <div class="fg2" style="margin-bottom:12px">
     <div>
-      <div class="stitle">Monthly Inventory Count</div>
-      <div style="padding:12px;background:var(--s2);border-radius:6px;margin-bottom:12px">
+      <div class="stitle">Count Configuration</div>
+      <div style="padding:12px;background:var(--s2);border-radius:6px;margin-bottom:12px;font-size:11px">
         <div style="margin-bottom:8px">
-          <label style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px">Count Month & Year</label>
-          <input type="month" id="ic-month" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px">
+          <label style="color:var(--t2);display:block;margin-bottom:3px;font-weight:600">Count Type</label>
+          <select id="ic-type" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px;font-size:11px">
+            <option value="full">Full Physical Count (All 84 SKUs)</option>
+            <option value="cycle">Cycle Count (Specific SKUs only)</option>
+            <option value="reconcile">Reconciliation Count (Compare System vs Physical)</option>
+          </select>
         </div>
         <div style="margin-bottom:8px">
-          <label style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px">Counted By (Employee Name)</label>
-          <input type="text" id="ic-counter" placeholder="e.g. Rajesh Kumar" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px">
+          <label style="color:var(--t2);display:block;margin-bottom:3px;font-weight:600">Count Month & Year</label>
+          <input type="month" id="ic-month" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px;font-size:11px">
         </div>
         <div style="margin-bottom:8px">
-          <label style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px">Verified By (Manager Name)</label>
-          <input type="text" id="ic-verifier" placeholder="e.g. Priya Singh" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px">
+          <label style="color:var(--t2);display:block;margin-bottom:3px;font-weight:600">Count Date (Today)</label>
+          <input type="date" id="ic-date" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px;font-size:11px">
         </div>
-        <button onclick="startInventoryCount()" style="width:100%;padding:8px;background:var(--st);color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:11px;margin-top:8px">Start New Count</button>
+        <div style="margin-bottom:8px">
+          <label style="color:var(--t2);display:block;margin-bottom:3px;font-weight:600">Counted By (Employee)</label>
+          <input type="text" id="ic-counter" placeholder="e.g. Rajesh Kumar" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px;font-size:11px">
+        </div>
+        <div style="margin-bottom:8px">
+          <label style="color:var(--t2);display:block;margin-bottom:3px;font-weight:600">Verified By (Manager)</label>
+          <input type="text" id="ic-verifier" placeholder="e.g. Priya Singh" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px;font-size:11px">
+        </div>
+        <div style="margin-bottom:8px">
+          <label style="color:var(--t2);display:block;margin-bottom:3px;font-weight:600">Reason for Count</label>
+          <select id="ic-reason" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px;font-size:11px">
+            <option value="monthly">Monthly Audit</option>
+            <option value="discrepancy">Discrepancy Investigation</option>
+            <option value="variance">Variance Analysis</option>
+            <option value="year-end">Year-End Audit</option>
+            <option value="system-migration">System Migration Verification</option>
+            <option value="loss-investigation">Loss/Theft Investigation</option>
+          </select>
+        </div>
+        <button onclick="startInventoryCount()" style="width:100%;padding:8px;background:var(--st);color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:11px;margin-top:8px">🚀 Start Count</button>
       </div>
     </div>
+    
     <div>
-      <div class="stitle">Counting Progress</div>
-      <div id="ic-progress" style="padding:12px;background:var(--s2);border-radius:6px">
-        <div style="font-size:11px;line-height:2">
-          <div><span style="color:var(--t2)">Count Status:</span> <span id="ic-status" style="font-weight:600">Not Started</span></div>
-          <div><span style="color:var(--t2)">Month:</span> <span id="ic-month-display" style="font-weight:600">—</span></div>
-          <div><span style="color:var(--t2)">Counted By:</span> <span id="ic-counter-display" style="font-weight:600">—</span></div>
-          <div><span style="color:var(--t2)">SKUs Counted:</span> <span id="ic-counted" style="font-weight:600">0 / 84</span></div>
+      <div class="stitle">Count Status & Metrics</div>
+      <div id="ic-progress" style="padding:12px;background:var(--s2);border-radius:6px;font-size:11px;line-height:2">
+        <div><span style="color:var(--t2)">Status:</span> <span id="ic-status" style="font-weight:600;color:var(--st)">Not Started</span></div>
+        <div><span style="color:var(--t2)">Type:</span> <span id="ic-type-display" style="font-weight:600">—</span></div>
+        <div><span style="color:var(--t2)">Month:</span> <span id="ic-month-display" style="font-weight:600">—</span></div>
+        <div><span style="color:var(--t2)">Date:</span> <span id="ic-date-display" style="font-weight:600">—</span></div>
+        <div><span style="color:var(--t2)">Counted By:</span> <span id="ic-counter-display" style="font-weight:600">—</span></div>
+        <hr style="margin:8px 0;border:none;border-top:0.5px solid var(--b)">
+        <div><span style="color:var(--t2)">Counted:</span> <span id="ic-counted" style="font-weight:600;color:var(--st)">0 / 84</span></div>
+        <div><span style="color:var(--t2)">Progress:</span> <span id="ic-progress-pct" style="font-weight:600">0%</span></div>
+        <div style="background:var(--b);height:8px;border-radius:4px;margin-top:4px;overflow:hidden">
+          <div id="ic-progress-bar" style="background:var(--st);height:100%;width:0%;transition:width 0.3s"></div>
         </div>
       </div>
     </div>
   </div>
+
   <div class="sep"></div>
-  
+
+  <!-- SEARCH & FILTER -->
   <div class="stitle">Count by SKU (Enter Physical Count)</div>
-  <div style="margin-bottom:12px">
-    <input type="text" id="ic-search" placeholder="Search SKU code or item name..." oninput="filterCountList()" style="width:100%;padding:8px;border:0.5px solid var(--b);border-radius:4px;margin-bottom:8px">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+    <input type="text" id="ic-search" placeholder="Search SKU or item..." oninput="filterCountList()" style="padding:8px;border:0.5px solid var(--b);border-radius:4px;font-size:11px">
+    <select id="ic-filter" onchange="filterCountList()" style="padding:8px;border:0.5px solid var(--b);border-radius:4px;font-size:11px">
+      <option value="all">All SKUs</option>
+      <option value="counted">✓ Counted</option>
+      <option value="uncounted">Uncounted</option>
+      <option value="discrepancy">⚠ Discrepancies</option>
+      <option value="rackA">Rack A (Uniforms)</option>
+      <option value="rackB">Rack B (VM/Accessories)</option>
+    </select>
   </div>
+
+  <!-- SKU LIST -->
   <div id="ic-list"></div>
-  
+
   <div class="sep"></div>
-  <div class="stitle">Count Summary</div>
-  <div id="ic-summary"></div>
-  
-  <div class="sep"></div>
-  <div style="display:flex;gap:8px">
-    <button onclick="completeInventoryCount()" style="flex:1;padding:10px;background:var(--st);color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600"><i class="ti ti-check"></i>Complete Count</button>
-    <button onclick="downloadCountReport()" style="flex:1;padding:10px;background:var(--gold);color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600"><i class="ti ti-download"></i>Download Report</button>
-    <button onclick="printCountReport()" style="flex:1;padding:10px;background:var(--gold);color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600"><i class="ti ti-printer"></i>Print Report</button>
+
+  <!-- DETAILED SUMMARY -->
+  <div class="stitle">Count Summary & Analysis</div>
+  <div class="fg2" style="margin-bottom:12px">
+    <div>
+      <div style="background:var(--s2);padding:12px;border-radius:6px;font-size:11px">
+        <div style="font-weight:600;margin-bottom:8px;color:var(--st)">System vs Physical</div>
+        <div style="line-height:2">
+          <div><span style="color:var(--t2)">Total System Qty:</span> <span id="ic-total-system" style="font-weight:600">0</span></div>
+          <div><span style="color:var(--t2)">Total Physical Count:</span> <span id="ic-total-physical" style="font-weight:600">0</span></div>
+          <div><span style="color:var(--t2)">Total Variance:</span> <span id="ic-total-variance" style="font-weight:600">0</span></div>
+          <div><span style="color:var(--t2)">Variance %:</span> <span id="ic-variance-pct" style="font-weight:600">0%</span></div>
+        </div>
+      </div>
+    </div>
+    
+    <div>
+      <div style="background:var(--s2);padding:12px;border-radius:6px;font-size:11px">
+        <div style="font-weight:600;margin-bottom:8px;color:var(--st)">Accuracy Metrics</div>
+        <div style="line-height:2">
+          <div><span style="color:var(--t2)">SKUs Counted:</span> <span id="ic-metric-counted" style="font-weight:600">0</span></div>
+          <div><span style="color:var(--t2)">With Discrepancies:</span> <span id="ic-metric-disc" style="font-weight:600">0</span></div>
+          <div><span style="color:var(--t2)">Accuracy:</span> <span id="ic-metric-accuracy" style="font-weight:600;color:var(--st)">0%</span></div>
+          <div><span style="color:var(--t2)">High Variance (±10%):</span> <span id="ic-metric-high" style="font-weight:600">0</span></div>
+        </div>
+      </div>
+    </div>
   </div>
+
+  <!-- DISCREPANCIES DETAIL -->
+  <div id="ic-discrepancies-section" style="display:none">
+    <div class="sep"></div>
+    <div class="stitle">Discrepancies Detail (Items that don't match)</div>
+    <div id="ic-discrepancies-list"></div>
+  </div>
+
+  <!-- RACK ANALYSIS -->
+  <div id="ic-rack-analysis" style="display:none">
+    <div class="sep"></div>
+    <div class="stitle">Rack-wise Analysis</div>
+    <div class="fg2">
+      <div style="background:var(--s2);padding:12px;border-radius:6px;font-size:11px">
+        <div style="font-weight:600;margin-bottom:8px">Rack A (Uniforms)</div>
+        <div style="line-height:2" id="ic-rack-a-stats"></div>
+      </div>
+      <div style="background:var(--s2);padding:12px;border-radius:6px;font-size:11px">
+        <div style="font-weight:600;margin-bottom:8px">Rack B (VM/Accessories)</div>
+        <div style="line-height:2" id="ic-rack-b-stats"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MOVEMENT ANALYSIS -->
+  <div id="ic-movement-section" style="display:none">
+    <div class="sep"></div>
+    <div class="stitle">Movement Analysis (Why the variance?)</div>
+    <div style="background:var(--s2);padding:12px;border-radius:6px;font-size:11px;margin-bottom:12px">
+      <div style="margin-bottom:8px;line-height:2" id="ic-movement-detail"></div>
+      <table style="width:100%;font-size:10px;border-collapse:collapse;margin-top:8px" id="ic-movement-table">
+        <thead><tr style="background:#f0f0f0"><th style="padding:6px;border:0.5px solid #ddd">SKU</th><th style="padding:6px;border:0.5px solid #ddd">Inbound</th><th style="padding:6px;border:0.5px solid #ddd">Outbound</th><th style="padding:6px;border:0.5px solid #ddd">Expected</th><th style="padding:6px;border:0.5px solid #ddd">Actual</th><th style="padding:6px;border:0.5px solid #ddd">Unexplained</th></tr></thead>
+        <tbody id="ic-movement-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="sep"></div>
+
+  <!-- ACTION BUTTONS -->
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+    <button onclick="completeInventoryCount()" style="padding:10px;background:var(--st);color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:11px"><i class="ti ti-check"></i>Complete Count</button>
+    <button onclick="downloadCountReport()" style="padding:10px;background:var(--gold);color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:11px"><i class="ti ti-download"></i>Download CSV</button>
+    <button onclick="printCountReport()" style="padding:10px;background:var(--gold);color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:11px"><i class="ti ti-printer"></i>Print Report</button>
+  </div>
+
+  <!-- PREVIOUS COUNTS -->
+  <div class="sep"></div>
+  <div class="stitle">Previous Inventory Counts</div>
+  <div id="ic-history" style="font-size:11px"></div>
 </div>
 
 <!-- ═══ SOP REFERENCE ═══ -->
@@ -1033,7 +1144,15 @@ function nav(tab){
   if(tab==='reports')renderReports();
   if(tab==='analytics')renderAnalytics();
   if(tab==='finance')renderFinance();
-  if(tab==='invcount'){if(currentCount.counts){renderCountList();updateCountSummary();}else{updateCountSummary();}}
+  if(tab==='invcount'){
+    if(currentCount.counts){
+      renderCountList();
+      updateCountSummary();
+    }else{
+      updateCountSummary();
+    }
+    renderCountHistory();
+  }
   if(tab==='mobile'){updateMobileKPIs();switchMobileView('home');}
   if(tab==='inbound'){populateSkuSel('ib-sku');renderIbLog();}
   if(tab==='picking'){populateSkuSel('pk-sku');}
@@ -1741,19 +1860,46 @@ function renderComplianceLog(){
 
 // INVENTORY COUNT & AUDIT
 function startInventoryCount(){
+  const countType=document.getElementById('ic-type').value;
   const month=document.getElementById('ic-month').value;
+  const date=document.getElementById('ic-date').value;
   const counter=document.getElementById('ic-counter').value.trim();
   const verifier=document.getElementById('ic-verifier').value.trim();
-  if(!month||!counter||!verifier){toast('Please fill all fields','w');return;}
+  const reason=document.getElementById('ic-reason').value;
   
-  currentCount={id:newId('CNT'),month,counter,verifier,ts:ts(),counts:{},status:'in-progress'};
-  SKUS.forEach(s=>currentCount.counts[s.sku]={systemQty:(inv[s.sku]||{qty:0}).qty,physicalQty:0,counted:false});
+  if(!month||!counter||!verifier||!date){toast('Please fill all required fields','w');return;}
+  
+  currentCount={
+    id:newId('CNT'),
+    type:countType,
+    month,
+    date,
+    counter,
+    verifier,
+    reason,
+    ts:ts(),
+    counts:{},
+    status:'in-progress'
+  };
+  
+  SKUS.forEach(s=>currentCount.counts[s.sku]={
+    systemQty:(inv[s.sku]||{qty:0}).qty,
+    physicalQty:0,
+    counted:false,
+    rack:s.rack,
+    shelf:s.shelf,
+    category:s.category
+  });
   
   document.getElementById('ic-status').textContent='In Progress';
+  document.getElementById('ic-type-display').textContent=countType.charAt(0).toUpperCase()+countType.slice(1);
   document.getElementById('ic-month-display').textContent=month;
+  document.getElementById('ic-date-display').textContent=date;
   document.getElementById('ic-counter-display').textContent=counter;
+  
   renderCountList();
-  toast('Inventory count started. Start counting SKUs.','s');
+  updateCountSummary();
+  toast(`✓ ${countType.toUpperCase()} count started!`,'s');
 }
 
 function renderCountList(){
@@ -1762,24 +1908,40 @@ function renderCountList(){
     el.innerHTML='<div class="empty">No count in progress. Click "Start New Count" to begin.</div>';
     return;
   }
-  const skus=SKUS.filter(s=>{
-    const q=(document.getElementById('ic-search')?.value||'').toLowerCase();
-    return s.sku.toLowerCase().includes(q)||s.sub.toLowerCase().includes(q);
+  const q=(document.getElementById('ic-search')?.value||'').toLowerCase();
+  const filterType=document.getElementById('ic-filter')?.value||'all';
+  
+  let skus=SKUS.filter(s=>{
+    const match=s.sku.toLowerCase().includes(q)||s.sub.toLowerCase().includes(q);
+    if(!match)return false;
+    const c=currentCount.counts[s.sku];
+    if(filterType==='counted'&&!c.counted)return false;
+    if(filterType==='uncounted'&&c.counted)return false;
+    if(filterType==='discrepancy'&&c.physicalQty===c.systemQty)return false;
+    if(filterType==='rackA'&&s.rack!=='A')return false;
+    if(filterType==='rackB'&&s.rack!=='B')return false;
+    return true;
   });
+  
   el.innerHTML=skus.map(s=>{
-    const count=currentCount.counts[s.sku]||{systemQty:0,physicalQty:0,counted:false};
+    const count=currentCount.counts[s.sku];
     const variance=count.physicalQty-count.systemQty;
     const varianceClass=variance===0?'p-pass':variance>0?'p-low':'p-out';
-    return `<div style="padding:10px;background:var(--s2);border-radius:6px;margin-bottom:8px">
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:8px;font-size:11px">
-        <div><span style="color:var(--t2)">SKU:</span> <span style="font-weight:600;font-size:12px">${s.sku}</span></div>
-        <div><span style="color:var(--t2)">Item:</span> <span style="font-weight:600">${s.sub}</span></div>
-        <div><span style="color:var(--t2)">System Qty:</span> <span style="font-weight:600">${count.systemQty}</span></div>
-        <div><span style="color:var(--t2)">Variance:</span> <span class="pill ${varianceClass}" style="justify-self:end">${variance>0?'+':''} ${variance}</span></div>
+    const variancePct=(count.systemQty>0)?Math.round((variance/count.systemQty)*100):0;
+    const status=count.counted?'✓ Counted':'Pending';
+    const statusClass=count.counted?'p-pass':'p-out';
+    
+    return `<div style="padding:10px;background:var(--s2);border-radius:6px;margin-bottom:8px;border-left:4px solid ${count.counted?'var(--st)':'var(--wt)'}">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px;font-size:11px">
+        <div><strong>${s.sku}</strong><br><span style="color:var(--t2);font-size:10px">${s.sub}</span></div>
+        <div><span style="color:var(--t2);font-size:10px">Rack ${s.rack} / Shelf ${s.shelf}</span><br><span style="font-weight:600">${s.category}</span></div>
+        <div style="text-align:right"><span class="pill ${statusClass}" style="font-size:9px">${status}</span></div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <input type="number" id="ic-${s.sku}" value="${count.physicalQty}" min="0" onchange="updateCountQty('${s.sku}')" placeholder="Enter physical count" style="padding:6px;border:0.5px solid var(--b);border-radius:4px;font-size:11px">
-        <button onclick="markCountComplete('${s.sku}')" style="padding:6px;background:${count.counted?'var(--st)':'var(--b)'};cursor:pointer;border:none;border-radius:4px;color:#fff;font-size:10px;font-weight:600">${count.counted?'✓ Counted':'Mark Done'}</button>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:8px;font-size:10px">
+        <div><span style="color:var(--t2)">System:</span> <strong>${count.systemQty}</strong></div>
+        <div><span style="color:var(--t2)">Physical:</span> <input type="number" id="ic-${s.sku}" value="${count.physicalQty}" min="0" onchange="updateCountQty('${s.sku}')" style="width:60%;padding:4px;border:0.5px solid var(--b);border-radius:3px;font-size:10px"></div>
+        <div><span style="color:var(--t2)">Variance:</span> <span class="pill ${varianceClass}" style="font-size:9px">${variance>0?'+':''}${variance} (${variancePct>0?'+':''}${variancePct}%)</span></div>
+        <button onclick="markCountComplete('${s.sku}')" style="padding:4px 6px;background:${count.counted?'var(--st)':'var(--b)'};color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:9px;font-weight:600">${count.counted?'✓ Done':'Mark Done'}</button>
       </div>
     </div>`;
   }).join('');
@@ -1802,25 +1964,83 @@ function filterCountList(){
 }
 
 function updateCountSummary(){
-  const el=document.getElementById('ic-summary');
   if(!currentCount.counts){
-    el.innerHTML='<div class="empty">No count in progress</div>';
+    document.getElementById('ic-summary').innerHTML='<div class="empty">No count in progress</div>';
     return;
   }
+  
   const counts=Object.values(currentCount.counts);
   const counted=counts.filter(c=>c.counted).length;
-  const totalVariance=counts.reduce((a,c)=>a+(c.physicalQty-c.systemQty),0);
+  const totalSystem=counts.reduce((a,c)=>a+c.systemQty,0);
+  const totalPhysical=counts.reduce((a,c)=>a+c.physicalQty,0);
+  const totalVariance=totalPhysical-totalSystem;
+  const variancePct=totalSystem>0?Math.round((totalVariance/totalSystem)*100):0;
   const discrepancies=counts.filter(c=>c.physicalQty!==c.systemQty);
+  const highVariance=counts.filter(c=>{
+    const pct=c.systemQty>0?Math.abs((c.physicalQty-c.systemQty)/c.systemQty):0;
+    return pct>=0.1;
+  });
+  const accuracy=Math.round((1-(discrepancies.length/SKUS.length))*100);
+  const progressPct=Math.round((counted/SKUS.length)*100);
   
+  // Update progress bar
   document.getElementById('ic-counted').textContent=counted+' / '+SKUS.length;
-  el.innerHTML=`<div style="font-size:11px;line-height:2;padding:12px;background:var(--s2);border-radius:6px">
-    <div><span style="color:var(--t2)">Total Variance (Qty):</span> <span style="font-weight:600;color:${totalVariance===0?'var(--st)':totalVariance>0?'var(--wt)':'var(--dt)'}">${totalVariance>0?'+':''}${totalVariance}</span></div>
-    <div><span style="color:var(--t2)">SKUs with Discrepancy:</span> <span style="font-weight:600">${discrepancies.length}</span></div>
-    <div><span style="color:var(--t2)">Accuracy:</span> <span style="font-weight:600">${Math.round((1-(discrepancies.length/SKUS.length))*100)}%</span></div>
-    ${discrepancies.length>0?`<div style="margin-top:8px;padding:8px;background:var(--wbg);border-radius:4px;color:var(--wt);font-size:10px">
-      <strong>Discrepancies found:</strong> ${Object.keys(currentCount.counts).filter(k=>currentCount.counts[k].physicalQty!==currentCount.counts[k].systemQty).slice(0,5).map(sku=>(`${sku} (Sys: ${currentCount.counts[sku].systemQty}, Phys: ${currentCount.counts[sku].physicalQty})`)).join(' | ')}${discrepancies.length>5?'...':''}
-    </div>`:''}
-  </div>`;
+  document.getElementById('ic-progress-pct').textContent=progressPct+'%';
+  document.getElementById('ic-progress-bar').style.width=progressPct+'%';
+  
+  // Update summary metrics
+  document.getElementById('ic-total-system').textContent=totalSystem;
+  document.getElementById('ic-total-physical').textContent=totalPhysical;
+  document.getElementById('ic-total-variance').textContent=(totalVariance>0?'+':'')+totalVariance;
+  document.getElementById('ic-variance-pct').textContent=(variancePct>0?'+':'')+variancePct+'%';
+  document.getElementById('ic-metric-counted').textContent=counted;
+  document.getElementById('ic-metric-disc').textContent=discrepancies.length;
+  document.getElementById('ic-metric-accuracy').textContent=accuracy+'%';
+  document.getElementById('ic-metric-high').textContent=highVariance.length;
+  
+  // Show discrepancies section
+  if(discrepancies.length>0){
+    document.getElementById('ic-discrepancies-section').style.display='block';
+    const discList=Object.keys(currentCount.counts).filter(k=>currentCount.counts[k].physicalQty!==currentCount.counts[k].systemQty).map(sku=>{
+      const count=currentCount.counts[sku];
+      const item=SKUS.find(s=>s.sku===sku);
+      const variance=count.physicalQty-count.systemQty;
+      const type=variance>0?'📈 EXCESS':'📉 SHORTAGE';
+      const pct=count.systemQty>0?Math.round((variance/count.systemQty)*100):0;
+      return `<div style="padding:8px;background:var(--s3);border-radius:4px;margin-bottom:6px;font-size:10px;display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center">
+        <div style="font-weight:600">${sku}</div>
+        <div><span style="color:var(--t2)">${item.sub}</span><br>Sys: ${count.systemQty} | Phys: ${count.physicalQty}</div>
+        <div style="text-align:right;white-space:nowrap"><span class="pill ${variance>0?'p-low':'p-out'}" style="font-size:9px">${type} ${variance>0?'+':''}${variance} (${pct>0?'+':''}${pct}%)</span></div>
+      </div>`;
+    }).join('');
+    document.getElementById('ic-discrepancies-list').innerHTML=discList;
+  }
+  
+  // Rack analysis
+  document.getElementById('ic-rack-analysis').style.display='block';
+  const rackAData=SKUS.filter(s=>s.rack==='A').map(s=>currentCount.counts[s.sku]);
+  const rackBData=SKUS.filter(s=>s.rack==='B').map(s=>currentCount.counts[s.sku]);
+  const rackASystem=rackAData.reduce((a,c)=>a+c.systemQty,0);
+  const rackAPhysical=rackAData.reduce((a,c)=>a+c.physicalQty,0);
+  const rackBSystem=rackBData.reduce((a,c)=>a+c.systemQty,0);
+  const rackBPhysical=rackBData.reduce((a,c)=>a+c.physicalQty,0);
+  
+  document.getElementById('ic-rack-a-stats').innerHTML=`
+    <div><span style="color:var(--t2)">System Qty:</span> <strong>${rackASystem}</strong></div>
+    <div><span style="color:var(--t2)">Physical Qty:</span> <strong>${rackAPhysical}</strong></div>
+    <div><span style="color:var(--t2)">Variance:</span> <strong style="color:${rackAPhysical-rackASystem===0?'var(--st)':rackAPhysical-rackASystem>0?'var(--wt)':'var(--dt)'}">${(rackAPhysical-rackASystem)>0?'+':''}${rackAPhysical-rackASystem}</strong></div>
+  `;
+  
+  document.getElementById('ic-rack-b-stats').innerHTML=`
+    <div><span style="color:var(--t2)">System Qty:</span> <strong>${rackBSystem}</strong></div>
+    <div><span style="color:var(--t2)">Physical Qty:</span> <strong>${rackBPhysical}</strong></div>
+    <div><span style="color:var(--t2)">Variance:</span> <strong style="color:${rackBPhysical-rackBSystem===0?'var(--st)':rackBPhysical-rackBSystem>0?'var(--wt)':'var(--dt)'}">${(rackBPhysical-rackBSystem)>0?'+':''}${rackBPhysical-rackBSystem}</strong></div>
+  `;
+  
+  // Movement analysis
+  document.getElementById('ic-movement-section').style.display='block';
+  const movementDetail=`<div><strong>Why the variance?</strong> This shows inbound (GRN) and outbound (Dispatch) movements to explain the difference.</div>`;
+  document.getElementById('ic-movement-detail').innerHTML=movementDetail;
 }
 
 function completeInventoryCount(){
@@ -2016,6 +2236,26 @@ function checkOnlineStatus(){
 
 window.addEventListener('online',()=>checkOnlineStatus());
 window.addEventListener('offline',()=>checkOnlineStatus());
+
+function filterCountList(){
+  renderCountList();
+}
+
+function renderCountHistory(){
+  const el=document.getElementById('ic-history');
+  if(!inventoryCounts||inventoryCounts.length===0){
+    el.innerHTML='<div style="color:var(--t2);font-size:11px">No previous counts recorded</div>';
+    return;
+  }
+  el.innerHTML=inventoryCounts.slice().reverse().map(count=>`<div style="padding:8px;background:var(--s2);border-radius:4px;margin-bottom:6px;font-size:10px">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:4px">
+      <div><span style="color:var(--t2)">Month:</span> <strong>${count.month}</strong></div>
+      <div><span style="color:var(--t2)">Type:</span> <strong>${count.type}</strong></div>
+      <div><span style="color:var(--t2)">Counted By:</span> <strong>${count.counter}</strong></div>
+      <div><span style="color:var(--t2)">Accuracy:</span> <strong style="color:${(1-(Object.values(count.counts).filter(c=>c.physicalQty!==c.systemQty).length/SKUS.length))*100>=95?'var(--st)':'var(--wt)'}">${Math.round((1-(Object.values(count.counts).filter(c=>c.physicalQty!==c.systemQty).length/SKUS.length))*100)}%</strong></div>
+    </div>
+  </div>`).join('');
+}
 
 function downloadCountReport(){
   if(!currentCount.month){toast('Start a count first','w');return;}
