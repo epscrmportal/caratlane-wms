@@ -275,6 +275,7 @@ tr:hover td{background:var(--s2)}
 
 <!-- ═══ DASHBOARD ═══ -->
 <div id="page-dashboard" class="page active">
+  <div id="same-day-dispatch-banner"></div>
   <div class="sgrid" id="stat-cards"></div>
   <div class="fg2">
     <div>
@@ -423,8 +424,82 @@ tr:hover td{background:var(--s2)}
   <div id="packing-queue"></div>
 </div>
 
+<!-- PACKING DETAILS MODAL -->
+<div id="pack-modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:500;align-items:center;justify-content:center;padding:16px">
+  <div style="background:var(--s);border-radius:14px;max-width:520px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,.3)">
+    <div style="padding:16px 18px;border-bottom:0.5px solid var(--b);display:flex;align-items:center;justify-content:space-between">
+      <div style="font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px"><i class="ti ti-box" style="color:var(--gold)"></i>Packing Details — <span id="pm-order-id" style="color:var(--gold)"></span></div>
+      <button onclick="closePackModal()" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--t2);line-height:1">×</button>
+    </div>
+    <div style="padding:16px 18px">
+      <!-- Start time banner -->
+      <div style="background:var(--ibg);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:11px;color:var(--it);display:flex;align-items:center;gap:8px">
+        <i class="ti ti-clock-play" style="font-size:16px"></i>
+        <div><strong>Packing started:</strong> <span id="pm-start-time" style="font-weight:700"></span>
+        <span style="color:var(--t3);margin-left:8px" id="pm-elapsed"></span></div>
+      </div>
+      <!-- Items summary -->
+      <div style="margin-bottom:14px">
+        <div style="font-size:10px;font-weight:600;color:var(--t2);margin-bottom:6px">ITEMS IN THIS ORDER</div>
+        <div id="pm-items-list" style="font-size:11px;background:var(--s2);border-radius:8px;padding:10px"></div>
+      </div>
+      <!-- Box dimensions -->
+      <div style="font-size:10px;font-weight:600;color:var(--t2);margin-bottom:6px">BOX DIMENSIONS (cm)</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px">
+        <div>
+          <label style="font-size:10px;color:var(--t2);display:block;margin-bottom:3px">Length (L)</label>
+          <input type="number" id="pm-length" min="1" placeholder="e.g. 40" oninput="calcVolWeight()" style="width:100%;padding:8px;border:0.5px solid var(--b);border-radius:6px;background:var(--s2);color:var(--t);font-size:12px;font-weight:600">
+        </div>
+        <div>
+          <label style="font-size:10px;color:var(--t2);display:block;margin-bottom:3px">Width (W)</label>
+          <input type="number" id="pm-width" min="1" placeholder="e.g. 30" oninput="calcVolWeight()" style="width:100%;padding:8px;border:0.5px solid var(--b);border-radius:6px;background:var(--s2);color:var(--t);font-size:12px;font-weight:600">
+        </div>
+        <div>
+          <label style="font-size:10px;color:var(--t2);display:block;margin-bottom:3px">Height (H)</label>
+          <input type="number" id="pm-height" min="1" placeholder="e.g. 20" oninput="calcVolWeight()" style="width:100%;padding:8px;border:0.5px solid var(--b);border-radius:6px;background:var(--s2);color:var(--t);font-size:12px;font-weight:600">
+        </div>
+      </div>
+      <!-- Weight -->
+      <div style="margin-bottom:12px">
+        <label style="font-size:10px;color:var(--t2);display:block;margin-bottom:3px;font-weight:600">ACTUAL WEIGHT (kg)</label>
+        <input type="number" id="pm-actual-weight" min="0.01" step="0.01" placeholder="e.g. 1.25" oninput="calcVolWeight()" style="width:100%;padding:8px;border:0.5px solid var(--b);border-radius:6px;background:var(--s2);color:var(--t);font-size:13px;font-weight:700">
+      </div>
+      <!-- Volumetric weight result -->
+      <div id="pm-vol-result" style="display:none;background:var(--s2);border-radius:8px;padding:12px 14px;margin-bottom:14px">
+        <div style="font-size:10px;font-weight:600;color:var(--t2);margin-bottom:8px">WEIGHT SUMMARY</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center">
+          <div style="background:var(--s3);border-radius:6px;padding:8px">
+            <div style="font-size:18px;font-weight:700;color:var(--t)" id="pm-show-actual">—</div>
+            <div style="font-size:10px;color:var(--t2)">Actual (kg)</div>
+          </div>
+          <div style="background:var(--s3);border-radius:6px;padding:8px">
+            <div style="font-size:18px;font-weight:700;color:var(--it)" id="pm-show-vol">—</div>
+            <div style="font-size:10px;color:var(--t2)">Volumetric (kg)</div>
+          </div>
+          <div style="background:var(--gold);border-radius:6px;padding:8px">
+            <div style="font-size:18px;font-weight:700;color:#fff" id="pm-show-chargeable">—</div>
+            <div style="font-size:10px;color:rgba(255,255,255,0.8)">Chargeable (kg)</div>
+          </div>
+        </div>
+        <div style="font-size:10px;color:var(--t3);margin-top:8px;text-align:center" id="pm-vol-formula"></div>
+      </div>
+      <!-- Packing notes -->
+      <div style="margin-bottom:14px">
+        <label style="font-size:10px;color:var(--t2);display:block;margin-bottom:3px;font-weight:600">PACKING NOTES (optional)</label>
+        <textarea id="pm-notes" placeholder="e.g. Fragile items bubble-wrapped, extra tape applied..." style="width:100%;padding:8px;border:0.5px solid var(--b);border-radius:6px;background:var(--s2);color:var(--t);font-size:11px;min-height:56px;resize:vertical"></textarea>
+      </div>
+      <!-- Confirm button -->
+      <button onclick="confirmPackWithDetails()" class="btn-primary" style="width:100%;justify-content:center;padding:12px;font-size:13px">
+        <i class="ti ti-clock-check"></i> Record End Time & Mark Packed
+      </button>
+      <div style="font-size:10px;color:var(--t3);text-align:center;margin-top:8px">End time will be captured automatically when you click above</div>
+    </div>
+  </div>
+</div>
+
 <!-- ═══ DISPATCH (SOP §3 Stage D) ═══ -->
 <div id="page-dispatch" class="page">
+  <div id="dispatch-sameday-alert"></div>
   <div class="fg2">
     <div>
       <div class="stitle">Packed orders awaiting dispatch</div>
@@ -610,6 +685,10 @@ tr:hover td{background:var(--s2)}
     <div><div class="stitle">Warehouse utilization</div><div id="warehouse-util"></div></div>
     <div><div class="stitle">Bin efficiency</div><div id="bin-efficiency"></div></div>
   </div>
+  <div class="sep"></div>
+  <!-- SPACE UTILIZATION -->
+  <div class="stitle" style="display:flex;align-items:center;gap:6px"><i class="ti ti-building-warehouse"></i> 3D Space Utilization — 1,600 sq ft Warehouse</div>
+  <div id="space-util-section"></div>
   <div class="sep"></div>
   <div class="stitle">Rack A occupancy (by shelf)</div>
   <div id="rack-a-util"></div>
@@ -1186,6 +1265,109 @@ function populateSkuSel(id_){
 }
 
 // DASHBOARD
+function getSameDayPending(){
+  // Returns packed orders that were packed today and not yet dispatched
+  const today=new Date();
+  const todayStr=today.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
+  const packed=history.filter(h=>h.type==='packed');
+  const dispatched=new Set(history.filter(h=>h.type==='dispatched').map(h=>h.packedId||h.orderId));
+  return packed.filter(p=>{
+    const notDispatched=!dispatched.has(p.id)&&!dispatched.has(p.orderId);
+    return notDispatched;
+  });
+}
+function getHoursPassed(tsString){
+  // Try to parse timestamp from history entry
+  try{
+    const now=new Date();
+    // ts format: "04 Jun 2026, 10:30" or similar
+    const d=new Date(tsString);
+    if(!isNaN(d)){return Math.floor((now-d)/3600000);}
+  }catch(e){}
+  return null;
+}
+function renderSameDayAlert(){
+  const el=document.getElementById('same-day-dispatch-banner');
+  if(!el)return;
+  const pending=getSameDayPending();
+  if(!pending.length){el.innerHTML='';return;}
+  const now=new Date();
+  const hrs=now.getHours();
+  const minsLeft=(18-hrs)*60-now.getMinutes(); // cutoff 6pm
+  const isUrgent=hrs>=15; // red after 3pm
+  const isCritical=hrs>=17; // critical after 5pm
+  const color=isCritical?'var(--dt)':isUrgent?'var(--wt)':'var(--it)';
+  const bg=isCritical?'var(--dbg)':isUrgent?'var(--wbg)':'var(--ibg)';
+  const icon=isCritical?'ti-alarm':'ti-truck-delivery';
+  const urgencyLabel=isCritical?'🚨 CRITICAL':'⚠️ ACTION REQUIRED';
+  const timeMsg=minsLeft>0?`Dispatch cutoff in <strong>${Math.floor(minsLeft/60)}h ${minsLeft%60}m</strong>`:'<strong>Past dispatch cutoff — dispatch immediately!</strong>';
+  el.innerHTML=`
+    <div style="background:${bg};border:1.5px solid ${color};border-radius:10px;padding:14px 16px;margin-bottom:14px;cursor:pointer" onclick="nav('dispatch')">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:40px;height:40px;background:${color};border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <i class="ti ${icon}" style="font-size:20px;color:#fff"></i>
+          </div>
+          <div>
+            <div style="font-weight:700;font-size:13px;color:${color}">${urgencyLabel} — Same-Day Dispatch</div>
+            <div style="font-size:11px;color:var(--t2);margin-top:2px">${pending.length} packed order${pending.length>1?'s':''} must be dispatched <strong>today</strong> · ${timeMsg}</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          ${pending.map(p=>`<span style="background:${color};color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:6px">${p.orderId||p.id}</span>`).join('')}
+          <span style="font-size:11px;color:${color};font-weight:600">Go to Dispatch →</span>
+        </div>
+      </div>
+      <div style="margin-top:10px;padding-top:10px;border-top:0.5px solid ${color}33;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px">
+        ${pending.map(p=>{
+          const items=(p.items&&p.items.length)?p.items.length:0;
+          return `<div style="background:var(--s2);border-radius:6px;padding:8px;font-size:10px">
+            <div style="font-weight:600;color:var(--t)">${p.orderId||p.id}</div>
+            <div style="color:var(--t2);margin-top:2px">Packed ID: ${p.id}</div>
+            <div style="color:var(--t2)">${items} SKU(s) · ${p.ts||'Today'}</div>
+            <div style="color:${color};font-weight:600;margin-top:4px">⏳ Awaiting AWB & dispatch</div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+  `;
+}
+function renderDispatchSameDayAlert(){
+  const el=document.getElementById('dispatch-sameday-alert');
+  if(!el)return;
+  const pending=getSameDayPending();
+  if(!pending.length){
+    el.innerHTML='<div style="background:var(--sbg);border:1px solid var(--st);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:11px;color:var(--st);display:flex;align-items:center;gap:8px"><i class="ti ti-circle-check" style="font-size:16px"></i><strong>All clear!</strong> No pending dispatches — all packed orders have been dispatched today ✓</div>';
+    return;
+  }
+  const now=new Date();
+  const hrs=now.getHours();
+  const isCritical=hrs>=17;
+  const isUrgent=hrs>=15;
+  const color=isCritical?'var(--dt)':isUrgent?'var(--wt)':'var(--gold)';
+  const bg=isCritical?'var(--dbg)':isUrgent?'var(--wbg)':'#fff8e6';
+  el.innerHTML=`
+    <div style="background:${bg};border:2px solid ${color};border-radius:10px;padding:12px 16px;margin-bottom:14px">
+      <div style="font-weight:700;font-size:13px;color:${color};margin-bottom:8px;display:flex;align-items:center;gap:6px">
+        <i class="ti ti-clock-exclamation" style="font-size:16px"></i>
+        SAME-DAY DISPATCH REQUIRED — ${pending.length} order${pending.length>1?'s':''} pending
+      </div>
+      <div style="font-size:11px;color:var(--t2);margin-bottom:10px">
+        Per SOP §3 — all packed orders must be dispatched <strong>same day</strong>. 
+        Select each order below, assign AWB number from courier, and confirm dispatch.
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        ${pending.map(p=>`
+          <div style="background:var(--s);border:1px solid ${color};border-radius:6px;padding:8px 12px;font-size:11px;cursor:pointer;min-width:160px" onclick="selectDispatchOrder('${p.id}')">
+            <div style="font-weight:700;color:${color}">${p.orderId||p.id}</div>
+            <div style="color:var(--t2);margin-top:2px">${(p.items&&p.items.length)||0} SKU(s) · ${p.ts||'Today'}</div>
+            <div style="color:${color};font-weight:600;margin-top:4px;font-size:10px">👆 Tap to assign AWB</div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
 function renderDash(){
   const total=SKUS.length,ins=SKUS.filter(s=>inv[s.sku]&&inv[s.sku].qty>0).length;
   const low=SKUS.filter(s=>inv[s.sku]&&getSt(inv[s.sku].qty)==='low');
@@ -1194,7 +1376,9 @@ function renderDash(){
   const disp=history.filter(h=>h.type==='dispatch').length;
   const rcv=history.filter(h=>h.type==='grn').length;
   const rets=history.filter(h=>h.type==='return').length;
-  document.getElementById('alert-ct').textContent=low.length+out.length;
+  const pendingDispatch=history.filter(h=>h.type==='packed').length;
+  document.getElementById('alert-ct').textContent=low.length+out.length+pendingDispatch;
+  renderSameDayAlert();
   document.getElementById('stat-cards').innerHTML=`
     <div class="sc"><div class="sl"><i class="ti ti-package"></i>Total SKUs</div><div class="sv">${total}</div><div class="ss">2 racks · 16 shelves</div></div>
     <div class="sc"><div class="sl"><i class="ti ti-check"></i>In stock</div><div class="sv">${ins}</div><div class="ss">${total-ins} empty SKUs</div></div>
@@ -1303,7 +1487,7 @@ function printGRN(grnId){
         th{background:#f0f0f0;padding:10px;text-align:left;border:1px solid #ddd;font-weight:bold;font-size:12px}
         td{padding:10px;border:1px solid #ddd;font-size:12px}
         .total-row{background:#f9f9f9;font-weight:bold}
-        .signature-area{margin-top:40px;display:grid;grid-template-columns:1fr 1fr;gap:40px}
+        .signature-area{margin-top:40px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:30px}
         .signature-box{text-align:center;border-top:1px solid #000;padding-top:10px;margin-top:30px}
         .footer{margin-top:30px;border-top:1px solid #ddd;padding-top:15px;font-size:10px;color:#999;text-align:center}
         @media print{
@@ -1448,7 +1632,7 @@ function printDispatch(dispatchId){
         th{background:#f0f0f0;padding:10px;text-align:left;border:1px solid #ddd;font-weight:bold;font-size:12px}
         td{padding:10px;border:1px solid #ddd;font-size:12px}
         .total-row{background:#f9f9f9;font-weight:bold}
-        .signature-area{margin-top:40px;display:grid;grid-template-columns:1fr 1fr;gap:40px}
+        .signature-area{margin-top:40px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:30px}
         .signature-box{text-align:center;border-top:1px solid #000;padding-top:10px;margin-top:30px}
         .footer{margin-top:30px;border-top:1px solid #ddd;padding-top:15px;font-size:10px;color:#999;text-align:center}
         @media print{
@@ -1535,8 +1719,56 @@ function printDispatch(dispatchId){
           <div class="info-value">${items.reduce((a,i)=>a+i.qty,0)}</div>
         </div>
       </div>
+
+      <h3 style="margin-top:24px;border-bottom:2px solid #B8860B;padding-bottom:8px;color:#B8860B">📦 Box & Weight Details</h3>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:14px 0">
+        <div style="border:1px solid #ddd;padding:12px;border-radius:4px;text-align:center">
+          <div style="font-size:11px;color:#666;font-weight:bold;text-transform:uppercase;margin-bottom:6px">Box Dimensions</div>
+          <div style="font-size:20px;font-weight:bold">${dispatch.boxL&&dispatch.boxW&&dispatch.boxH?dispatch.boxL+'×'+dispatch.boxW+'×'+dispatch.boxH+' cm':'—'}</div>
+          <div style="font-size:10px;color:#999;margin-top:4px">L × W × H (centimetres)</div>
+        </div>
+        <div style="border:1px solid #ddd;padding:12px;border-radius:4px;text-align:center">
+          <div style="font-size:11px;color:#666;font-weight:bold;text-transform:uppercase;margin-bottom:6px">Actual Weight</div>
+          <div style="font-size:20px;font-weight:bold">${dispatch.actualWeight?dispatch.actualWeight+' kg':'—'}</div>
+          <div style="font-size:10px;color:#999;margin-top:4px">Physical scale weight</div>
+        </div>
+        <div style="border:1px solid #ddd;padding:12px;border-radius:4px;text-align:center">
+          <div style="font-size:11px;color:#666;font-weight:bold;text-transform:uppercase;margin-bottom:6px">Volumetric Weight</div>
+          <div style="font-size:20px;font-weight:bold;color:#1565c0">${dispatch.volWeight?dispatch.volWeight+' kg':'—'}</div>
+          <div style="font-size:10px;color:#999;margin-top:4px">(L×W×H) ÷ 5000</div>
+        </div>
+      </div>
+      <div style="border:2px solid #B8860B;padding:12px 16px;border-radius:6px;background:#fffbf0;margin-bottom:14px;display:flex;align-items:center;gap:16px">
+        <div>
+          <div style="font-size:11px;color:#B8860B;font-weight:bold;text-transform:uppercase">Chargeable Weight</div>
+          <div style="font-size:26px;font-weight:bold;color:#B8860B">${dispatch.chargeableWeight?dispatch.chargeableWeight+' kg':'—'}</div>
+          <div style="font-size:10px;color:#999">max(actual, volumetric)</div>
+        </div>
+        <div style="flex:1;font-size:11px;color:#666;line-height:1.8">
+          ${dispatch.packNotes?'<strong>Packing notes:</strong> '+dispatch.packNotes:''}
+        </div>
+      </div>
+
+      <h3 style="margin-top:24px;border-bottom:2px solid #333;padding-bottom:8px">⏱ Packing Time Record</h3>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:14px 0">
+        <div style="border:1px solid #ddd;padding:12px;border-radius:4px;text-align:center">
+          <div style="font-size:11px;color:#666;font-weight:bold;text-transform:uppercase;margin-bottom:6px">Pack Start</div>
+          <div style="font-size:14px;font-weight:bold">${dispatch.packStartTs||'—'}</div>
+        </div>
+        <div style="border:1px solid #ddd;padding:12px;border-radius:4px;text-align:center">
+          <div style="font-size:11px;color:#666;font-weight:bold;text-transform:uppercase;margin-bottom:6px">Pack End</div>
+          <div style="font-size:14px;font-weight:bold">${dispatch.packEndTs||'—'}</div>
+        </div>
+        <div style="border:1px solid #2e7d32;padding:12px;border-radius:4px;text-align:center;background:#f1f8e9">
+          <div style="font-size:11px;color:#2e7d32;font-weight:bold;text-transform:uppercase;margin-bottom:6px">Total Duration</div>
+          <div style="font-size:20px;font-weight:bold;color:#2e7d32">${dispatch.packDuration||'—'}</div>
+        </div>
+      </div>
       
       <div class="signature-area">
+        <div class="signature-box">
+          <span>Packed By (Signature)</span>
+        </div>
         <div class="signature-box">
           <span>Dispatched By (Signature)</span>
         </div>
@@ -1595,26 +1827,101 @@ function releaseToPacking(){
 function renderPackingQ(){
   const el=document.getElementById('packing-queue');
   if(!packingQueue.length){el.innerHTML='<div class="empty">No tasks awaiting packing — queue is clear</div>';return;}
-  el.innerHTML=`<div class="tw"><table><thead><tr><th>Task ID</th><th>Order ID</th><th>Priority</th><th>Method</th><th>Items</th><th>Time</th><th>Action</th></tr></thead><tbody>${packingQueue.map((t,i)=>`<tr><td class="mono">${t.id}</td><td style="font-size:11px">${t.orderId}</td><td><span class="pill ${t.priority==='Express'?'p-out':t.priority==='Standard'?'p-info':'p-hold'}">${t.priority}</span></td><td style="font-size:11px">${t.method}</td><td>${t.items.length} SKU(s)</td><td style="font-size:11px;color:var(--t2)">${t.ts}</td><td><button class="btn-sm btn-success" onclick="packComplete(${i})"><i class="ti ti-check"></i>Mark Packed</button></td></tr>`).join('')}</tbody></table></div>`;
+  el.innerHTML=`<div class="tw"><table><thead><tr><th>Task ID</th><th>Order ID</th><th>Priority</th><th>Items</th><th>Released</th><th>Pack Start</th><th>Action</th></tr></thead><tbody>${packingQueue.map((t,i)=>{
+    const started=t.packStartTime;
+    const startedStr=started?`<span style="color:var(--st);font-weight:600;font-size:10px"><i class="ti ti-clock-check"></i> ${new Date(started).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</span>`:'<span style="color:var(--t3);font-size:10px">Not started</span>';
+    const btn=started?`<button class="btn-sm btn-success" onclick="openPackModal(${i})"><i class="ti ti-box"></i>Enter Details & Complete</button>`:`<button class="btn-sm" style="background:var(--gold);color:#fff;border:none;border-radius:4px;padding:4px 10px;cursor:pointer;font-size:11px;display:inline-flex;align-items:center;gap:4px" onclick="startPacking(${i})"><i class="ti ti-player-play"></i>Start Packing</button>`;
+    return `<tr><td class="mono">${t.id}</td><td style="font-size:11px">${t.orderId}</td><td><span class="pill ${t.priority==='Express'?'p-out':t.priority==='Standard'?'p-info':'p-hold'}">${t.priority}</span></td><td>${t.items.length} SKU(s)</td><td style="font-size:11px;color:var(--t2)">${t.ts}</td><td>${startedStr}</td><td>${btn}</td></tr>`;
+  }).join('')}</tbody></table></div>`;
 }
-function packComplete(i){
-  const t=packingQueue[i];
-  console.log('packComplete called for:', t);
-  packingQueue.splice(i,1);
-  const pkid=newId('PKD');
-  const packedObj={id:pkid,type:'packed',ts:ts(),detail:`${t.orderId} · ${t.items.length} SKUs packed — ready for dispatch`,orderId:t.orderId,items:t.items};
-  console.log('Adding to history:', packedObj);
-  history.push(packedObj);
-  console.log('History after push (length):', history.length);
-  console.log('Packed items in history:', history.filter(h=>h.type==='packed'));
+let _activePackIdx=null;
+let _packElapsedTimer=null;
+
+function startPacking(i){
+  packingQueue[i].packStartTime=Date.now();
+  packingQueue[i].packStartTs=ts();
   saveHist();
   renderPackingQ();
-  // If dispatch page is active, update it in real-time
-  if(document.getElementById('page-dispatch').classList.contains('active')){
-    console.log('Dispatch page is active, calling renderDispatchPage');
-    renderDispatchPage();
-  }
-  toast(`Order ${t.orderId} marked as packed · moved to dispatch queue`,'s');
+  toast(`Packing started for ${packingQueue[i].orderId} — timer running`,'s');
+}
+function openPackModal(i){
+  _activePackIdx=i;
+  const t=packingQueue[i];
+  document.getElementById('pm-order-id').textContent=t.orderId;
+  document.getElementById('pm-start-time').textContent=t.packStartTs||ts();
+  document.getElementById('pm-items-list').innerHTML=t.items.map(it=>`<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:0.5px solid var(--b)"><span>${it.sku} — ${it.variant||''}</span><span style="font-weight:600">×${it.qty}</span></div>`).join('')||'<div style="color:var(--t3)">No items</div>';
+  // Clear fields
+  ['pm-length','pm-width','pm-height','pm-actual-weight','pm-notes'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  document.getElementById('pm-vol-result').style.display='none';
+  // Start elapsed counter
+  if(_packElapsedTimer)clearInterval(_packElapsedTimer);
+  _packElapsedTimer=setInterval(()=>{
+    const el=document.getElementById('pm-elapsed');
+    if(!el){clearInterval(_packElapsedTimer);return;}
+    const secs=Math.floor((Date.now()-(t.packStartTime||Date.now()))/1000);
+    const m=Math.floor(secs/60),s=secs%60;
+    el.textContent=`(${m}m ${s}s elapsed)`;
+  },1000);
+  const overlay=document.getElementById('pack-modal-overlay');
+  overlay.style.display='flex';
+}
+function closePackModal(){
+  document.getElementById('pack-modal-overlay').style.display='none';
+  if(_packElapsedTimer)clearInterval(_packElapsedTimer);
+  _activePackIdx=null;
+}
+function calcVolWeight(){
+  const L=parseFloat(document.getElementById('pm-length').value)||0;
+  const W=parseFloat(document.getElementById('pm-width').value)||0;
+  const H=parseFloat(document.getElementById('pm-height').value)||0;
+  const actual=parseFloat(document.getElementById('pm-actual-weight').value)||0;
+  const res=document.getElementById('pm-vol-result');
+  if(!L||!W||!H||!actual){res.style.display='none';return;}
+  const vol=parseFloat(((L*W*H)/5000).toFixed(2));
+  const chargeable=Math.max(actual,vol);
+  document.getElementById('pm-show-actual').textContent=actual.toFixed(2);
+  document.getElementById('pm-show-vol').textContent=vol.toFixed(2);
+  document.getElementById('pm-show-chargeable').textContent=chargeable.toFixed(2);
+  document.getElementById('pm-vol-formula').textContent=`Volumetric = (${L}×${W}×${H}) ÷ 5000 = ${vol} kg · Chargeable = max(actual, volumetric)`;
+  res.style.display='block';
+}
+function confirmPackWithDetails(){
+  const i=_activePackIdx;
+  if(i===null)return;
+  const t=packingQueue[i];
+  const L=parseFloat(document.getElementById('pm-length').value)||0;
+  const W=parseFloat(document.getElementById('pm-width').value)||0;
+  const H=parseFloat(document.getElementById('pm-height').value)||0;
+  const actual=parseFloat(document.getElementById('pm-actual-weight').value)||0;
+  const notes=document.getElementById('pm-notes').value.trim();
+  if(!L||!W||!H){toast('Please enter box dimensions (L × W × H)','w');return;}
+  if(!actual){toast('Please enter actual weight','w');return;}
+  const vol=parseFloat(((L*W*H)/5000).toFixed(2));
+  const chargeable=Math.max(actual,vol);
+  const endTime=Date.now();
+  const endTs=ts();
+  const durationSecs=t.packStartTime?Math.floor((endTime-t.packStartTime)/1000):null;
+  const durationStr=durationSecs!==null?`${Math.floor(durationSecs/60)}m ${durationSecs%60}s`:'N/A';
+  closePackModal();
+  packingQueue.splice(i,1);
+  const pkid=newId('PKD');
+  const packedObj={
+    id:pkid,type:'packed',ts:endTs,
+    detail:`${t.orderId} · ${t.items.length} SKUs packed — ready for dispatch`,
+    orderId:t.orderId,items:t.items,
+    packStartTs:t.packStartTs,packStartTime:t.packStartTime,
+    packEndTs:endTs,packEndTime:endTime,
+    packDuration:durationStr,packDurationSecs:durationSecs,
+    boxL:L,boxW:W,boxH:H,
+    actualWeight:actual,volWeight:vol,chargeableWeight:chargeable,
+    packNotes:notes
+  };
+  history.push(packedObj);
+  saveHist();
+  renderPackingQ();
+  if(document.getElementById('page-dispatch').classList.contains('active')){renderDispatchPage();}
+  renderDash();
+  toast(`Order ${t.orderId} packed in ${durationStr} · ${chargeable}kg chargeable · moved to dispatch`,'s');
 }
 
 
@@ -1623,18 +1930,24 @@ function renderDispatchPage(){
   renderPackedOrdersList();
   updateDispatchOrderSelect();
   renderDispatchCompletedLog();
+  renderDispatchSameDayAlert();
 }
 function renderPackedOrdersList(){
   const el=document.getElementById('dispatch-packed-list');
   if(!el){console.log('ERROR: dispatch-packed-list element not found');return;}
   const packed=history.filter(h=>h.type==='packed');
-  console.log('renderPackedOrdersList called');
-  console.log('Total history items:', history.length);
-  console.log('Packed orders found:', packed.length);
-  console.log('Packed orders data:', packed);
   el.innerHTML=packed.length?packed.slice(-8).reverse().map(p=>{
     const itemCount=(p.items&&p.items.length)?p.items.length:0;
-    return `<div class="hist-entry" onclick="selectDispatchOrder('${p.id}')" style="cursor:pointer"><div class="hist-head"><span class="hist-id">${p.id}</span><span class="pill p-info">Awaiting AWB</span></div><div class="hist-body">${p.ts} · Order: ${p.orderId} · ${itemCount} SKUs</div></div>`;
+    const hasDims=p.boxL&&p.boxW&&p.boxH;
+    const dimsStr=hasDims?`${p.boxL}×${p.boxW}×${p.boxH}cm · ${p.chargeableWeight}kg chargeable`:'Dims not captured';
+    const durStr=p.packDuration?`Packed in ${p.packDuration}`:'';
+    return `<div class="hist-entry" onclick="selectDispatchOrder('${p.id}')" style="cursor:pointer">
+      <div class="hist-head"><span class="hist-id">${p.id}</span><span class="pill p-info">Awaiting AWB</span></div>
+      <div class="hist-body">
+        <div>${p.ts} · Order: <strong>${p.orderId}</strong> · ${itemCount} SKU(s)</div>
+        <div style="font-size:10px;color:var(--t2);margin-top:2px">📦 ${dimsStr}${durStr?' · ⏱ '+durStr:''}</div>
+      </div>
+    </div>`;
   }).join(''):'<div class="empty">No packed orders yet — create and pack orders first</div>';
 }
 function filterDispatchOrders(){
@@ -1722,7 +2035,36 @@ function renderDispatchCompletedLog(){
   const el=document.getElementById('disp-dispatch-log');
   if(!el)return;
   const dispatched=history.filter(h=>h.type==='dispatched');
-  el.innerHTML=dispatched.length?dispatched.slice(-8).reverse().map(d=>`<div class="hist-entry"><div class="hist-head"><span class="hist-id">${d.id}</span><span class="pill p-ok">Dispatched</span><button onclick="printDispatch('${d.id}')" style="background:none;border:none;cursor:pointer;color:var(--t2);font-size:11px;padding:4px 8px;border-radius:3px;transition:all 0.2s" onmouseover="this.style.background='var(--s2)';this.style.color='var(--t)'" onmouseout="this.style.background='transparent';this.style.color='var(--t2)'"><i class="ti ti-printer"></i>Print</button></span></div><div class="hist-body"><div style="margin-bottom:4px"><span style="font-weight:600">${d.orderId}</span> · AWB: <span class="mono">${d.awb}</span></div><div style="font-size:10px;color:var(--t2);line-height:1.6">To: ${d.recipientName}, ${d.pincode} · ${d.shippingMethod} · ${d.dispatchedAt}</div></div></div>`).join(''):'<div class="empty">No dispatches completed yet</div>';
+  el.innerHTML=dispatched.length?dispatched.slice(-8).reverse().map(d=>{
+    const hasDims=d.boxL&&d.boxW&&d.boxH;
+    const dimsStr=hasDims?`${d.boxL}×${d.boxW}×${d.boxH} cm`:'—';
+    const actualW=d.actualWeight?`${d.actualWeight} kg`:'—';
+    const volW=d.volWeight?`${d.volWeight} kg`:'—';
+    const chargeW=d.chargeableWeight?`<strong>${d.chargeableWeight} kg</strong>`:'—';
+    const packDur=d.packDuration||'—';
+    const packStart=d.packStartTs||'—';
+    const packEnd=d.packEndTs||'—';
+    return `<div class="hist-entry">
+      <div class="hist-head">
+        <span class="hist-id">${d.id}</span>
+        <span class="pill p-ok">Dispatched</span>
+        <button onclick="printDispatch('${d.id}')" style="background:none;border:none;cursor:pointer;color:var(--t2);font-size:11px;padding:4px 8px;border-radius:3px" onmouseover="this.style.background='var(--s2)'" onmouseout="this.style.background='transparent'"><i class="ti ti-printer"></i>Print</button>
+      </div>
+      <div class="hist-body">
+        <div style="margin-bottom:6px"><span style="font-weight:600">${d.orderId}</span> · AWB: <span class="mono">${d.awb}</span></div>
+        <div style="font-size:10px;color:var(--t2);line-height:1.6">To: ${d.recipientName}, ${d.pincode} · ${d.shippingMethod} · ${d.dispatchedAt}</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:4px;margin-top:6px">
+          <div style="background:var(--s2);border-radius:4px;padding:5px 8px;font-size:10px"><div style="color:var(--t3)">Box (L×W×H)</div><div style="font-weight:600">${dimsStr}</div></div>
+          <div style="background:var(--s2);border-radius:4px;padding:5px 8px;font-size:10px"><div style="color:var(--t3)">Actual wt</div><div style="font-weight:600">${actualW}</div></div>
+          <div style="background:var(--s2);border-radius:4px;padding:5px 8px;font-size:10px"><div style="color:var(--t3)">Vol. wt</div><div style="font-weight:600;color:var(--it)">${volW}</div></div>
+          <div style="background:var(--gold);border-radius:4px;padding:5px 8px;font-size:10px"><div style="color:rgba(255,255,255,0.7)">Chargeable</div><div style="font-weight:700;color:#fff">${chargeW}</div></div>
+          <div style="background:var(--s2);border-radius:4px;padding:5px 8px;font-size:10px"><div style="color:var(--t3)">Pack start</div><div style="font-weight:600">${packStart}</div></div>
+          <div style="background:var(--s2);border-radius:4px;padding:5px 8px;font-size:10px"><div style="color:var(--t3)">Pack end</div><div style="font-weight:600">${packEnd}</div></div>
+          <div style="background:var(--sbg);border-radius:4px;padding:5px 8px;font-size:10px"><div style="color:var(--st)">Duration</div><div style="font-weight:700;color:var(--st)">${packDur}</div></div>
+        </div>
+      </div>
+    </div>`;
+  }).join(''):'<div class="empty">No dispatches completed yet</div>';
 }
 
 // ANALYTICS & COMPLIANCE
@@ -2530,10 +2872,87 @@ function renderFinance(){
   renderCostPerOp();
   renderWarehouseUtil();
   renderBinEfficiency();
+  renderSpaceUtil();
   renderRackAUtil();
   renderRackBUtil();
   renderCostInputs();
   renderCapacityAlerts();
+}
+function renderSpaceUtil(){
+  const el=document.getElementById('space-util-section');
+  if(!el)return;
+  const TOTAL_RACKS=20;
+  const RACK_W_FT=4,RACK_D_FT=2,RACK_H_FT=10;
+  const CEILING_H_FT=10;
+  const WAREHOUSE_SQFT=1600;
+  const WAREHOUSE_CUFT=WAREHOUSE_SQFT*CEILING_H_FT;
+  const rackFootprint=RACK_W_FT*RACK_D_FT;
+  const totalRackFloor=TOTAL_RACKS*rackFootprint;
+  const aisleFloor=Math.round(totalRackFloor*0.4);
+  const rackZoneFloor=totalRackFloor+aisleFloor;
+  const operationsFloor=WAREHOUSE_SQFT-rackZoneFloor;
+  const floorUtilPct=Math.round((rackZoneFloor/WAREHOUSE_SQFT)*100);
+  const rackVol=RACK_W_FT*RACK_D_FT*RACK_H_FT;
+  const totalRackVol=TOTAL_RACKS*rackVol;
+  const cubeUtilPct=Math.round((totalRackVol/WAREHOUSE_CUFT)*100);
+  const deadAirVol=WAREHOUSE_CUFT-totalRackVol;
+  const verticalEff=Math.round((RACK_H_FT/CEILING_H_FT)*100);
+  const totalSKUs=SKUS.length;
+  const activeSKUs=SKUS.filter(s=>(inv[s.sku]||{qty:0}).qty>0).length;
+  const totalUnits=SKUS.reduce((a,s)=>a+(inv[s.sku]||{qty:0}).qty,0);
+  const avgUnitsPerRack=Math.round(totalUnits/TOTAL_RACKS);
+  el.innerHTML=`
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:12px">
+    <div style="padding:10px;background:var(--s2);border-radius:8px;text-align:center">
+      <div style="font-size:22px;font-weight:700;color:var(--gold)">${floorUtilPct}%</div>
+      <div style="font-size:10px;color:var(--t2);margin-top:2px">Floor Used</div>
+      <div style="font-size:10px;color:var(--t3)">${rackZoneFloor} / ${WAREHOUSE_SQFT} sq ft</div>
+    </div>
+    <div style="padding:10px;background:var(--s2);border-radius:8px;text-align:center">
+      <div style="font-size:22px;font-weight:700;color:var(--it)">${cubeUtilPct}%</div>
+      <div style="font-size:10px;color:var(--t2);margin-top:2px">Air Space Used</div>
+      <div style="font-size:10px;color:var(--t3)">${totalRackVol.toLocaleString()} / ${WAREHOUSE_CUFT.toLocaleString()} cu ft</div>
+    </div>
+    <div style="padding:10px;background:var(--s2);border-radius:8px;text-align:center">
+      <div style="font-size:22px;font-weight:700;color:var(--st)">${verticalEff}%</div>
+      <div style="font-size:10px;color:var(--t2);margin-top:2px">Vertical Efficiency</div>
+      <div style="font-size:10px;color:var(--t3)">Racks reach full ceiling</div>
+    </div>
+    <div style="padding:10px;background:var(--s2);border-radius:8px;text-align:center">
+      <div style="font-size:22px;font-weight:700;color:var(--t)">${operationsFloor}</div>
+      <div style="font-size:10px;color:var(--t2);margin-top:2px">Ops Floor Free</div>
+      <div style="font-size:10px;color:var(--t3)">Packing / staging / aisles</div>
+    </div>
+  </div>
+  <div style="margin-bottom:12px">
+    <div style="font-size:10px;color:var(--t2);margin-bottom:4px;font-weight:600">FLOOR BREAKDOWN — 1,600 sq ft</div>
+    <div style="height:24px;border-radius:6px;overflow:hidden;display:flex;font-size:9px;font-weight:600">
+      <div style="width:${Math.round((totalRackFloor/WAREHOUSE_SQFT)*100)}%;background:#B8860B;display:flex;align-items:center;justify-content:center;color:#fff;white-space:nowrap;overflow:hidden">Racks ${totalRackFloor}sf</div>
+      <div style="width:${Math.round((aisleFloor/WAREHOUSE_SQFT)*100)}%;background:#d4a843;display:flex;align-items:center;justify-content:center;color:#fff;white-space:nowrap;overflow:hidden">Aisles ${aisleFloor}sf</div>
+      <div style="width:${Math.round((operationsFloor/WAREHOUSE_SQFT)*100)}%;background:var(--sbg);display:flex;align-items:center;justify-content:center;color:var(--st);white-space:nowrap;overflow:hidden">Operations ${operationsFloor}sf</div>
+    </div>
+  </div>
+  <div style="font-size:10px;color:var(--t2);margin-bottom:4px;font-weight:600">RACK SPECIFICATIONS (per rack)</div>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:12px;font-size:10px">
+    <div style="padding:8px;background:var(--s3);border-radius:6px"><div style="color:var(--t3)">Width</div><div style="font-weight:600">${RACK_W_FT} ft (1,200mm)</div></div>
+    <div style="padding:8px;background:var(--s3);border-radius:6px"><div style="color:var(--t3)">Depth</div><div style="font-weight:600">${RACK_D_FT} ft (600mm)</div></div>
+    <div style="padding:8px;background:var(--s3);border-radius:6px"><div style="color:var(--t3)">Height</div><div style="font-weight:600">${RACK_H_FT} ft (3,000mm)</div></div>
+    <div style="padding:8px;background:var(--s3);border-radius:6px"><div style="color:var(--t3)">Footprint</div><div style="font-weight:600">${rackFootprint} sq ft</div></div>
+    <div style="padding:8px;background:var(--s3);border-radius:6px"><div style="color:var(--t3)">Volume</div><div style="font-weight:600">${rackVol} cu ft</div></div>
+    <div style="padding:8px;background:var(--s3);border-radius:6px"><div style="color:var(--t3)">Total racks</div><div style="font-weight:600">${TOTAL_RACKS}</div></div>
+  </div>
+  <div style="font-size:10px;color:var(--t2);margin-bottom:4px;font-weight:600">CUBIC / AIR SPACE BREAKDOWN</div>
+  <div style="padding:10px;background:var(--s2);border-radius:8px;font-size:11px;line-height:2">
+    <div style="display:flex;justify-content:space-between"><span style="color:var(--t2)">Total warehouse volume (1600 sf x 10ft ceiling):</span><span style="font-weight:600">${WAREHOUSE_CUFT.toLocaleString()} cu ft</span></div>
+    <div style="display:flex;justify-content:space-between"><span style="color:var(--t2)">Volume occupied by 20 racks:</span><span style="font-weight:600;color:var(--gold)">${totalRackVol.toLocaleString()} cu ft</span></div>
+    <div style="display:flex;justify-content:space-between"><span style="color:var(--t2)">Dead / unused air space:</span><span style="font-weight:600;color:var(--dt)">${deadAirVol.toLocaleString()} cu ft</span></div>
+    <div style="display:flex;justify-content:space-between;border-top:0.5px solid var(--b);padding-top:6px;margin-top:4px"><span style="color:var(--t2)">Avg units per rack:</span><span style="font-weight:600">${avgUnitsPerRack}</span></div>
+    <div style="display:flex;justify-content:space-between"><span style="color:var(--t2)">Active SKUs / Total SKUs:</span><span style="font-weight:600">${activeSKUs} / ${totalSKUs}</span></div>
+  </div>
+  <div style="margin-top:8px;padding:8px;background:var(--ibg);border-radius:6px;font-size:10px;color:var(--it)">
+    <i class="ti ti-info-circle"></i> Your racks (10ft) match ceiling height — <strong>100% vertical efficiency</strong>. The remaining air space is above open floor areas (packing, staging, aisles) which cannot be racked.
+  </div>
+  `;
 }
 function renderCostSummary(){
   const el=document.getElementById('cost-summary');
