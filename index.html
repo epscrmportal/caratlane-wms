@@ -261,8 +261,45 @@ tr:hover td{background:var(--s2)}
     <div onclick="navAndClose('analytics')" style="padding:12px 16px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--t2);border-bottom:0.5px solid var(--b);white-space:nowrap;transition:all 0.2s" onmouseover="this.style.backgroundColor='var(--s2)';this.style.color='var(--t)'" onmouseout="this.style.backgroundColor='transparent';this.style.color='var(--t2)'">
       <i class="ti ti-chart-line"></i>Analytics & Compliance
     </div>
-    <div onclick="navAndClose('finance')" style="padding:12px 16px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--t2);white-space:nowrap;transition:all 0.2s" onmouseover="this.style.backgroundColor='var(--s2)';this.style.color='var(--t)'" onmouseout="this.style.backgroundColor='transparent';this.style.color='var(--t2)'">
+    <div onclick="navAndClose('finance')" style="padding:12px 16px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--t2);border-bottom:0.5px solid var(--b);white-space:nowrap;transition:all 0.2s" onmouseover="this.style.backgroundColor='var(--s2)';this.style.color='var(--t)'" onmouseout="this.style.backgroundColor='transparent';this.style.color='var(--t2)'">
       <i class="ti ti-wallet"></i>Finance & Capacity
+    </div>
+    <div onclick="showClearDataModal()" style="padding:12px 16px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--dt);border-top:0.5px solid var(--b);white-space:nowrap;transition:all 0.2s;font-weight:600" onmouseover="this.style.backgroundColor='var(--dbg)'" onmouseout="this.style.backgroundColor='transparent'">
+      <i class="ti ti-trash"></i>Clear All Data
+    </div>
+  </div>
+
+  <!-- CLEAR DATA CONFIRMATION MODAL -->
+  <div id="clear-modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:3000;align-items:center;justify-content:center;padding:20px">
+    <div style="background:var(--s);border-radius:14px;max-width:420px;width:100%;padding:24px;box-shadow:0 8px 40px rgba(0,0,0,.4)">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+        <div style="width:44px;height:44px;background:var(--dbg);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <i class="ti ti-alert-triangle" style="font-size:22px;color:var(--dt)"></i>
+        </div>
+        <div>
+          <div style="font-weight:700;font-size:15px;color:var(--dt)">Clear All Data</div>
+          <div style="font-size:11px;color:var(--t2);margin-top:2px">This action cannot be undone</div>
+        </div>
+      </div>
+      <div style="background:var(--dbg);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:11px;color:var(--dt);line-height:1.8">
+        The following will be <strong>permanently deleted</strong>:<br>
+        • All GRN / inbound records<br>
+        • All pick, pack & dispatch history<br>
+        • All returns records<br>
+        • All inventory counts & audits<br>
+        • All packing queue items<br>
+        • Inventory quantities (reset to zero)
+      </div>
+      <div style="margin-bottom:16px">
+        <label for="clear-confirm-input" style="font-size:11px;color:var(--t2);display:block;margin-bottom:6px;font-weight:600">Type <strong style="color:var(--dt)">CLEAR</strong> to confirm:</label>
+        <input type="text" id="clear-confirm-input" placeholder="Type CLEAR here" style="width:100%;padding:10px;border:1.5px solid var(--b);border-radius:6px;background:var(--s2);color:var(--t);font-size:13px;font-weight:600;letter-spacing:2px" oninput="validateClearInput()">
+      </div>
+      <div style="display:flex;gap:8px">
+        <button onclick="closeClearModal()" style="flex:1;padding:10px;background:var(--s2);color:var(--t);border:0.5px solid var(--b);border-radius:6px;cursor:pointer;font-weight:600;font-size:12px">Cancel</button>
+        <button id="clear-confirm-btn" onclick="executeFullClear()" disabled style="flex:1;padding:10px;background:var(--b);color:var(--t3);border:none;border-radius:6px;cursor:not-allowed;font-weight:600;font-size:12px;transition:all .2s">
+          <i class="ti ti-trash"></i> Clear Everything
+        </button>
+      </div>
     </div>
   </div>
   <div class="tr">
@@ -297,13 +334,13 @@ tr:hover td{background:var(--s2)}
       <div class="panel">
         <div class="ph"><i class="ti ti-package-import"></i>Stage A–D: Receive shipment &amp; create GRN</div>
         <div class="pb">
-          <div class="frow"><label>ASN / PO Reference</label><input type="text" id="ib-asn" placeholder="e.g. ASN-2026-0042"></div>
-          <div class="frow"><label>Carrier / Transporter</label><input type="text" id="ib-carrier" placeholder="e.g. Blue Dart / EPS Fleet"></div>
+          <div class="frow"><label for="ib-asn">ASN / PO Reference</label><input type="text" id="ib-asn" placeholder="e.g. ASN-2026-0042"></div>
+          <div class="frow"><label for="ib-carrier">Carrier / Transporter</label><input type="text" id="ib-carrier" placeholder="e.g. Blue Dart / EPS Fleet"></div>
           <div class="fg2">
-            <div class="frow"><label>Vehicle / Docket No.</label><input type="text" id="ib-vehicle" placeholder="MH-04-AB-1234"></div>
-            <div class="frow"><label>No. of cartons</label><input type="number" id="ib-cartons" placeholder="e.g. 12" min="1"></div>
+            <div class="frow"><label for="ib-vehicle">Vehicle / Docket No.</label><input type="text" id="ib-vehicle" placeholder="MH-04-AB-1234"></div>
+            <div class="frow"><label for="ib-cartons">No. of cartons</label><input type="number" id="ib-cartons" placeholder="e.g. 12" min="1"></div>
           </div>
-          <div class="frow"><label>Seal integrity (SOP §1.4 Stage A, Step 2)</label>
+          <div class="frow"><label for="ib-seal">Seal integrity (SOP §1.4 Stage A, Step 2)</label>
             <select id="ib-seal">
               <option value="ok">Seals intact — verified ✓</option>
               <option value="broken">Broken / missing seal ⚠</option>
@@ -311,23 +348,23 @@ tr:hover td{background:var(--s2)}
           </div>
           <div class="sep"></div>
           <div class="stitle">Items in this shipment</div>
-          <div class="frow"><label>Search or select SKU</label>
+          <div class="frow"><label for="ib-sku-search">Search or select SKU</label>
             <div style="position:relative;margin-bottom:8px">
               <input type="text" id="ib-sku-search" placeholder="Type SKU name or code to filter..." style="width:100%;margin-bottom:4px" oninput="filterSkuList('ib-sku-search','ib-sku')">
               <select id="ib-sku" style="width:100%;font-size:11px;min-height:100px"></select>
             </div>
           </div>
           <div class="fg2" style="margin-bottom:8px">
-            <div><label style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">Override BIN (optional)</label><input type="text" id="ib-bin-override" placeholder="e.g. A-3 (leave blank for auto)" style="width:100%"></div>
+            <div><label for="ib-bin-override" style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">Override BIN (optional)</label><input type="text" id="ib-bin-override" placeholder="e.g. A-3 (leave blank for auto)" style="width:100%"></div>
             <div class="fg2" style="margin-bottom:8px">
-            <div><label style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">QC Result (§1.4 Stage C)</label>
+            <div><label for="ib-qc" style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">QC Result (§1.4 Stage C)</label>
               <select id="ib-qc">
                 <option value="PASS">PASS — Good for storage</option>
                 <option value="HOLD">HOLD — Pending inspection</option>
                 <option value="REJECT">REJECT — Return to vendor</option>
               </select>
             </div>
-            <div><label style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">Issue (if HOLD/REJECT)</label>
+            <div><label for="ib-issue" style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">Issue (if HOLD/REJECT)</label>
               <select id="ib-issue">
                 <option value="">None</option>
                 <option value="Damaged packaging">Damaged packaging</option>
@@ -342,7 +379,7 @@ tr:hover td{background:var(--s2)}
           </div>
           </div>
           <div class="fg2" style="margin-bottom:8px">
-            <div><label style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">Qty</label><input type="number" id="ib-qty" value="1" min="1" max="999" style="width:100%"></div>
+            <div><label for="ib-qty" style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">Qty</label><input type="number" id="ib-qty" value="1" min="1" max="999" style="width:100%"></div>
             <div style="align-self:end"><button onclick="addIbItem()" style="width:100%"><i class="ti ti-plus"></i>Add item</button></div>
           </div>
           <div id="ib-items-list" style="margin-bottom:8px"></div>
@@ -371,33 +408,33 @@ tr:hover td{background:var(--s2)}
       <div class="panel">
         <div class="ph"><i class="ti ti-scan"></i>Generate pick task</div>
         <div class="pb">
-          <div class="frow"><label>Order ID</label><input type="text" id="pk-orderid" placeholder="e.g. CL-ORD-20260601-0088"></div>
-          <div class="frow"><label>Priority (SOP §2.4 Stage A, Step 3)</label>
+          <div class="frow"><label for="pk-orderid">Order ID</label><input type="text" id="pk-orderid" placeholder="e.g. CL-ORD-20260601-0088"></div>
+          <div class="frow"><label for="pk-priority">Priority (SOP §2.4 Stage A, Step 3)</label>
             <select id="pk-priority">
               <option value="Express">Express (highest priority)</option>
               <option value="Standard" selected>Standard</option>
               <option value="Pre-order">Pre-order</option>
             </select>
           </div>
-          <div class="frow"><label>Picking method (SOP §2.2)</label>
+          <div class="frow"><label for="pk-method">Picking method (SOP §2.2)</label>
             <select id="pk-method">
               <option value="Single">Single order pick — high value / complex</option>
               <option value="Batch">Batch pick — high volume periods</option>
               <option value="Zone">Zone pick — zone-wise consolidation</option>
             </select>
           </div>
-          <div class="frow"><label>Assigned picker ID</label><input type="text" id="pk-picker" placeholder="e.g. EPS-P04"></div>
+          <div class="frow"><label for="pk-picker">Assigned picker ID</label><input type="text" id="pk-picker" placeholder="e.g. EPS-P04"></div>
           <div class="sep"></div>
           <div class="stitle">Items to pick</div>
           <div class="fg4" style="margin-bottom:8px">
-            <div><label style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">SKU</label><select id="pk-sku" style="width:100%;font-size:11px"></select></div>
-            <div><label style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">Condition check (§2.4 B-7)</label>
+            <div><label for="pk-sku" style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">SKU</label><select id="pk-sku" style="width:100%;font-size:11px"></select></div>
+            <div><label for="pk-cond" style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">Condition check (§2.4 B-7)</label>
               <select id="pk-cond">
                 <option value="ok">Good — pick confirmed</option>
                 <option value="defective">Defective — flag to HOLD</option>
               </select>
             </div>
-            <div><label style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">Qty</label><input type="number" id="pk-qty" value="1" min="1"></div>
+            <div><label for="pk-qty" style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">Qty</label><input type="number" id="pk-qty" value="1" min="1"></div>
             <button onclick="addPkItem()"><i class="ti ti-plus"></i>Add</button>
           </div>
           <div id="pk-items-list" style="margin-bottom:8px"></div>
@@ -447,21 +484,21 @@ tr:hover td{background:var(--s2)}
       <div style="font-size:10px;font-weight:600;color:var(--t2);margin-bottom:6px">BOX DIMENSIONS (cm)</div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px">
         <div>
-          <label style="font-size:10px;color:var(--t2);display:block;margin-bottom:3px">Length (L)</label>
+          <label for="pm-length" style="font-size:10px;color:var(--t2);display:block;margin-bottom:3px">Length (L)</label>
           <input type="number" id="pm-length" min="1" placeholder="e.g. 40" oninput="calcVolWeight()" style="width:100%;padding:8px;border:0.5px solid var(--b);border-radius:6px;background:var(--s2);color:var(--t);font-size:12px;font-weight:600">
         </div>
         <div>
-          <label style="font-size:10px;color:var(--t2);display:block;margin-bottom:3px">Width (W)</label>
+          <label for="pm-width" style="font-size:10px;color:var(--t2);display:block;margin-bottom:3px">Width (W)</label>
           <input type="number" id="pm-width" min="1" placeholder="e.g. 30" oninput="calcVolWeight()" style="width:100%;padding:8px;border:0.5px solid var(--b);border-radius:6px;background:var(--s2);color:var(--t);font-size:12px;font-weight:600">
         </div>
         <div>
-          <label style="font-size:10px;color:var(--t2);display:block;margin-bottom:3px">Height (H)</label>
+          <label for="pm-height" style="font-size:10px;color:var(--t2);display:block;margin-bottom:3px">Height (H)</label>
           <input type="number" id="pm-height" min="1" placeholder="e.g. 20" oninput="calcVolWeight()" style="width:100%;padding:8px;border:0.5px solid var(--b);border-radius:6px;background:var(--s2);color:var(--t);font-size:12px;font-weight:600">
         </div>
       </div>
       <!-- Weight -->
       <div style="margin-bottom:12px">
-        <label style="font-size:10px;color:var(--t2);display:block;margin-bottom:3px;font-weight:600">ACTUAL WEIGHT (kg)</label>
+        <label for="pm-actual-weight" style="font-size:10px;color:var(--t2);display:block;margin-bottom:3px;font-weight:600">ACTUAL WEIGHT (kg)</label>
         <input type="number" id="pm-actual-weight" min="0.01" step="0.01" placeholder="e.g. 1.25" oninput="calcVolWeight()" style="width:100%;padding:8px;border:0.5px solid var(--b);border-radius:6px;background:var(--s2);color:var(--t);font-size:13px;font-weight:700">
       </div>
       <!-- Volumetric weight result -->
@@ -485,7 +522,7 @@ tr:hover td{background:var(--s2)}
       </div>
       <!-- Packing notes -->
       <div style="margin-bottom:14px">
-        <label style="font-size:10px;color:var(--t2);display:block;margin-bottom:3px;font-weight:600">PACKING NOTES (optional)</label>
+        <label for="pm-notes" style="font-size:10px;color:var(--t2);display:block;margin-bottom:3px;font-weight:600">PACKING NOTES (optional)</label>
         <textarea id="pm-notes" placeholder="e.g. Fragile items bubble-wrapped, extra tape applied..." style="width:100%;padding:8px;border:0.5px solid var(--b);border-radius:6px;background:var(--s2);color:var(--t);font-size:11px;min-height:56px;resize:vertical"></textarea>
       </div>
       <!-- Confirm button -->
@@ -509,7 +546,7 @@ tr:hover td{background:var(--s2)}
       <div class="panel">
         <div class="ph"><i class="ti ti-truck-delivery"></i>Assign courier &amp; AWB</div>
         <div class="pb">
-          <div class="frow"><label>Search or select packed order</label>
+          <div class="frow"><label for="disp-search-order">Search or select packed order</label>
             <input type="text" id="disp-search-order" placeholder="Search by order ID..." oninput="filterDispatchOrders()" style="margin-bottom:6px">
             <select id="disp-order-select" onchange="loadDispatchOrder()">
               <option value="">— Choose an order —</option>
@@ -520,20 +557,20 @@ tr:hover td{background:var(--s2)}
             <div class="stitle">Order details</div>
             <div id="disp-detail-content"></div>
             <div class="sep"></div>
-            <div class="frow"><label>Recipient name</label><input type="text" id="disp-recip-name" placeholder="e.g. Rajesh Kumar"></div>
-            <div class="frow"><label>Address</label><textarea id="disp-address" placeholder="Complete delivery address" style="min-height:70px"></textarea></div>
+            <div class="frow"><label for="disp-recip-name">Recipient name</label><input type="text" id="disp-recip-name" placeholder="e.g. Rajesh Kumar"></div>
+            <div class="frow"><label for="disp-address">Address</label><textarea id="disp-address" placeholder="Complete delivery address" style="min-height:70px"></textarea></div>
             <div class="fg2">
-              <div class="frow"><label>Pincode</label><input type="text" id="disp-pincode" placeholder="e.g. 400001"></div>
-              <div class="frow"><label>Phone</label><input type="text" id="disp-phone" placeholder="e.g. +91-9876543210"></div>
+              <div class="frow"><label for="disp-pincode">Pincode</label><input type="text" id="disp-pincode" placeholder="e.g. 400001"></div>
+              <div class="frow"><label for="disp-phone">Phone</label><input type="text" id="disp-phone" placeholder="e.g. +91-9876543210"></div>
             </div>
-            <div class="frow"><label>Shipping method</label>
+            <div class="frow"><label for="disp-shipping">Shipping method</label>
               <select id="disp-shipping">
                 <option value="Standard Road">Standard Road (3-5 days)</option>
                 <option value="Express Road">Express Road (1-2 days)</option>
                 <option value="Air">Air (Next day)</option>
               </select>
             </div>
-            <div class="frow"><label>Courier AWB number (from 3rd party)</label><input type="text" id="disp-awb" placeholder="e.g. 1234567890123"></div>
+            <div class="frow"><label for="disp-awb">Courier AWB number (from 3rd party)</label><input type="text" id="disp-awb" placeholder="e.g. 1234567890123"></div>
             <button class="btn-primary" style="width:100%;justify-content:center" onclick="confirmCourierDispatch()"><i class="ti ti-send"></i>Confirm dispatch &amp; assign AWB</button>
           </div>
         </div>
@@ -552,8 +589,8 @@ tr:hover td{background:var(--s2)}
       <div class="panel">
         <div class="ph"><i class="ti ti-package-export"></i>Receive &amp; inspect return (§4.4)</div>
         <div class="pb">
-          <div class="frow"><label>AWB / Tracking No.</label><input type="text" id="rt-awb" placeholder="e.g. AWB-9876543210"></div>
-          <div class="frow"><label>Return type (SOP §4.2)</label>
+          <div class="frow"><label for="rt-awb">AWB / Tracking No.</label><input type="text" id="rt-awb" placeholder="e.g. AWB-9876543210"></div>
+          <div class="frow"><label for="rt-type">Return type (SOP §4.2)</label>
             <select id="rt-type">
               <option value="Customer Return">Customer return (voluntary)</option>
               <option value="RTO">RTO — Return to origin (undelivered)</option>
@@ -562,19 +599,19 @@ tr:hover td{background:var(--s2)}
               <option value="Courier Damage">Courier damage return</option>
             </select>
           </div>
-          <div class="frow"><label>Original Order ID</label><input type="text" id="rt-orderid" placeholder="e.g. CL-ORD-20260601-0055"></div>
+          <div class="frow"><label for="rt-orderid">Original Order ID</label><input type="text" id="rt-orderid" placeholder="e.g. CL-ORD-20260601-0055"></div>
           <div class="sep"></div>
           <div class="stitle">Item QC grading (SOP §4.3)</div>
           <div class="fg4" style="margin-bottom:8px">
-            <div><label style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">SKU</label><select id="rt-sku" style="width:100%;font-size:11px"></select></div>
-            <div><label style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">QC Grade</label>
+            <div><label for="rt-sku" style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">SKU</label><select id="rt-sku" style="width:100%;font-size:11px"></select></div>
+            <div><label for="rt-grade" style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">QC Grade</label>
               <select id="rt-grade">
                 <option value="A">Grade A — unworn, all tags, no defects → restock</option>
                 <option value="B">Grade B — tried once, minor issue → hold for CL</option>
                 <option value="C">Grade C — worn/stained/defective → send to CL QC</option>
               </select>
             </div>
-            <div><label style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">Qty</label><input type="number" id="rt-qty" value="1" min="1"></div>
+            <div><label for="rt-qty" style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">Qty</label><input type="number" id="rt-qty" value="1" min="1"></div>
             <button onclick="addRtItem()"><i class="ti ti-plus"></i>Add</button>
           </div>
           <div id="rt-items-list" style="margin-bottom:8px"></div>
@@ -781,10 +818,10 @@ tr:hover td{background:var(--s2)}
   <!-- QC VIEW -->
   <div id="mobile-qc" class="mobile-view" style="display:none">
     <div style="background:var(--s2);padding:12px;border-radius:6px;margin-bottom:12px">
-      <label style="font-size:11px;color:var(--t2);display:block;margin-bottom:4px;font-weight:600">SKU Code</label>
+      <label for="m-qc-sku" style="font-size:11px;color:var(--t2);display:block;margin-bottom:4px;font-weight:600">SKU Code</label>
       <input type="text" id="m-qc-sku" placeholder="e.g., UNI-GS-M-34" style="width:100%;padding:8px;border:0.5px solid var(--b);border-radius:4px;font-size:12px;margin-bottom:8px">
       
-      <label style="font-size:11px;color:var(--t2);display:block;margin-bottom:4px;font-weight:600">QC Result</label>
+      <label for="m-qc-result" style="font-size:11px;color:var(--t2);display:block;margin-bottom:4px;font-weight:600">QC Result</label>
       <select id="m-qc-result" style="width:100%;padding:8px;border:0.5px solid var(--b);border-radius:4px;font-size:12px;margin-bottom:8px">
         <option value="">Select QC Result</option>
         <option value="PASS">✓ PASS</option>
@@ -792,7 +829,7 @@ tr:hover td{background:var(--s2)}
         <option value="REJECT">✗ REJECT</option>
       </select>
       
-      <label style="font-size:11px;color:var(--t2);display:block;margin-bottom:4px;font-weight:600">Issue Category</label>
+      <label for="m-qc-issue" style="font-size:11px;color:var(--t2);display:block;margin-bottom:4px;font-weight:600">Issue Category</label>
       <select id="m-qc-issue" style="width:100%;padding:8px;border:0.5px solid var(--b);border-radius:4px;font-size:12px;margin-bottom:8px">
         <option value="">None</option>
         <option value="Damaged">🔴 Damaged</option>
@@ -803,7 +840,7 @@ tr:hover td{background:var(--s2)}
         <option value="Missing Items">📦 Missing Items</option>
       </select>
 
-      <label style="font-size:11px;color:var(--t2);display:block;margin-bottom:4px;font-weight:600">Capture Photo</label>
+      <label for="m-qc-photo" style="font-size:11px;color:var(--t2);display:block;margin-bottom:4px;font-weight:600">Capture Photo</label>
       <input type="file" id="m-qc-photo" accept="image/*" capture="environment" style="width:100%;padding:8px;border:0.5px solid var(--b);border-radius:4px;font-size:11px;margin-bottom:8px">
       
       <div id="m-photo-preview" style="margin-bottom:8px"></div>
@@ -821,7 +858,7 @@ tr:hover td{background:var(--s2)}
       <div class="stitle">Count Configuration</div>
       <div style="padding:12px;background:var(--s2);border-radius:6px;margin-bottom:12px;font-size:11px">
         <div style="margin-bottom:8px">
-          <label style="color:var(--t2);display:block;margin-bottom:3px;font-weight:600">Count Type</label>
+          <label for="ic-type" style="color:var(--t2);display:block;margin-bottom:3px;font-weight:600">Count Type</label>
           <select id="ic-type" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px;font-size:11px">
             <option value="full">Full Physical Count (All 84 SKUs)</option>
             <option value="cycle">Cycle Count (Specific SKUs only)</option>
@@ -829,23 +866,23 @@ tr:hover td{background:var(--s2)}
           </select>
         </div>
         <div style="margin-bottom:8px">
-          <label style="color:var(--t2);display:block;margin-bottom:3px;font-weight:600">Count Month & Year</label>
+          <label for="ic-month" style="color:var(--t2);display:block;margin-bottom:3px;font-weight:600">Count Month & Year</label>
           <input type="month" id="ic-month" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px;font-size:11px">
         </div>
         <div style="margin-bottom:8px">
-          <label style="color:var(--t2);display:block;margin-bottom:3px;font-weight:600">Count Date (Today)</label>
+          <label for="ic-date" style="color:var(--t2);display:block;margin-bottom:3px;font-weight:600">Count Date (Today)</label>
           <input type="date" id="ic-date" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px;font-size:11px">
         </div>
         <div style="margin-bottom:8px">
-          <label style="color:var(--t2);display:block;margin-bottom:3px;font-weight:600">Counted By (Employee)</label>
+          <label for="ic-counter" style="color:var(--t2);display:block;margin-bottom:3px;font-weight:600">Counted By (Employee)</label>
           <input type="text" id="ic-counter" placeholder="e.g. Rajesh Kumar" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px;font-size:11px">
         </div>
         <div style="margin-bottom:8px">
-          <label style="color:var(--t2);display:block;margin-bottom:3px;font-weight:600">Verified By (Manager)</label>
+          <label for="ic-verifier" style="color:var(--t2);display:block;margin-bottom:3px;font-weight:600">Verified By (Manager)</label>
           <input type="text" id="ic-verifier" placeholder="e.g. Priya Singh" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px;font-size:11px">
         </div>
         <div style="margin-bottom:8px">
-          <label style="color:var(--t2);display:block;margin-bottom:3px;font-weight:600">Reason for Count</label>
+          <label for="ic-reason" style="color:var(--t2);display:block;margin-bottom:3px;font-weight:600">Reason for Count</label>
           <select id="ic-reason" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px;font-size:11px">
             <option value="monthly">Monthly Audit</option>
             <option value="discrepancy">Discrepancy Investigation</option>
@@ -1382,6 +1419,52 @@ function renderDispatchSameDayAlert(){
       </div>
     </div>
   `;
+}
+function showClearDataModal(){
+  document.getElementById('dropdown-menu').style.display='none';
+  const overlay=document.getElementById('clear-modal-overlay');
+  overlay.style.display='flex';
+  document.getElementById('clear-confirm-input').value='';
+  document.getElementById('clear-confirm-btn').disabled=true;
+  document.getElementById('clear-confirm-btn').style.background='var(--b)';
+  document.getElementById('clear-confirm-btn').style.color='var(--t3)';
+  document.getElementById('clear-confirm-btn').style.cursor='not-allowed';
+  setTimeout(()=>document.getElementById('clear-confirm-input').focus(),100);
+}
+function closeClearModal(){
+  document.getElementById('clear-modal-overlay').style.display='none';
+}
+function validateClearInput(){
+  const val=document.getElementById('clear-confirm-input').value.trim();
+  const btn=document.getElementById('clear-confirm-btn');
+  const valid=val==='CLEAR';
+  btn.disabled=!valid;
+  btn.style.background=valid?'var(--dt)':'var(--b)';
+  btn.style.color=valid?'#fff':'var(--t3)';
+  btn.style.cursor=valid?'pointer':'not-allowed';
+}
+function executeFullClear(){
+  // Clear localStorage
+  localStorage.removeItem('cl_wms_inv2');
+  localStorage.removeItem('cl_wms_hist2');
+  localStorage.removeItem('cl_wms_counts');
+  // Reset all in-memory data
+  history=[];
+  packingQueue=[];
+  inventoryCounts=[];
+  currentCount={};
+  ibItems=[];
+  pkItemsList=[];
+  rtItemsList=[];
+  // Re-init inventory to zero (keeps SKU list but zeroes quantities)
+  inv={};
+  SKUS.forEach(s=>{inv[s.sku]={qty:0,rack:s.rack,shelf:s.shelf};});
+  saveInv();
+  saveHist();
+  closeClearModal();
+  // Refresh all visible pages
+  nav('dashboard');
+  toast('All data cleared — WMS reset to zero','s');
 }
 function renderDash(){
   const total=SKUS.length,ins=SKUS.filter(s=>inv[s.sku]&&inv[s.sku].qty>0).length;
@@ -3149,12 +3232,12 @@ function renderCostInputs(){
   if(!el)return;
   el.innerHTML=`
     <div style="font-size:11px;display:grid;gap:8px">
-      <div><label style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Receiving cost/GRN (₹)</label><input type="number" id="cost-grn" value="${costParams.receivingCostPerGrn}" onchange="updateCost('receivingCostPerGrn',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
-      <div><label style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Pick cost/order (₹)</label><input type="number" id="cost-pick" value="${costParams.pickCostPerOrder}" onchange="updateCost('pickCostPerOrder',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
-      <div><label style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Pack cost/order (₹)</label><input type="number" id="cost-pack" value="${costParams.packCostPerOrder}" onchange="updateCost('packCostPerOrder',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
-      <div><label style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Dispatch revenue/order (₹)</label><input type="number" id="cost-dispatch" value="${costParams.dispatchCostPerOrder}" onchange="updateCost('dispatchCostPerOrder',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
-      <div><label style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Storage cost/SKU/month (₹)</label><input type="number" id="cost-storage" value="${costParams.storageCostPerSku}" onchange="updateCost('storageCostPerSku',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
-      <div><label style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Return processing (₹)</label><input type="number" id="cost-return" value="${costParams.returnProcessingCost}" onchange="updateCost('returnProcessingCost',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
+      <div><label for="cost-grn" style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Receiving cost/GRN (₹)</label><input type="number" id="cost-grn" value="${costParams.receivingCostPerGrn}" onchange="updateCost('receivingCostPerGrn',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
+      <div><label for="cost-pick" style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Pick cost/order (₹)</label><input type="number" id="cost-pick" value="${costParams.pickCostPerOrder}" onchange="updateCost('pickCostPerOrder',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
+      <div><label for="cost-pack" style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Pack cost/order (₹)</label><input type="number" id="cost-pack" value="${costParams.packCostPerOrder}" onchange="updateCost('packCostPerOrder',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
+      <div><label for="cost-dispatch" style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Dispatch revenue/order (₹)</label><input type="number" id="cost-dispatch" value="${costParams.dispatchCostPerOrder}" onchange="updateCost('dispatchCostPerOrder',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
+      <div><label for="cost-storage" style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Storage cost/SKU/month (₹)</label><input type="number" id="cost-storage" value="${costParams.storageCostPerSku}" onchange="updateCost('storageCostPerSku',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
+      <div><label for="cost-return" style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Return processing (₹)</label><input type="number" id="cost-return" value="${costParams.returnProcessingCost}" onchange="updateCost('returnProcessingCost',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
       <button onclick="renderFinance()" style="width:100%;padding:8px;background:var(--gold);color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:11px">Recalculate</button>
     </div>
   `;
