@@ -302,7 +302,8 @@ tr:hover td{background:var(--s2)}
       </div>
     </div>
   </div>
-  <div class="tr">
+  <div class="tr" style="gap:10px">
+    <div id="sync-status" style="display:flex;align-items:center;gap:4px;color:var(--t3)"><i class="ti ti-cloud" style="font-size:13px"></i><span style="font-size:10px">Connecting...</span></div>
     <i class="ti ti-bell" style="font-size:16px;color:var(--t2)"></i>
     <span class="abadge" id="alert-ct">0</span>
   </div>
@@ -1152,6 +1153,29 @@ tr:hover td{background:var(--s2)}
 
 </div><!-- end .wrap -->
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+// ═══ SUPABASE CLOUD CONFIG ═══
+const SUPA_URL = 'https://fsfbnowsotodxfupgrhj.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZzZmJub3dzb3RvZHhmdXBncmhqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA1NjAyMDAsImV4cCI6MjA5NjEzNjIwMH0.z6phlvjgn0YaMD__OqSUQrxT26lnQtuF-o4vxCtonOY';
+const supa = supabase.createClient(SUPA_URL, SUPA_KEY);
+let _supaReady = false;
+let _pendingSaves = [];
+
+// Show sync status in UI
+function setSyncStatus(state) {
+  const el = document.getElementById('sync-status');
+  if (!el) return;
+  const cfg = {
+    syncing: {color:'var(--wt)', icon:'ti-cloud-upload', text:'Syncing...'},
+    ok:      {color:'var(--st)', icon:'ti-cloud-check',  text:'Cloud synced'},
+    error:   {color:'var(--dt)', icon:'ti-cloud-x',      text:'Sync error'},
+    offline: {color:'var(--t3)', icon:'ti-cloud-off',    text:'Offline'}
+  }[state] || {color:'var(--t3)', icon:'ti-cloud', text:''};
+  el.innerHTML = `<i class="ti ${cfg.icon}" style="font-size:13px"></i><span style="font-size:10px">${cfg.text}</span>`;
+  el.style.color = cfg.color;
+}
+</script>
 <script>
 const SKUS=[
   {sku:"UNI-GS-M-34",cat:"Uniform",sub:"Grey Sweater- Male",variant:"Size 34",rack:"A",shelf:"1"},
@@ -1250,14 +1274,166 @@ let inv={},history=[],ibItems=[],pkItemsList=[],rtItemsList=[],packingQueue=[],i
   returnProcessingCost:75
 };
 
-function initInv(){
-  try{const s=localStorage.getItem('cl_wms_inv2');if(s){inv=JSON.parse(s);return;}}catch(e){}
-  SKUS.forEach(s=>{const q=s.cat==='VM'?Math.floor(Math.random()*25)+5:Math.floor(Math.random()*12)+2;inv[s.sku]={qty:q,rack:s.rack,shelf:s.shelf};});
-  saveInv();
+// ═══ CLOUD STORAGE — SUPABASE ═══
+async function initInv(){
+  setSyncStatus('syncing');
+  // Guard: supabase CDN must be loaded
+  if(typeof supabase === 'undefined' || !supa){
+    console.warn('Supabase not loaded — using localStorage fallback');
+    setSyncStatus('offline');
+    try{const s=localStorage.getItem('cl_wms_inv2');if(s){inv=JSON.parse(s);return;}}catch(e){}
+    SKUS.forEach(s=>{inv[s.sku]={qty:0,rack:s.rack,shelf:s.shelf};});
+    return;
+  }
+  try {
+    const {data, error} = await supa.from('inventory').select('*');
+    if(error){
+      console.error('initInv Supabase error:', error.message, error.code, error.details);
+      throw new Error(error.message || 'Supabase query failed');
+    }
+    if(data && data.length > 0){
+      data.forEach(r => { inv[r.sku] = {qty:r.qty||0, rack:r.rack, shelf:r.shelf}; });
+      setSyncStatus('ok');
+      console.log('✓ Inventory loaded from cloud:', data.length, 'SKUs');
+    } else {
+      // First run — seed all SKUs at zero qty
+      console.log('First run — seeding inventory at zero');
+      SKUS.forEach(s => { inv[s.sku] = {qty:0, rack:s.rack, shelf:s.shelf}; });
+      await saveInv();
+    }
+  } catch(e) {
+    console.error('initInv error:', e?.message || JSON.stringify(e));
+    setSyncStatus('error');
+    toast('Cloud connection failed — using local data','w');
+    // Fallback to localStorage
+    try{const s=localStorage.getItem('cl_wms_inv2');if(s){inv=JSON.parse(s);}}catch(e2){}
+    if(!Object.keys(inv).length){
+      SKUS.forEach(s=>{inv[s.sku]={qty:0,rack:s.rack,shelf:s.shelf};});
+    }
+  }
 }
-function saveInv(){try{localStorage.setItem('cl_wms_inv2',JSON.stringify(inv));}catch(e){}}
-function loadHist(){try{const s=localStorage.getItem('cl_wms_hist2');if(s)history=JSON.parse(s);}catch(e){}}
-function saveHist(){try{localStorage.setItem('cl_wms_hist2',JSON.stringify(history));}catch(e){}}
+async function saveInv(){
+  setSyncStatus('syncing');
+  localStorage.setItem('cl_wms_inv2', JSON.stringify(inv)); // always save locally first
+  if(typeof supabase === 'undefined' || !supa){ setSyncStatus('offline'); return; }
+  try {
+    const rows = Object.entries(inv).map(([sku,v]) => ({sku, qty:v.qty||0, rack:v.rack, shelf:v.shelf, updated_at: new Date().toISOString()}));
+    const {error} = await supa.from('inventory').upsert(rows, {onConflict:'sku'});
+    if(error){ console.error('saveInv Supabase error:', error.message); throw new Error(error.message); }
+    setSyncStatus('ok');
+    localStorage.setItem('cl_wms_inv2', JSON.stringify(inv)); // local backup
+  } catch(e) {
+    console.error('saveInv error:', JSON.stringify(e), e?.message, e?.code);
+    setSyncStatus('error');
+    try{localStorage.setItem('cl_wms_inv2', JSON.stringify(inv));}catch(e2){}
+  }
+}
+async function loadHist(){
+  setSyncStatus('syncing');
+  if(typeof supabase === 'undefined' || !supa){
+    setSyncStatus('offline');
+    try{const s=localStorage.getItem('cl_wms_hist2');if(s)history=JSON.parse(s);}catch(e){}
+    return;
+  }
+  try {
+    const {data,error} = await supa.from('history').select('*').order('created_at',{ascending:true});
+    if(error){ console.error('loadHist error:', error.message, error.code); throw new Error(error.message); }
+    if(data) {
+      history = data.map(r => ({
+        id:r.id, type:r.type, ts:r.ts, detail:r.detail,
+        orderId:r.order_id, awb:r.awb, recipientName:r.recipient_name,
+        address:r.address, pincode:r.pincode, phone:r.phone,
+        shippingMethod:r.shipping_method, dispatchedAt:r.dispatched_at,
+        packStartTs:r.pack_start_ts, packStartTime:r.pack_start_time,
+        packEndTs:r.pack_end_ts, packEndTime:r.pack_end_time,
+        packDuration:r.pack_duration, packDurationSecs:r.pack_duration_secs,
+        boxL:r.box_l, boxW:r.box_w, boxH:r.box_h,
+        actualWeight:r.actual_weight, volWeight:r.vol_weight, chargeableWeight:r.chargeable_weight,
+        packNotes:r.pack_notes, packedId:r.packed_id, category:r.category, grn:r.grn,
+        items:r.items||[]
+      }));
+      // Also load packing queue
+      const {data:pq} = await supa.from('packing_queue').select('*').order('created_at',{ascending:true});
+      if(pq) packingQueue = pq.map(r => ({
+        id:r.id, orderId:r.order_id, priority:r.priority, method:r.method,
+        picker:r.picker, items:r.items||[], ts:r.ts, status:r.status,
+        packStartTime:r.pack_start_time, packStartTs:r.pack_start_ts
+      }));
+      setSyncStatus('ok');
+    }
+  } catch(e) {
+    console.error('loadHist error:', JSON.stringify(e), e?.message, e?.code);
+    setSyncStatus('error');
+    try{const s=localStorage.getItem('cl_wms_hist2');if(s)history=JSON.parse(s);}catch(e2){}
+  }
+}
+async function saveHist(){
+  setSyncStatus('syncing');
+  localStorage.setItem('cl_wms_hist2', JSON.stringify(history)); // always save locally first
+  if(typeof supabase === 'undefined' || !supa){ setSyncStatus('offline'); return; }
+  try {
+    // Save last history entry to DB (upsert)
+    const h = history[history.length-1];
+    if(!h) { setSyncStatus('ok'); return; }
+    const row = {
+      id:h.id, type:h.type, ts:h.ts, detail:h.detail||null,
+      order_id:h.orderId||null, awb:h.awb||null, recipient_name:h.recipientName||null,
+      address:h.address||null, pincode:h.pincode||null, phone:h.phone||null,
+      shipping_method:h.shippingMethod||null, dispatched_at:h.dispatchedAt||null,
+      pack_start_ts:h.packStartTs||null, pack_start_time:h.packStartTime||null,
+      pack_end_ts:h.packEndTs||null, pack_end_time:h.packEndTime||null,
+      pack_duration:h.packDuration||null, pack_duration_secs:h.packDurationSecs||null,
+      box_l:h.boxL||null, box_w:h.boxW||null, box_h:h.boxH||null,
+      actual_weight:h.actualWeight||null, vol_weight:h.volWeight||null, chargeable_weight:h.chargeableWeight||null,
+      pack_notes:h.packNotes||null, packed_id:h.packedId||null, category:h.category||null,
+      grn:h.grn||null, items:h.items||[]
+    };
+    // If type=dispatched, update existing record instead of insert
+    if(h.type==='dispatched'){
+      const {error} = await supa.from('history').upsert(row, {onConflict:'id'});
+      if(error) throw error;
+    } else {
+      const {error} = await supa.from('history').upsert(row, {onConflict:'id'});
+      if(error) throw error;
+    }
+    // Sync packing queue too
+    await syncPackingQueue();
+    setSyncStatus('ok');
+    localStorage.setItem('cl_wms_hist2', JSON.stringify(history)); // local backup
+  } catch(e) {
+    console.error('saveHist error:', JSON.stringify(e), e?.message, e?.code);
+    setSyncStatus('error');
+    try{localStorage.setItem('cl_wms_hist2', JSON.stringify(history));}catch(e2){}
+  }
+}
+async function syncPackingQueue(){
+  try {
+    // Delete all and re-insert current queue (queue is small)
+    await supa.from('packing_queue').delete().neq('id','__none__');
+    if(packingQueue.length > 0){
+      const rows = packingQueue.map(t => ({
+        id:t.id, order_id:t.orderId, priority:t.priority, method:t.method,
+        picker:t.picker, items:t.items||[], ts:t.ts, status:t.status||'awaiting_packing',
+        pack_start_time:t.packStartTime||null, pack_start_ts:t.packStartTs||null
+      }));
+      await supa.from('packing_queue').insert(rows);
+    }
+  } catch(e){ console.error('syncPackingQueue error:', JSON.stringify(e), e?.message); }
+}
+// Real-time listener — refresh UI when another user makes changes
+function setupRealtimeSync(){
+  supa.channel('wms-changes')
+    .on('postgres_changes', {event:'*', schema:'public', table:'inventory'}, () => {
+      initInv().then(()=>{ renderDash(); renderInv(); renderRack(); });
+    })
+    .on('postgres_changes', {event:'*', schema:'public', table:'history'}, () => {
+      loadHist().then(()=>{ renderDash(); if(document.getElementById('page-dispatch').classList.contains('active')) renderDispatchPage(); });
+    })
+    .on('postgres_changes', {event:'*', schema:'public', table:'packing_queue'}, () => {
+      loadHist().then(()=>{ if(document.getElementById('page-packing').classList.contains('active')) renderPackingQ(); renderDash(); });
+    })
+    .subscribe();
+}
 function ts(){return new Date().toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});}
 function newId(pfx){return pfx+'-'+Date.now().toString().slice(-6);}
 function getSt(q){return q<=0?'out':q<=3?'low':'ok';}
@@ -1443,11 +1619,17 @@ function validateClearInput(){
   btn.style.color=valid?'#fff':'var(--t3)';
   btn.style.cursor=valid?'pointer':'not-allowed';
 }
-function executeFullClear(){
+async function executeFullClear(){
   // Clear localStorage
   localStorage.removeItem('cl_wms_inv2');
   localStorage.removeItem('cl_wms_hist2');
   localStorage.removeItem('cl_wms_counts');
+  // Clear Supabase
+  try {
+    await supa.from('history').delete().neq('id','__none__');
+    await supa.from('packing_queue').delete().neq('id','__none__');
+    await supa.from('inventory').delete().neq('sku','__none__');
+  } catch(e){ console.error('Cloud clear error:', e); }
   // Reset all in-memory data
   history=[];
   packingQueue=[];
@@ -3849,20 +4031,24 @@ function runFullSystemTest(){
   console.log('🎉 System is fully operational and all modules are linked!');
 }
 
-// Run test (comment out to disable auto-execution)
-// runFullSystemTest();
-initInv();
-loadHist();
-renderDash();
-renderInv();
-renderRack();
-renderReports();
-renderAnalytics();
-renderFinance();
-updateNotificationBadge();
-// Pre-populate SKU dropdowns
-populateSkuSel('ib-sku');
-filterSkuList('ib-sku-search','ib-sku');
+// ═══ BOOT — load from Supabase then render ═══
+async function bootWMS(){
+  setSyncStatus('syncing');
+  await initInv();
+  await loadHist();
+  renderDash();
+  renderInv();
+  renderRack();
+  renderReports();
+  renderAnalytics();
+  renderFinance();
+  updateNotificationBadge();
+  populateSkuSel('ib-sku');
+  filterSkuList('ib-sku-search','ib-sku');
+  setupRealtimeSync();
+  setSyncStatus('ok');
+}
+bootWMS();
 </script>
 </body>
 </html>
