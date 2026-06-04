@@ -623,21 +623,36 @@ tr:hover td{background:var(--s2)}
 <!-- ═══ REPORTS & MIS (SOP §6) ═══ -->
 <div id="page-reports" class="page">
   <div class="info-box"><i class="ti ti-info-circle"></i>SOP §6.2 — Weekly MIS reports to CaratLane every Monday by 10:00 AM for the previous week: Inbound, Outbound, Returns, Inventory, Exception reports.</div>
-  
-  <div style="margin-bottom:12px;padding:12px;background:var(--s2);border-radius:6px;display:flex;gap:8px">
-    <button onclick="downloadAllReports()" style="flex:1;padding:10px;background:var(--st);color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:12px"><i class="ti ti-download"></i>Download All Reports (CSV)</button>
-    <button onclick="downloadInboundReport()" style="flex:1;padding:10px;background:var(--gold);color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:12px"><i class="ti ti-download"></i>Inbound Report</button>
-    <button onclick="downloadOutboundReport()" style="flex:1;padding:10px;background:var(--gold);color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:12px"><i class="ti ti-download"></i>Outbound Report</button>
+
+  <!-- WEEK SELECTOR -->
+  <div style="background:var(--s2);border-radius:10px;padding:12px 16px;margin-bottom:14px;display:flex;flex-wrap:wrap;align-items:center;gap:10px">
+    <div style="font-weight:700;font-size:12px;color:var(--t2)">SELECT REPORT WEEK:</div>
+    <select id="rpt-week-select" onchange="renderReports()" style="padding:7px 10px;border:0.5px solid var(--b);border-radius:6px;background:var(--s);color:var(--t);font-size:12px;font-weight:600;flex:1;min-width:200px"></select>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button onclick="printWeeklyReport()" style="padding:8px 14px;background:var(--t);color:var(--s);border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:11px;display:flex;align-items:center;gap:5px"><i class="ti ti-printer"></i>Print Weekly Report</button>
+      <button onclick="downloadWeeklyCSV()" style="padding:8px 14px;background:var(--st);color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:11px;display:flex;align-items:center;gap:5px"><i class="ti ti-download"></i>Download CSV</button>
+      <button onclick="downloadAllReports()" style="padding:8px 14px;background:var(--gold);color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:11px;display:flex;align-items:center;gap:5px"><i class="ti ti-archive"></i>All Time CSV</button>
+    </div>
   </div>
-  
+
+  <!-- WEEKLY KPI SUMMARY CARDS -->
+  <div id="rpt-week-kpis" style="margin-bottom:14px"></div>
+
+  <!-- REPORT SECTIONS -->
   <div class="fg2" style="margin-bottom:12px">
-    <div><div class="stitle">Inbound report</div><div id="rpt-inbound"></div></div>
-    <div><div class="stitle">Outbound / dispatch report</div><div id="rpt-outbound"></div></div>
+    <div><div class="stitle"><i class="ti ti-package-import"></i> Inbound / GRN Report</div><div id="rpt-inbound"></div></div>
+    <div><div class="stitle"><i class="ti ti-truck-delivery"></i> Outbound / Dispatch Report</div><div id="rpt-outbound"></div></div>
   </div>
   <div class="fg2" style="margin-bottom:12px">
-    <div><div class="stitle">Returns report</div><div id="rpt-returns"></div></div>
-    <div><div class="stitle">Exception summary</div><div id="rpt-exceptions"></div></div>
+    <div><div class="stitle"><i class="ti ti-package-export"></i> Returns Report</div><div id="rpt-returns"></div></div>
+    <div><div class="stitle"><i class="ti ti-alert-triangle"></i> Exception Summary</div><div id="rpt-exceptions"></div></div>
   </div>
+  <div class="sep"></div>
+  <div class="stitle"><i class="ti ti-box"></i> Inventory Snapshot (current)</div>
+  <div id="rpt-inventory" style="margin-bottom:12px"></div>
+  <div class="sep"></div>
+  <div class="stitle"><i class="ti ti-clock"></i> Packing Performance (selected week)</div>
+  <div id="rpt-packing-perf" style="margin-bottom:12px"></div>
   <div class="sep"></div>
   <div class="stitle">Escalation matrix (SOP §6.1)</div>
   <div class="panel">
@@ -1321,11 +1336,11 @@ function renderSameDayAlert(){
       <div style="margin-top:10px;padding-top:10px;border-top:0.5px solid ${color}33;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px">
         ${pending.map(p=>{
           const items=(p.items&&p.items.length)?p.items.length:0;
-          return `<div style="background:var(--s2);border-radius:6px;padding:8px;font-size:10px">
+          return `<div style="background:var(--s2);border-radius:6px;padding:8px;font-size:10px;cursor:pointer;border:1px solid transparent;transition:border .15s" onclick="event.stopPropagation();selectDispatchOrder('${p.id}')" onmouseover="this.style.borderColor='${color}'" onmouseout="this.style.borderColor='transparent'">
             <div style="font-weight:600;color:var(--t)">${p.orderId||p.id}</div>
             <div style="color:var(--t2);margin-top:2px">Packed ID: ${p.id}</div>
             <div style="color:var(--t2)">${items} SKU(s) · ${p.ts||'Today'}</div>
-            <div style="color:${color};font-weight:600;margin-top:4px">⏳ Awaiting AWB & dispatch</div>
+            <div style="color:${color};font-weight:600;margin-top:4px">👆 Tap to assign AWB</div>
           </div>`;
         }).join('')}
       </div>
@@ -1358,7 +1373,7 @@ function renderDispatchSameDayAlert(){
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:6px">
         ${pending.map(p=>`
-          <div style="background:var(--s);border:1px solid ${color};border-radius:6px;padding:8px 12px;font-size:11px;cursor:pointer;min-width:160px" onclick="selectDispatchOrder('${p.id}')">
+          <div style="background:var(--s);border:1px solid ${color};border-radius:6px;padding:8px 12px;font-size:11px;cursor:pointer;min-width:160px;transition:background .15s" onclick="assignAWBDirect('${p.id}')" onmouseover="this.style.background='var(--s2)'" onmouseout="this.style.background='var(--s)'">
             <div style="font-weight:700;color:${color}">${p.orderId||p.id}</div>
             <div style="color:var(--t2);margin-top:2px">${(p.items&&p.items.length)||0} SKU(s) · ${p.ts||'Today'}</div>
             <div style="color:${color};font-weight:600;margin-top:4px;font-size:10px">👆 Tap to assign AWB</div>
@@ -1976,9 +1991,50 @@ function updateDispatchOrderSelect(){
     return `<option value="${p.id}">${p.orderId} · ${itemCount} SKU(s) · ${p.ts}</option>`;
   }).join('')}`;
 }
+function assignAWBDirect(pkdId){
+  // Called from dispatch page alert — page already active, just select & scroll
+  const sel=document.getElementById('disp-order-select');
+  if(sel){
+    sel.value=pkdId;
+    loadDispatchOrder();
+    setTimeout(()=>{
+      const detail=document.getElementById('disp-order-detail');
+      if(detail&&detail.style.display!=='none'){
+        detail.scrollIntoView({behavior:'smooth',block:'start'});
+        // Flash highlight
+        detail.style.outline='2px solid var(--gold)';
+        setTimeout(()=>{detail.style.outline='';},1200);
+      }
+    },80);
+  }
+}
 function selectDispatchOrder(pkdId){
-  document.getElementById('disp-order-select').value=pkdId;
-  loadDispatchOrder();
+  // If dispatch page is not active, navigate there first then select
+  const dispPage=document.getElementById('page-dispatch');
+  const isActive=dispPage&&dispPage.classList.contains('active');
+  if(!isActive){
+    nav('dispatch');
+    // Wait for page render then set value and load
+    setTimeout(()=>{
+      const sel=document.getElementById('disp-order-select');
+      if(sel){
+        sel.value=pkdId;
+        loadDispatchOrder();
+        // Scroll the order detail into view
+        setTimeout(()=>{
+          const detail=document.getElementById('disp-order-detail');
+          if(detail&&detail.style.display!=='none')detail.scrollIntoView({behavior:'smooth',block:'start'});
+        },150);
+      }
+    },80);
+  } else {
+    document.getElementById('disp-order-select').value=pkdId;
+    loadDispatchOrder();
+    setTimeout(()=>{
+      const detail=document.getElementById('disp-order-detail');
+      if(detail&&detail.style.display!=='none')detail.scrollIntoView({behavior:'smooth',block:'start'});
+    },100);
+  }
 }
 function loadDispatchOrder(){
   const pkdId=document.getElementById('disp-order-select').value;
@@ -3211,16 +3267,314 @@ function buildRack(data,elId){
 }
 
 // REPORTS
+function getWeekBounds(weekStr){
+  // weekStr = "YYYY-Www" e.g. "2026-W23"
+  const [year,wk]=weekStr.split('-W').map(Number);
+  const jan4=new Date(year,0,4);
+  const startOfWeek1=new Date(jan4);
+  startOfWeek1.setDate(jan4.getDate()-(jan4.getDay()||7)+1);
+  const start=new Date(startOfWeek1);
+  start.setDate(startOfWeek1.getDate()+(wk-1)*7);
+  const end=new Date(start);
+  end.setDate(start.getDate()+6);
+  end.setHours(23,59,59,999);
+  return {start,end};
+}
+function getWeekKey(date){
+  const d=new Date(date);
+  d.setHours(0,0,0,0);
+  d.setDate(d.getDate()+3-(d.getDay()||7)-2);
+  const yearStart=new Date(d.getFullYear(),0,4);
+  const wk=1+Math.round(((d-yearStart)/86400000-3+(yearStart.getDay()||7))/7);
+  return `${d.getFullYear()}-W${String(wk).padStart(2,'0')}`;
+}
+function populateWeekSelector(){
+  const sel=document.getElementById('rpt-week-select');
+  if(!sel)return;
+  const weeks=new Set();
+  const now=new Date();
+  // Add current and past 12 weeks
+  for(let i=0;i<13;i++){
+    const d=new Date(now);
+    d.setDate(now.getDate()-i*7);
+    weeks.add(getWeekKey(d));
+  }
+  // Add weeks from history
+  history.forEach(h=>{
+    if(h.ts){try{const d=new Date(h.ts);if(!isNaN(d))weeks.add(getWeekKey(d));}catch(e){}}
+  });
+  const sorted=[...weeks].sort().reverse();
+  const thisWeek=getWeekKey(now);
+  const lastWeek=sorted[1]||thisWeek;
+  sel.innerHTML=sorted.map(w=>{
+    const {start,end}=getWeekBounds(w);
+    const label=`${start.toLocaleDateString('en-IN',{day:'2-digit',month:'short'})} – ${end.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}`;
+    const tag=w===thisWeek?' (This week)':w===lastWeek?' (Last week — MIS due Monday)':'';
+    return `<option value="${w}"${w===lastWeek?' selected':''}>${label}${tag}</option>`;
+  }).join('');
+}
+function getWeekHistory(weekStr){
+  const {start,end}=getWeekBounds(weekStr);
+  return history.filter(h=>{
+    if(!h.ts)return false;
+    try{const d=new Date(h.ts);return !isNaN(d)&&d>=start&&d<=end;}catch(e){return false;}
+  });
+}
 function renderReports(){
-  const grns=history.filter(h=>h.type==='grn');
-  const disps=history.filter(h=>h.type==='dispatch');
-  const rets=history.filter(h=>h.type==='return');
+  populateWeekSelector();
+  const sel=document.getElementById('rpt-week-select');
+  const weekStr=sel?sel.value:getWeekKey(new Date());
+  if(!weekStr)return;
+  const {start,end}=getWeekBounds(weekStr);
+  const wh=getWeekHistory(weekStr);
+  const grns=wh.filter(h=>h.type==='grn');
+  const disps=wh.filter(h=>h.type==='dispatched');
+  const rets=wh.filter(h=>h.type==='return');
+  const picks=wh.filter(h=>h.type==='pick');
+  const exceptions=wh.filter(h=>h.type==='exception');
+  const packed=wh.filter(h=>h.type==='packed'||h.type==='dispatched');
   const low=SKUS.filter(s=>inv[s.sku]&&getSt(inv[s.sku].qty)==='low').length;
   const out=SKUS.filter(s=>!inv[s.sku]||inv[s.sku].qty<=0).length;
-  document.getElementById('rpt-inbound').innerHTML=`<div class="sc" style="margin-bottom:8px"><div class="sl">GRNs raised</div><div class="sv">${grns.length}</div></div>${grns.slice(-4).reverse().map(h=>`<div class="hist-entry"><div class="hist-head"><span class="hist-id">${h.id}</span><span class="hist-ts">${h.ts}</span></div><div class="hist-body">${h.detail}</div></div>`).join('')||'<div class="empty">No inbound records yet</div>'}`;
-  document.getElementById('rpt-outbound').innerHTML=`<div class="sc" style="margin-bottom:8px"><div class="sl">Dispatches</div><div class="sv">${disps.length}</div></div>${disps.slice(-4).reverse().map(h=>`<div class="hist-entry"><div class="hist-head"><span class="hist-id">${h.id}</span><span class="hist-ts">${h.ts}</span></div><div class="hist-body">${h.detail}</div></div>`).join('')||'<div class="empty">No dispatch records yet</div>'}`;
-  document.getElementById('rpt-returns').innerHTML=`<div class="sc" style="margin-bottom:8px"><div class="sl">Returns processed</div><div class="sv">${rets.length}</div></div>${rets.slice(-4).reverse().map(h=>`<div class="hist-entry"><div class="hist-head"><span class="hist-id">${h.id}</span><span class="hist-ts">${h.ts}</span></div><div class="hist-body">${h.detail}</div></div>`).join('')||'<div class="empty">No return records yet</div>'}`;
-  document.getElementById('rpt-exceptions').innerHTML=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div class="sc"><div class="sl"><i class="ti ti-alert-triangle"></i>Low stock SKUs</div><div class="sv" style="color:var(--wt)">${low}</div><div class="ss">≤3 units remaining</div></div><div class="sc"><div class="sl"><i class="ti ti-x"></i>Out of stock</div><div class="sv" style="color:var(--dt)">${out}</div><div class="ss">Zero inventory</div></div></div>`;
+  const totalUnitsIn=grns.reduce((a,g)=>{const items=g.items||[];return a+items.filter(i=>i.qc==='PASS').reduce((b,i)=>b+(i.qty||0),0);},0);
+  const totalUnitsOut=disps.reduce((a,d)=>{const items=d.items||[];return a+items.reduce((b,i)=>b+(i.qty||0),0);},0);
+  const avgPackDur=packed.filter(p=>p.packDurationSecs>0).length>0?Math.round(packed.filter(p=>p.packDurationSecs>0).reduce((a,p)=>a+p.packDurationSecs,0)/packed.filter(p=>p.packDurationSecs>0).length):null;
+  const avgPackStr=avgPackDur?`${Math.floor(avgPackDur/60)}m ${avgPackDur%60}s`:'N/A';
+  const weekLabel=`${start.toLocaleDateString('en-IN',{day:'2-digit',month:'short'})} – ${end.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}`;
+
+  // KPI CARDS
+  document.getElementById('rpt-week-kpis').innerHTML=`
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px">
+      <div style="background:var(--ibg);border-radius:8px;padding:10px;text-align:center">
+        <div style="font-size:24px;font-weight:700;color:var(--it)">${grns.length}</div>
+        <div style="font-size:10px;color:var(--t2)">GRNs Raised</div>
+        <div style="font-size:10px;color:var(--t3)">${totalUnitsIn} units in</div>
+      </div>
+      <div style="background:var(--sbg);border-radius:8px;padding:10px;text-align:center">
+        <div style="font-size:24px;font-weight:700;color:var(--st)">${picks.length}</div>
+        <div style="font-size:10px;color:var(--t2)">Orders Picked</div>
+        <div style="font-size:10px;color:var(--t3)">${packed.length} packed</div>
+      </div>
+      <div style="background:var(--s2);border-radius:8px;padding:10px;text-align:center">
+        <div style="font-size:24px;font-weight:700;color:var(--gold)">${disps.length}</div>
+        <div style="font-size:10px;color:var(--t2)">Dispatched</div>
+        <div style="font-size:10px;color:var(--t3)">${totalUnitsOut} units out</div>
+      </div>
+      <div style="background:var(--wbg);border-radius:8px;padding:10px;text-align:center">
+        <div style="font-size:24px;font-weight:700;color:var(--wt)">${rets.length}</div>
+        <div style="font-size:10px;color:var(--t2)">Returns</div>
+        <div style="font-size:10px;color:var(--t3)">Processed</div>
+      </div>
+      <div style="background:var(--dbg);border-radius:8px;padding:10px;text-align:center">
+        <div style="font-size:24px;font-weight:700;color:var(--dt)">${exceptions.length}</div>
+        <div style="font-size:10px;color:var(--t2)">Exceptions</div>
+        <div style="font-size:10px;color:var(--t3)">Raised</div>
+      </div>
+      <div style="background:var(--s2);border-radius:8px;padding:10px;text-align:center">
+        <div style="font-size:18px;font-weight:700;color:var(--t)">${avgPackStr}</div>
+        <div style="font-size:10px;color:var(--t2)">Avg Pack Time</div>
+        <div style="font-size:10px;color:var(--t3)">Per order</div>
+      </div>
+    </div>`;
+
+  // INBOUND
+  document.getElementById('rpt-inbound').innerHTML=grns.length?`
+    <div style="font-size:11px;margin-bottom:8px;color:var(--t2)">Week: <strong>${weekLabel}</strong> · ${grns.length} GRNs · ${totalUnitsIn} units received</div>
+    <div class="tw"><table><thead><tr><th>GRN ID</th><th>Date/Time</th><th>Details</th><th>Units In</th></tr></thead><tbody>
+    ${grns.map(g=>{
+      const items=g.items||[];
+      const pass=items.filter(i=>i.qc==='PASS').reduce((a,i)=>a+(i.qty||0),0);
+      const hold=items.filter(i=>i.qc==='HOLD').reduce((a,i)=>a+(i.qty||0),0);
+      return `<tr><td class="mono">${g.id}</td><td style="font-size:10px">${g.ts}</td><td style="font-size:10px">${g.detail}</td><td style="text-align:center"><span style="color:var(--st)">${pass} pass</span>${hold?` <span style="color:var(--wt)">${hold} hold</span>`:''}`;
+    }).join('</td></tr>')}
+    </tbody></table></div>`:'<div class="empty">No inbound activity this week</div>';
+
+  // OUTBOUND
+  document.getElementById('rpt-outbound').innerHTML=disps.length?`
+    <div style="font-size:11px;margin-bottom:8px;color:var(--t2)">Week: <strong>${weekLabel}</strong> · ${disps.length} dispatches · ${totalUnitsOut} units out</div>
+    <div class="tw"><table><thead><tr><th>Dispatch ID</th><th>Order ID</th><th>AWB</th><th>Recipient</th><th>Courier</th><th>Box (cm)</th><th>Chargeable (kg)</th><th>Dispatched At</th></tr></thead><tbody>
+    ${disps.map(d=>{
+      const dims=d.boxL?`${d.boxL}×${d.boxW}×${d.boxH}`:'—';
+      return `<tr><td class="mono" style="font-size:10px">${d.id}</td><td style="font-size:10px">${d.orderId||'—'}</td><td class="mono" style="font-size:10px">${d.awb||'—'}</td><td style="font-size:10px">${d.recipientName||'—'}</td><td style="font-size:10px">${d.shippingMethod||'—'}</td><td style="font-size:10px">${dims}</td><td style="text-align:center;font-weight:600">${d.chargeableWeight||'—'}</td><td style="font-size:10px">${d.dispatchedAt||d.ts}</td></tr>`;
+    }).join('')}
+    </tbody></table></div>`:'<div class="empty">No dispatch activity this week</div>';
+
+  // RETURNS
+  document.getElementById('rpt-returns').innerHTML=rets.length?`
+    <div style="font-size:11px;margin-bottom:8px;color:var(--t2)">Week: <strong>${weekLabel}</strong> · ${rets.length} returns</div>
+    <div class="tw"><table><thead><tr><th>Return ID</th><th>Date/Time</th><th>Details</th></tr></thead><tbody>
+    ${rets.map(r=>`<tr><td class="mono">${r.id}</td><td style="font-size:10px">${r.ts}</td><td style="font-size:10px">${r.detail||'—'}</td></tr>`).join('')}
+    </tbody></table></div>`:'<div class="empty">No returns this week</div>';
+
+  // EXCEPTIONS
+  document.getElementById('rpt-exceptions').innerHTML=`
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+      <div class="sc"><div class="sl"><i class="ti ti-alert-triangle"></i>Exceptions this week</div><div class="sv" style="color:var(--dt)">${exceptions.length}</div></div>
+      <div class="sc"><div class="sl"><i class="ti ti-x"></i>Out of stock (now)</div><div class="sv" style="color:var(--dt)">${out}</div><div class="ss">Zero inventory</div></div>
+      <div class="sc"><div class="sl"><i class="ti ti-alert-circle"></i>Low stock (now)</div><div class="sv" style="color:var(--wt)">${low}</div><div class="ss">≤3 units</div></div>
+    </div>
+    ${exceptions.length?`<div class="tw"><table><thead><tr><th>ID</th><th>Date/Time</th><th>Type</th><th>Details</th></tr></thead><tbody>${exceptions.map(e=>`<tr><td class="mono">${e.id}</td><td style="font-size:10px">${e.ts}</td><td><span class="pill p-out" style="font-size:9px">${e.category||'exception'}</span></td><td style="font-size:10px">${e.detail||'—'}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty" style="margin-top:8px">No exceptions this week ✓</div>'}`;
+
+  // INVENTORY SNAPSHOT
+  const totalUnits=SKUS.reduce((a,s)=>a+(inv[s.sku]?inv[s.sku].qty:0),0);
+  const inStockCount=SKUS.filter(s=>inv[s.sku]&&inv[s.sku].qty>0).length;
+  document.getElementById('rpt-inventory').innerHTML=`
+    <div style="font-size:11px;color:var(--t2);margin-bottom:8px">Live snapshot as of <strong>${new Date().toLocaleString('en-IN')}</strong> · ${inStockCount}/${SKUS.length} SKUs in stock · ${totalUnits} total units</div>
+    <div class="tw"><table><thead><tr><th>SKU</th><th>Item</th><th>Variant</th><th>Rack</th><th>Shelf</th><th>Qty</th><th>Status</th></tr></thead><tbody>
+    ${SKUS.map(s=>{
+      const q=(inv[s.sku]||{qty:0}).qty;
+      const st=q<=0?'Out':q<=3?'Low':'OK';
+      const stColor=q<=0?'var(--dt)':q<=3?'var(--wt)':'var(--st)';
+      return `<tr><td class="mono" style="font-size:10px">${s.sku}</td><td style="font-size:10px">${s.sub}</td><td style="font-size:10px">${s.variant}</td><td style="text-align:center">${s.rack}</td><td style="text-align:center">${s.shelf}</td><td style="text-align:center;font-weight:700">${q}</td><td><span style="font-size:10px;font-weight:600;color:${stColor}">${st}</span></td></tr>`;
+    }).join('')}
+    </tbody></table></div>`;
+
+  // PACKING PERFORMANCE
+  const packWithTime=packed.filter(p=>p.packDurationSecs>0);
+  document.getElementById('rpt-packing-perf').innerHTML=packWithTime.length?`
+    <div style="font-size:11px;color:var(--t2);margin-bottom:8px">Week: <strong>${weekLabel}</strong> · ${packWithTime.length} orders with time data</div>
+    <div class="tw"><table><thead><tr><th>Pack ID</th><th>Order ID</th><th>Box (L×W×H cm)</th><th>Actual (kg)</th><th>Vol. (kg)</th><th>Chargeable (kg)</th><th>Pack Start</th><th>Pack End</th><th>Duration</th></tr></thead><tbody>
+    ${packWithTime.map(p=>{
+      const dims=p.boxL?`${p.boxL}×${p.boxW}×${p.boxH}`:'—';
+      return `<tr><td class="mono" style="font-size:10px">${p.id}</td><td style="font-size:10px">${p.orderId||'—'}</td><td style="font-size:10px">${dims}</td><td style="text-align:center">${p.actualWeight||'—'}</td><td style="text-align:center;color:var(--it)">${p.volWeight||'—'}</td><td style="text-align:center;font-weight:700;color:var(--gold)">${p.chargeableWeight||'—'}</td><td style="font-size:10px">${p.packStartTs||'—'}</td><td style="font-size:10px">${p.packEndTs||'—'}</td><td style="font-weight:600;color:var(--st)">${p.packDuration||'—'}</td></tr>`;
+    }).join('')}
+    </tbody></table></div>`:'<div class="empty">No packing time data for this week — use Start Packing button to capture times</div>';
+}
+function downloadWeeklyCSV(){
+  const sel=document.getElementById('rpt-week-select');
+  const weekStr=sel?sel.value:getWeekKey(new Date());
+  const {start,end}=getWeekBounds(weekStr);
+  const wh=getWeekHistory(weekStr);
+  const weekLabel=`${start.toLocaleDateString('en-IN',{day:'2-digit',month:'short'})} to ${end.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}`;
+  let csv=`CaratLane WMS — Weekly MIS Report\n`;
+  csv+=`EPS Worldwide Integrated Logistics Mumbai\n`;
+  csv+=`Report Week:,${weekLabel}\n`;
+  csv+=`Generated:,${new Date().toLocaleString('en-IN')}\n\n`;
+
+  const grns=wh.filter(h=>h.type==='grn');
+  csv+=`\n=== INBOUND / GRN REPORT ===\n`;
+  csv+=`GRN ID,Date/Time,Details,Units Pass,Units Hold\n`;
+  grns.forEach(g=>{
+    const items=g.items||[];
+    const pass=items.filter(i=>i.qc==='PASS').reduce((a,i)=>a+(i.qty||0),0);
+    const hold=items.filter(i=>i.qc==='HOLD').reduce((a,i)=>a+(i.qty||0),0);
+    csv+=`"${g.id}","${g.ts}","${(g.detail||'').replace(/"/g,"'")}",${pass},${hold}\n`;
+  });
+  csv+=`TOTAL GRNs:,${grns.length}\n`;
+
+  const disps=wh.filter(h=>h.type==='dispatched');
+  csv+=`\n=== OUTBOUND / DISPATCH REPORT ===\n`;
+  csv+=`Dispatch ID,Order ID,AWB,Recipient,Pincode,Courier,Box L,Box W,Box H,Actual Wt (kg),Vol Wt (kg),Chargeable Wt (kg),Pack Start,Pack End,Pack Duration,Dispatched At\n`;
+  disps.forEach(d=>{
+    csv+=`"${d.id}","${d.orderId||''}","${d.awb||''}","${d.recipientName||''}","${d.pincode||''}","${d.shippingMethod||''}",${d.boxL||''},${d.boxW||''},${d.boxH||''},${d.actualWeight||''},${d.volWeight||''},${d.chargeableWeight||''},"${d.packStartTs||''}","${d.packEndTs||''}","${d.packDuration||''}","${d.dispatchedAt||d.ts}"\n`;
+  });
+  csv+=`TOTAL DISPATCHED:,${disps.length}\n`;
+
+  const rets=wh.filter(h=>h.type==='return');
+  csv+=`\n=== RETURNS REPORT ===\n`;
+  csv+=`Return ID,Date/Time,Details\n`;
+  rets.forEach(r=>{csv+=`"${r.id}","${r.ts}","${(r.detail||'').replace(/"/g,"'")}"\n`;});
+  csv+=`TOTAL RETURNS:,${rets.length}\n`;
+
+  const exceptions=wh.filter(h=>h.type==='exception');
+  csv+=`\n=== EXCEPTION REPORT ===\n`;
+  csv+=`Exception ID,Date/Time,Category,Details\n`;
+  exceptions.forEach(e=>{csv+=`"${e.id}","${e.ts}","${e.category||''}","${(e.detail||'').replace(/"/g,"'")}"\n`;});
+  csv+=`TOTAL EXCEPTIONS:,${exceptions.length}\n`;
+
+  csv+=`\n=== INVENTORY SNAPSHOT (Live) ===\n`;
+  csv+=`SKU,Item Name,Variant,Rack,Shelf,Qty,Status\n`;
+  SKUS.forEach(s=>{
+    const q=(inv[s.sku]||{qty:0}).qty;
+    const st=q<=0?'Out of Stock':q<=3?'Low Stock':'In Stock';
+    csv+=`"${s.sku}","${s.sub}","${s.variant}",${s.rack},${s.shelf},${q},"${st}"\n`;
+  });
+
+  downloadCSV(`CaratLane_Weekly_MIS_${weekStr}.csv`,csv);
+}
+function printWeeklyReport(){
+  const sel=document.getElementById('rpt-week-select');
+  const weekStr=sel?sel.value:getWeekKey(new Date());
+  const {start,end}=getWeekBounds(weekStr);
+  const wh=getWeekHistory(weekStr);
+  const weekLabel=`${start.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})} – ${end.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}`;
+  const grns=wh.filter(h=>h.type==='grn');
+  const disps=wh.filter(h=>h.type==='dispatched');
+  const rets=wh.filter(h=>h.type==='return');
+  const picks=wh.filter(h=>h.type==='pick');
+  const exceptions=wh.filter(h=>h.type==='exception');
+  const packed=wh.filter(h=>h.type==='packed'||h.type==='dispatched');
+  const totalUnitsIn=grns.reduce((a,g)=>{const items=g.items||[];return a+items.filter(i=>i.qc==='PASS').reduce((b,i)=>b+(i.qty||0),0);},0);
+  const totalUnitsOut=disps.reduce((a,d)=>{const items=d.items||[];return a+items.reduce((b,i)=>b+(i.qty||0),0);},0);
+  const avgPackDur=packed.filter(p=>p.packDurationSecs>0).length>0?Math.round(packed.filter(p=>p.packDurationSecs>0).reduce((a,p)=>a+p.packDurationSecs,0)/packed.filter(p=>p.packDurationSecs>0).length):null;
+  const avgPackStr=avgPackDur?`${Math.floor(avgPackDur/60)}m ${avgPackDur%60}s`:'N/A';
+  const totalUnits=SKUS.reduce((a,s)=>a+(inv[s.sku]?inv[s.sku].qty:0),0);
+  const pw=window.open('','WMS_WEEKLY_'+weekStr,'width=1000,height=1200');
+  if(!pw){toast('Please allow popups','w');return;}
+  pw.document.write(`<!DOCTYPE html><html><head><title>Weekly MIS — ${weekLabel}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:Arial,sans-serif;font-size:12px;color:#222;padding:16px}
+    .header{border-bottom:3px solid #B8860B;padding-bottom:12px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:flex-end}
+    .co{font-size:18px;font-weight:bold}.sub{font-size:11px;color:#666;margin-top:4px}
+    .report-title{font-size:22px;font-weight:bold;color:#B8860B;margin:12px 0 4px}
+    .week-label{font-size:13px;color:#444;margin-bottom:16px}
+    .kpi-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:16px}
+    .kpi{border:1px solid #ddd;border-radius:6px;padding:10px;text-align:center}
+    .kpi-val{font-size:22px;font-weight:bold}.kpi-lbl{font-size:10px;color:#666;margin-top:3px}
+    h3{font-size:13px;font-weight:bold;background:#f5f5f5;padding:7px 10px;border-left:4px solid #B8860B;margin:16px 0 8px}
+    table{width:100%;border-collapse:collapse;margin-bottom:12px;font-size:11px}
+    th{background:#f0f0f0;padding:7px;text-align:left;border:1px solid #ddd;font-weight:bold}
+    td{padding:6px 7px;border:1px solid #ddd}
+    tr:nth-child(even){background:#fafafa}
+    .sig-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:30px;margin-top:30px}
+    .sig{border-top:1px solid #000;padding-top:8px;text-align:center;font-size:11px}
+    .footer{margin-top:20px;border-top:1px solid #ddd;padding-top:10px;font-size:10px;color:#999;text-align:center}
+    .tag-ok{color:#2e7d32;font-weight:bold}.tag-low{color:#e65100;font-weight:bold}.tag-out{color:#c62828;font-weight:bold}
+    @media print{body{padding:8mm}@page{margin:12mm}}
+  </style></head><body>
+  <div class="header">
+    <div><div class="co">CaratLane (A Tanishq Partnership)</div><div class="sub">EPS Worldwide Integrated Logistics, Mumbai &nbsp;|&nbsp; SOP Ref: EPS-WH-SOP-001 v1.0 §6</div></div>
+    <div style="text-align:right;font-size:11px;color:#666">Generated: ${new Date().toLocaleString('en-IN')}<br>Due: Monday 10:00 AM</div>
+  </div>
+  <div class="report-title">Weekly MIS Report</div>
+  <div class="week-label">Report Period: <strong>${weekLabel}</strong></div>
+
+  <div class="kpi-grid">
+    <div class="kpi"><div class="kpi-val" style="color:#1565c0">${grns.length}</div><div class="kpi-lbl">GRNs Raised</div><div style="font-size:10px;color:#999">${totalUnitsIn} units in</div></div>
+    <div class="kpi"><div class="kpi-val" style="color:#2e7d32">${picks.length}</div><div class="kpi-lbl">Orders Picked</div></div>
+    <div class="kpi"><div class="kpi-val" style="color:#B8860B">${disps.length}</div><div class="kpi-lbl">Dispatched</div><div style="font-size:10px;color:#999">${totalUnitsOut} units out</div></div>
+    <div class="kpi"><div class="kpi-val" style="color:#e65100">${rets.length}</div><div class="kpi-lbl">Returns</div></div>
+    <div class="kpi"><div class="kpi-val" style="color:#c62828">${exceptions.length}</div><div class="kpi-lbl">Exceptions</div></div>
+    <div class="kpi"><div class="kpi-val" style="color:#555">${avgPackStr}</div><div class="kpi-lbl">Avg Pack Time</div></div>
+  </div>
+
+  <h3>1. Inbound / GRN Report</h3>
+  ${grns.length?`<table><thead><tr><th>GRN ID</th><th>Date/Time</th><th>Details</th><th>Units In (Pass)</th><th>Units Hold</th></tr></thead><tbody>${grns.map(g=>{const items=g.items||[];const pass=items.filter(i=>i.qc==='PASS').reduce((a,i)=>a+(i.qty||0),0);const hold=items.filter(i=>i.qc==='HOLD').reduce((a,i)=>a+(i.qty||0),0);return `<tr><td>${g.id}</td><td>${g.ts}</td><td>${g.detail||''}</td><td style="text-align:center;color:#2e7d32;font-weight:bold">${pass}</td><td style="text-align:center;color:#e65100">${hold||0}</td></tr>`;}).join('')}<tr style="background:#f0f0f0;font-weight:bold"><td colspan="3">TOTAL</td><td style="text-align:center">${totalUnitsIn}</td><td style="text-align:center">${grns.reduce((a,g)=>{const items=g.items||[];return a+items.filter(i=>i.qc==='HOLD').reduce((b,i)=>b+(i.qty||0),0);},0)}</td></tr></tbody></table>`:'<p style="color:#999;padding:8px">No inbound activity this week.</p>'}
+
+  <h3>2. Outbound / Dispatch Report</h3>
+  ${disps.length?`<table><thead><tr><th>Dispatch ID</th><th>Order ID</th><th>AWB</th><th>Recipient</th><th>Courier</th><th>Box (cm)</th><th>Actual (kg)</th><th>Vol. (kg)</th><th>Chargeable (kg)</th><th>Pack Duration</th><th>Dispatched At</th></tr></thead><tbody>${disps.map(d=>{const dims=d.boxL?`${d.boxL}×${d.boxW}×${d.boxH}`:'—';return `<tr><td>${d.id}</td><td>${d.orderId||'—'}</td><td>${d.awb||'—'}</td><td>${d.recipientName||'—'}, ${d.pincode||''}</td><td>${d.shippingMethod||'—'}</td><td>${dims}</td><td style="text-align:center">${d.actualWeight||'—'}</td><td style="text-align:center">${d.volWeight||'—'}</td><td style="text-align:center;font-weight:bold;color:#B8860B">${d.chargeableWeight||'—'}</td><td style="text-align:center">${d.packDuration||'—'}</td><td>${d.dispatchedAt||d.ts}</td></tr>`;}).join('')}<tr style="background:#f0f0f0;font-weight:bold"><td colspan="2">TOTAL DISPATCHED: ${disps.length}</td><td colspan="9"></td></tr></tbody></table>`:'<p style="color:#999;padding:8px">No dispatch activity this week.</p>'}
+
+  <h3>3. Returns Report</h3>
+  ${rets.length?`<table><thead><tr><th>Return ID</th><th>Date/Time</th><th>Details</th></tr></thead><tbody>${rets.map(r=>`<tr><td>${r.id}</td><td>${r.ts}</td><td>${r.detail||'—'}</td></tr>`).join('')}</tbody></table>`:'<p style="color:#999;padding:8px">No returns this week.</p>'}
+
+  <h3>4. Exception Report</h3>
+  ${exceptions.length?`<table><thead><tr><th>Exception ID</th><th>Date/Time</th><th>Category</th><th>Details</th></tr></thead><tbody>${exceptions.map(e=>`<tr><td>${e.id}</td><td>${e.ts}</td><td>${e.category||'general'}</td><td>${e.detail||'—'}</td></tr>`).join('')}</tbody></table>`:'<p style="color:#2e7d32;padding:8px;font-weight:bold">✓ No exceptions this week.</p>'}
+
+  <h3>5. Inventory Snapshot (as of report generation)</h3>
+  <table><thead><tr><th>SKU</th><th>Item Name</th><th>Variant</th><th>Rack</th><th>Shelf</th><th>Qty</th><th>Status</th></tr></thead><tbody>
+  ${SKUS.map(s=>{const q=(inv[s.sku]||{qty:0}).qty;const st=q<=0?'Out of Stock':q<=3?'Low Stock':'In Stock';const cls=q<=0?'tag-out':q<=3?'tag-low':'tag-ok';return `<tr><td>${s.sku}</td><td>${s.sub}</td><td>${s.variant}</td><td style="text-align:center">${s.rack}</td><td style="text-align:center">${s.shelf}</td><td style="text-align:center;font-weight:bold">${q}</td><td class="${cls}">${st}</td></tr>`;}).join('')}
+  <tr style="background:#f0f0f0;font-weight:bold"><td colspan="5">TOTAL UNITS IN WAREHOUSE</td><td style="text-align:center">${totalUnits}</td><td></td></tr>
+  </tbody></table>
+
+  <div class="sig-grid">
+    <div class="sig">Prepared By (EPS Ops)<br><br>Name: _______________<br>Date: _______________</div>
+    <div class="sig">Verified By (EPS Manager)<br><br>Name: _______________<br>Date: _______________</div>
+    <div class="sig">Acknowledged By (CaratLane)<br><br>Name: _______________<br>Date: _______________</div>
+  </div>
+  <div class="footer">CaratLane WMS · EPS Worldwide Integrated Logistics Mumbai · SOP EPS-WH-SOP-001 v1.0 · Weekly MIS due every Monday by 10:00 AM</div>
+  </body></html>`);
+  pw.document.close();pw.focus();
+  setTimeout(()=>pw.print(),600);
 }
 
 // SOP TOGGLE
