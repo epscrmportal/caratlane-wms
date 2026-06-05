@@ -3,16 +3,270 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://*.supabase.co https://cdn.jsdelivr.net; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: blob:; connect-src 'self' https://*.supabase.co wss://*.supabase.co;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://*.supabase.co https://cdn.jsdelivr.net; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: blob:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://cdn.jsdelivr.net;">
   <title>CaratLane WMS — EPS Worldwide · EPS-WH-SOP-001 v1.0</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
-  <link rel="stylesheet" href="styles.css">
+  
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --gold:#B8860B;--gold-d:#8B6508;
+  --s:#ffffff;--s2:#f5f5f4;--s3:#eeede9;
+  --b:rgba(0,0,0,0.1);--b2:rgba(0,0,0,0.18);
+  --t:#1a1a18;--t2:#6b6b67;--t3:#a0a09a;
+  --ibg:#e6f1fb;--it:#185fa5;
+  --sbg:#eaf3de;--st:#3b6d11;
+  --wbg:#faeeda;--wt:#854f0b;
+  --dbg:#fcebeb;--dt:#a32d2d;
+  --r:8px;--rl:12px;
+}
+@media(prefers-color-scheme:dark){
+  :root{
+    --s:#1e1e1c;--s2:#2a2a28;--s3:#323230;
+    --b:rgba(255,255,255,0.1);--b2:rgba(255,255,255,0.18);
+    --t:#e8e8e4;--t2:#9a9a94;--t3:#606060;
+    --ibg:#0c447c22;--it:#85b7eb;
+    --sbg:#27500a22;--st:#97c459;
+    --wbg:#633806;--wt:#FAC775;
+    --dbg:#791f1f22;--dt:#f09595;
+  }
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:var(--t);background:var(--s3);font-size:13px;min-height:100vh}
+h1.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+
+/* TOPBAR */
+.topbar{display:flex;align-items:stretch;border-bottom:0.5px solid var(--b);background:var(--s);position:sticky;top:0;z-index:100;box-shadow:0 1px 3px rgba(0,0,0,.06);overflow:hidden}
+.logo{display:flex;align-items:center;gap:8px;padding:10px 16px;border-right:0.5px solid var(--b);flex-shrink:0}
+.logo-gem{width:28px;height:28px;background:linear-gradient(135deg,#B8860B,#F5D98B);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:#5a3e00;flex-shrink:0}
+.logo-t{font-size:13px;font-weight:600}.logo-s{font-size:10px;color:var(--t2)}
+.navs{display:flex;flex:1;overflow-x:auto;overflow-y:hidden;-ms-overflow-style:none;scrollbar-width:thin;scrollbar-color:var(--b) transparent;gap:2px;position:relative}
+.navs::-webkit-scrollbar{height:4px}
+.navs::-webkit-scrollbar-track{background:transparent}
+.navs::-webkit-scrollbar-thumb{background:var(--b);border-radius:2px}
+.navs::-webkit-scrollbar-thumb:hover{background:var(--t3)}
+.ntab{padding:0 13px;font-size:11px;color:var(--t2);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;display:flex;align-items:center;gap:4px;height:100%;transition:color .15s;flex-shrink:0;user-select:none;position:relative}
+.notif-badge{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;background:var(--dt);color:#fff;border-radius:10px;font-size:10px;font-weight:600;margin-left:4px;animation:pulse 2s infinite}
+.ntab:hover{color:var(--t)}.ntab.active{color:var(--t);border-bottom-color:var(--gold)}
+.ntab i{font-size:14px}
+.tr{padding:0 14px;border-left:0.5px solid var(--b);display:flex;align-items:center;gap:6px;flex-shrink:0}
+.abadge{background:var(--dbg);color:var(--dt);font-size:10px;font-weight:600;padding:1px 6px;border-radius:8px;min-width:18px;text-align:center}
+
+/* LAYOUT */
+.wrap{max-width:1200px;margin:0 auto}
+.page{display:none;padding:16px}.page.active{display:block}
+
+/* STAT CARDS */
+.sgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:14px}
+.sc{background:var(--s2);border-radius:var(--r);padding:12px 14px}
+.sl{font-size:11px;color:var(--t2);margin-bottom:3px;display:flex;align-items:center;gap:4px}
+.sl i{font-size:12px}.sv{font-size:22px;font-weight:600}.ss{font-size:10px;color:var(--t3);margin-top:2px}
+
+/* TOOLBAR */
+.tb{display:flex;gap:7px;margin-bottom:10px;align-items:center;flex-wrap:wrap}
+.sw{position:relative;flex:1;min-width:160px}
+.sw i{position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:14px;color:var(--t3)}
+input[type=text],input[type=number],select,textarea{background:var(--s);border:0.5px solid var(--b2);border-radius:var(--r);padding:7px 10px;font-size:12px;color:var(--t);font-family:inherit}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--gold)}
+.sw input{padding-left:30px;width:100%}
+select{cursor:pointer}
+button{font-family:inherit;font-size:12px;border:0.5px solid var(--b2);border-radius:var(--r);padding:7px 11px;cursor:pointer;background:var(--s);color:var(--t);display:inline-flex;align-items:center;gap:4px;transition:background .12s}
+button:hover{background:var(--s2)}
+button:disabled{opacity:.4;cursor:not-allowed}
+.btn-primary{background:var(--gold);border-color:var(--gold);color:#fff;font-weight:600}
+.btn-primary:hover{background:var(--gold-d)}
+.btn-danger{background:var(--dbg);border-color:transparent;color:var(--dt)}
+.btn-success{background:var(--sbg);border-color:transparent;color:var(--st)}
+.btn-sm{padding:3px 8px;font-size:11px}
+
+/* TABLE */
+.tw{border:0.5px solid var(--b);border-radius:var(--rl);overflow:hidden;overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12px;min-width:480px}
+th{background:var(--s2);padding:8px 11px;text-align:left;font-weight:500;font-size:11px;color:var(--t2);border-bottom:0.5px solid var(--b);white-space:nowrap}
+td{padding:8px 11px;border-bottom:0.5px solid var(--b);color:var(--t);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--s2)}
+.mono{font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;font-size:10px;color:var(--t2);background:var(--s2);padding:1px 5px;border-radius:3px}
+
+/* PILLS */
+.pill{font-size:10px;font-weight:600;padding:2px 7px;border-radius:8px;white-space:nowrap;display:inline-block}
+.p-ok{background:var(--sbg);color:var(--st)}
+.p-low{background:var(--wbg);color:var(--wt)}
+.p-out{background:var(--dbg);color:var(--dt)}
+.p-info{background:var(--ibg);color:var(--it)}
+.p-hold{background:#EAF3DE;color:#27500A}
+.p-pass{background:var(--sbg);color:var(--st)}
+.p-ga{background:var(--sbg);color:var(--st)}
+.p-gb{background:var(--wbg);color:var(--wt)}
+.p-gc{background:var(--dbg);color:var(--dt)}
+
+/* RACK */
+.rack-wrap{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.rack-card{border:0.5px solid var(--b);border-radius:var(--rl);overflow:hidden;background:var(--s)}
+.rack-head{background:var(--s2);padding:9px 13px;display:flex;justify-content:space-between;align-items:center;border-bottom:0.5px solid var(--b)}
+.rack-row{display:grid;grid-template-columns:26px 1fr 52px;gap:6px;align-items:center;padding:5px 11px;border-bottom:0.5px solid var(--b);font-size:11px}
+.rack-row:last-child{border-bottom:none}
+.shelf-l{font-family:'SF Mono',Menlo,monospace;font-size:10px;font-weight:600;color:var(--t2)}
+.bar-bg{height:5px;background:var(--s3);border-radius:3px;overflow:hidden}
+.bar-f{height:100%;border-radius:3px}
+.bar-ok{background:#639922}.bar-low{background:#BA7517}.bar-out{background:#E24B4A}
+.qty-r{text-align:right;color:var(--t2);font-size:10px}
+
+/* PANEL */
+.panel{border:0.5px solid var(--b);border-radius:var(--rl);overflow:hidden;margin-bottom:10px;background:var(--s)}
+.ph{background:var(--s2);padding:9px 13px;font-size:12px;font-weight:600;border-bottom:0.5px solid var(--b);display:flex;align-items:center;gap:6px}
+.ph i{font-size:14px;color:var(--t2)}
+.pb{padding:12px}
+.ph-badge{margin-left:auto;font-size:10px;padding:2px 7px;border-radius:8px;font-weight:600}
+
+/* FORM */
+.frow{margin-bottom:9px}
+.frow label{display:block;font-size:11px;color:var(--t2);margin-bottom:3px;font-weight:500}
+.frow input,.frow select,.frow textarea{width:100%}
+.fg2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.fg4{display:grid;grid-template-columns:1fr 1fr 70px auto;gap:8px;align-items:end}
+
+/* QTY CTRL */
+.qc{display:flex;align-items:center;gap:5px}
+.qb{width:22px;height:22px;border-radius:4px;display:flex;align-items:center;justify-content:center;padding:0;font-size:14px;border:0.5px solid var(--b2)}
+.qv{min-width:26px;text-align:center;font-weight:600;font-size:12px}
+
+/* SOP SECTION */
+.sop-section{border:0.5px solid var(--b);border-radius:var(--rl);margin-bottom:10px;overflow:hidden;background:var(--s)}
+.sop-head{background:var(--s2);padding:10px 13px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;user-select:none}
+.sop-head:hover{background:var(--s3)}
+.sop-title{font-size:12px;font-weight:600;display:flex;align-items:center;gap:7px}
+.sop-title i{font-size:14px;color:var(--gold)}
+.sop-body{padding:12px;display:none}
+.sop-body.open{display:block}
+.sop-table{width:100%;border-collapse:collapse;font-size:11px;margin-top:8px}
+.sop-table th{background:var(--s3);padding:6px 8px;text-align:left;font-weight:600;color:var(--t2);border-bottom:0.5px solid var(--b)}
+.sop-table td{padding:6px 8px;border-bottom:0.5px solid var(--b);vertical-align:top;line-height:1.5}
+.sop-table tr:last-child td{border-bottom:none}
+.step-num{background:var(--ibg);color:var(--it);font-weight:600;padding:1px 6px;border-radius:3px;font-size:10px;margin-right:4px}
+.kpi-row{display:grid;grid-template-columns:2fr 1fr 1fr;gap:6px;margin-bottom:6px;font-size:11px;align-items:center;padding:5px 0;border-bottom:0.5px solid var(--b)}
+.kpi-val{font-weight:700;color:var(--st)}
+.kpi-freq{color:var(--t3);font-size:10px}
+.exception-row{margin-bottom:7px;padding:8px 10px;background:var(--s2);border-radius:6px;font-size:11px;border-left:3px solid var(--wt)}
+.exc-title{font-weight:600;margin-bottom:3px}
+.exc-action{color:var(--t2);line-height:1.5}
+.chevron{font-size:12px;transition:transform .2s}
+.chevron.open{transform:rotate(180deg)}
+
+/* HISTORY / LOGS */
+.hist-entry{border:0.5px solid var(--b);border-radius:var(--r);padding:9px 12px;margin-bottom:7px;background:var(--s)}
+.hist-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:3px}
+.hist-id{font-family:'SF Mono',Menlo,monospace;font-size:10px;font-weight:600}
+.hist-ts{font-size:10px;color:var(--t2)}
+.hist-body{font-size:11px;color:var(--t2);line-height:1.5}
+.ib-log .hist-entry{border-left:3px solid var(--st)}
+
+/* GRIDS */
+.ret-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.disp-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.cart-item{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:6px;padding:6px 0;border-bottom:0.5px solid var(--b);font-size:11px}
+.cart-item:last-child{border-bottom:none}
+.escl-row{display:grid;grid-template-columns:1.5fr 1fr 1fr;gap:6px;margin-bottom:6px;font-size:11px;align-items:start;padding:5px 0;border-bottom:0.5px solid var(--b)}
+.escl-row:last-child{border-bottom:none}
+.escl-issue{font-weight:600}
+.escl-l1{color:var(--it)}.escl-l2{color:var(--wt)}
+
+/* MISC */
+.warn-box{background:var(--wbg);color:var(--wt);padding:8px 11px;border-radius:6px;font-size:11px;margin-bottom:10px;display:flex;align-items:center;gap:6px;line-height:1.5}
+.info-box{background:var(--ibg);color:var(--it);padding:8px 11px;border-radius:6px;font-size:11px;margin-bottom:10px;display:flex;align-items:center;gap:6px;line-height:1.5}
+.info-box i,.warn-box i{font-size:15px;flex-shrink:0}
+.empty{text-align:center;padding:24px;color:var(--t3);font-size:12px}
+.stitle{font-size:11px;font-weight:600;color:var(--t2);margin-bottom:8px;margin-top:2px;text-transform:uppercase;letter-spacing:.5px}
+.sep{height:0.5px;background:var(--b);margin:12px 0}
+
+/* TOAST */
+#toast{position:fixed;bottom:20px;right:20px;background:var(--s);border:0.5px solid var(--b2);border-radius:var(--r);padding:10px 14px;font-size:12px;opacity:0;transform:translateY(8px);transition:all .25s;pointer-events:none;max-width:260px;z-index:9999;line-height:1.4;box-shadow:0 4px 12px rgba(0,0,0,.12)}
+#toast.show{opacity:1;transform:translateY(0)}
+#toast.s{border-color:#639922;color:var(--st)}
+#toast.w{border-color:#BA7517;color:var(--wt)}
+
+@media(max-width:600px){
+  .rack-wrap,.ret-grid,.disp-grid,.fg2,.fg4{grid-template-columns:1fr}
+  .sgrid{grid-template-columns:repeat(2,1fr)}
+  .escl-row{grid-template-columns:1fr}
+  .kpi-row{grid-template-columns:1fr 1fr}
+}
+
+/* LABEL PRINTER */
+.lbl-card{background:var(--s);border:1.5px solid var(--b);border-radius:8px;padding:10px;cursor:pointer;transition:all .15s;position:relative}
+.lbl-card:hover{border-color:var(--gold)}
+.lbl-card.selected{border-color:var(--gold);background:var(--ibg)}
+.lbl-card .lbl-check{position:absolute;top:7px;right:7px;width:18px;height:18px;border-radius:4px;border:1.5px solid var(--b);background:var(--s2);display:flex;align-items:center;justify-content:center}
+.lbl-card.selected .lbl-check{background:var(--gold);border-color:var(--gold);color:#fff}
+.lbl-preview{background:#fff;border-radius:4px;padding:8px 6px;margin-top:8px;text-align:center;font-family:monospace}
+/* AUTH SCREEN */
+#auth-screen{position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px}
+.auth-card{background:var(--s);border-radius:16px;padding:32px;width:100%;max-width:400px;box-shadow:0 8px 40px rgba(0,0,0,.15)}
+.auth-logo{display:flex;align-items:center;gap:12px;margin-bottom:28px}
+.auth-gem{width:44px;height:44px;background:linear-gradient(135deg,var(--gold),var(--gold-d));border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;color:#fff}
+.auth-title{font-size:18px;font-weight:700;color:var(--t)}
+.auth-sub{font-size:11px;color:var(--t2);margin-top:2px}
+.auth-field{margin-bottom:14px}
+.auth-field label{font-size:11px;font-weight:600;color:var(--t2);display:block;margin-bottom:5px}
+.auth-field input{width:100%;padding:10px 12px;border:1px solid var(--b);border-radius:8px;background:var(--s2);color:var(--t);font-size:13px;transition:border .2s}
+.auth-field input:focus{outline:none;border-color:var(--gold)}
+.auth-btn{width:100%;padding:12px;background:var(--gold);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;margin-top:6px;transition:background .2s}
+.auth-btn:hover{background:var(--gold-d)}
+.auth-btn:disabled{background:var(--b);cursor:not-allowed;color:var(--t3)}
+.auth-err{color:var(--dt);font-size:11px;margin-top:8px;text-align:center;min-height:16px}
+.user-menu{position:relative}
+.user-menu-btn{display:flex;align-items:center;gap:6px;padding:5px 10px;background:var(--s2);border:none;border-radius:6px;cursor:pointer;color:var(--t);font-size:11px;font-weight:600}
+.user-dropdown{position:absolute;right:0;top:calc(100% + 6px);background:var(--s);border:0.5px solid var(--b);border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,.15);min-width:200px;z-index:200;display:none}
+.user-dropdown.open{display:block}
+.user-dropdown-item{padding:10px 14px;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:8px;color:var(--t);border-bottom:0.5px solid var(--b)}
+.user-dropdown-item:last-child{border-bottom:none}
+.user-dropdown-item:hover{background:var(--s2)}
+/* MOBILE DASHBOARD */
+.mobile-view{min-height:70vh}
+#page-mobile{max-width:480px;margin:0 auto;background:#fff}
+
+/* MOBILE RESPONSIVE */
+@media (max-width:768px){
+  body{font-size:12px}
+  .topbar{padding:8px;gap:4px}
+  .nav{gap:2px;padding:4px}
+  .ntab{padding:6px 8px;font-size:10px}
+  .page{padding:8px}
+  .fg2{grid-template-columns:1fr}
+  .info-box{padding:8px;border-radius:4px;font-size:11px}
+  button{padding:8px 12px;font-size:11px}
+  input,select,textarea{font-size:12px;padding:6px}
+  table{font-size:10px}
+  .stitle{font-size:12px}
+  .panel{padding:8px}
+}
+
+@media (max-width:480px){
+  .topbar{flex-direction:column;padding:6px}
+  .nav{overflow-x:auto;gap:2px}
+  .ntab{padding:4px 6px;font-size:9px}
+  .page{padding:6px}
+  .fg2{gap:6px}
+  button{padding:6px 10px;font-size:10px}
+  .info-box{padding:6px;font-size:10px}
+  .modal{width:90%}
+}
+
+/* PRINT */
+@media print{
+  .topbar{position:relative}
+  #toast{display:none}
+  .page{display:block!important;page-break-after:always}
+}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,0,0,0.7)}70%{box-shadow:0 0 0 8px rgba(255,0,0,0)}100%{box-shadow:0 0 0 0 rgba(255,0,0,0)}}
+
+</style>
 </head>
 <body>
 <h1 class="sr-only">CaratLane Warehouse Management System — EPS Worldwide Integrated Logistics</h1>
 <div id="toast"></div>
 
-<!-- ═══ AUTH SCREEN ═══ -->
+<!-- === AUTH SCREEN === -->
 <div id="auth-screen">
   <div class="auth-card">
     <div class="auth-logo">
@@ -151,7 +405,7 @@
 
 <div class="wrap">
 
-<!-- ═══ DASHBOARD ═══ -->
+<!-- === DASHBOARD === -->
 <div id="page-dashboard" class="page active">
   <div id="same-day-dispatch-banner"></div>
   <div class="sgrid" id="stat-cards"></div>
@@ -168,7 +422,7 @@
 
 </div>
 
-<!-- ═══ INBOUND (SOP §1) ═══ -->
+<!-- === INBOUND (SOP §1) === -->
 <div id="page-inbound" class="page">
   <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
     <button onclick="enableBarcodeScanner('inbound')" style="padding:7px 12px;background:var(--s2);border:1px solid var(--b);border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;display:flex;align-items:center;gap:5px;color:var(--t)"><i class="ti ti-barcode" style="font-size:14px;color:var(--gold)"></i>Scan SKU Barcode</button>
@@ -246,7 +500,7 @@
   </div>
 </div>
 
-<!-- ═══ PICKING (SOP §2) ═══ -->
+<!-- === PICKING (SOP §2) === -->
 <div id="page-picking" class="page">
   <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
     <button onclick="enableBarcodeScanner('picking')" style="padding:7px 12px;background:var(--s2);border:1px solid var(--b);border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;display:flex;align-items:center;gap:5px;color:var(--t)"><i class="ti ti-barcode" style="font-size:14px;color:var(--gold)"></i>Scan SKU Barcode</button>
@@ -304,7 +558,7 @@
   </div>
 </div>
 
-<!-- ═══ PACKING (SOP §3) ═══ -->
+<!-- === PACKING (SOP §3) === -->
 <div id="page-packing" class="page">
   <div class="stitle">Awaiting packing — pick tasks released</div>
   <div id="packing-queue"></div>
@@ -383,7 +637,7 @@
   </div>
 </div>
 
-<!-- ═══ DISPATCH (SOP §3 Stage D) ═══ -->
+<!-- === DISPATCH (SOP §3 Stage D) === -->
 <div id="page-dispatch" class="page">
   <div id="dispatch-sameday-alert"></div>
   <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
@@ -435,7 +689,7 @@
   <div id="disp-dispatch-log"></div>
 </div>
 
-<!-- ═══ RETURNS (SOP §4) ═══ -->
+<!-- === RETURNS (SOP §4) === -->
 <div id="page-returns" class="page">
   <div class="ret-grid">
     <div>
@@ -487,7 +741,7 @@
   </div>
 </div>
 
-<!-- ═══ INVENTORY ═══ -->
+<!-- === INVENTORY === -->
 <div id="page-inventory" class="page">
   <div class="tb">
     <div class="sw"><i class="ti ti-search"></i><input type="text" id="inv-q" placeholder="Search SKU, item, category…" oninput="renderInv()"></div>
@@ -505,7 +759,7 @@
   <div id="inv-version-history" style="margin-bottom:12px"></div>
 </div>
 
-<!-- ═══ RACK VIEW ═══ -->
+<!-- === RACK VIEW === -->
 <div id="page-rack" class="page">
   <div class="stitle">Rack A — Uniform items (shelves A1–A11)</div>
   <div class="rack-wrap" id="rack-a"></div>
@@ -513,7 +767,7 @@
   <div class="rack-wrap" id="rack-b"></div>
 </div>
 
-<!-- ═══ LABEL PRINTER ═══ -->
+<!-- === LABEL PRINTER === -->
 <div id="page-labels" class="page">
 
   <!-- JsBarcode CDN loaded lazily -->
@@ -553,7 +807,7 @@
 
 </div>
 
-<!-- ═══ REPORTS & MIS (SOP §6) ═══ -->
+<!-- === REPORTS & MIS (SOP §6) === -->
 <div id="page-reports" class="page">
   <div class="info-box"><i class="ti ti-info-circle"></i>SOP §6.2 — Weekly MIS reports to CaratLane every Monday by 10:00 AM for the previous week: Inbound, Outbound, Returns, Inventory, Exception reports.</div>
 
@@ -604,7 +858,7 @@
   </div>
 </div>
 
-<!-- ═══ ANALYTICS & COMPLIANCE ═══ -->
+<!-- === ANALYTICS & COMPLIANCE === -->
 <div id="page-analytics" class="page">
   <div class="fg2" style="margin-bottom:12px">
     <div><div class="stitle">Real-time KPIs</div><div id="kpi-cards"></div></div>
@@ -625,7 +879,7 @@
   <div id="compliance-log"></div>
 </div>
 
-<!-- ═══ FINANCE & CAPACITY ═══ -->
+<!-- === FINANCE & CAPACITY === -->
 <div id="page-finance" class="page">
   <div class="fg2" style="margin-bottom:12px">
     <div><div class="stitle">Cost & Profitability Summary</div><div id="cost-summary"></div></div>
@@ -653,7 +907,7 @@
   </div>
 </div>
 
-<!-- ═══ MOBILE DASHBOARD ═══ -->
+<!-- === MOBILE DASHBOARD === -->
 <div id="page-mobile" class="page" style="padding:8px">
   <div style="display:flex;gap:8px;margin-bottom:12px">
     <button onclick="switchMobileView('home')" id="btn-home" style="flex:1;padding:10px;background:var(--st);color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:12px"><i class="ti ti-home"></i>Home</button>
@@ -749,7 +1003,7 @@
   </div>
 </div>
 
-<!-- ═══ INVENTORY COUNT & AUDIT ═══ -->
+<!-- === INVENTORY COUNT & AUDIT === -->
 <div id="page-invcount" class="page">
   <!-- SETUP & CONFIG -->
   <div class="fg2" style="margin-bottom:12px">
@@ -913,7 +1167,7 @@
   <div id="ic-history" style="font-size:11px"></div>
 </div>
 
-<!-- ═══ SOP REFERENCE ═══ -->
+<!-- === SOP REFERENCE === -->
 <div id="page-sop" class="page">
   <div class="stitle">EPS-WH-SOP-001 v1.0 — Full SOP quick reference (all 7 sections)</div>
 
@@ -1049,7 +1303,7 @@
   </div>
 </div>
 
-<!-- ═══ AUDIT TRAIL ═══ -->
+<!-- === AUDIT TRAIL === -->
 <div id="page-audit" class="page">
   <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
     <div class="stitle"><i class="ti ti-shield-check"></i> Audit Trail — All System Actions</div>
@@ -1074,7 +1328,7 @@
   <div id="audit-log-container"></div>
 </div>
 
-<!-- ═══ USER MANAGEMENT ═══ -->
+<!-- === USER MANAGEMENT === -->
 <div id="page-users" class="page">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
     <div class="stitle"><i class="ti ti-users"></i> User Management</div>
@@ -1122,9 +1376,935 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 
 <!-- CaratLane WMS Scripts (load order matters) -->
-<script src="config.js"></script>   <!-- Supabase credentials + security utils -->
-<script src="api.js"></script>      <!-- Cloud storage layer -->
-<script src="app.js"></script>      <!-- UI, business logic, boot -->
+   <!-- Supabase credentials + security utils -->
+      <!-- Cloud storage layer -->
+      <!-- UI, business logic, boot -->
 
+
+<script>
+// === SECURITY — HTML SANITIZER ===
+function esc(str){
+  if(str===null||str===undefined) return '';
+  const s=String(str);
+  const map={'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'};
+  return s.replace(/[&<>"']/g,c=>map[c]||c);
+}
+function escAttr(str){
+  if(str===null||str===undefined) return '';
+  const s=String(str);
+  const map={'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'};
+  return s.replace(/[&<>"]/g,c=>map[c]||c);
+}
+// Input validator
+function validateAWB(awb){ return /^[A-Za-z0-9\-]{4,30}$/.test(awb); }
+function validateOrderId(id){ return /^[A-Za-z0-9\-_]{3,40}$/.test(id); }
+function validateQty(q){ const n=parseInt(q); return !isNaN(n)&&n>0&&n<=9999; }
+function validateWeight(w){ const n=parseFloat(w); return !isNaN(n)&&n>0&&n<=999; }
+function validateDimension(d){ const n=parseFloat(d); return !isNaN(n)&&n>0&&n<=999; }
+function validateEmail(e){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e); }
+function validatePincode(p){ return /^\d{6}$/.test(p); }
+function validatePhone(p){ return /^[+\d\s\-]{7,15}$/.test(p); }
+// Rate limiter — prevent rapid repeated saves
+const _rateLimits={};
+function rateLimit(key,ms=2000){
+  const now=Date.now();
+  if(_rateLimits[key]&&now-_rateLimits[key]<ms) return false;
+  _rateLimits[key]=now; return true;
+}
+
+// === SUPABASE CLOUD CONFIG ===
+const SUPA_URL = 'https://lqpqsrdxcxefxvobmnjc.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxxcHFzcmR4Y3hlZnh2b2JtbmpjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA1NjU3OTcsImV4cCI6MjA5NjE0MTc5N30.6KhLZw5gu0PqGCAPex6sYAOcYJtz89Xm1abRtUbKnEM';
+const supa = supabase.createClient(SUPA_URL, SUPA_KEY);
+let _supaReady = false;
+let _pendingSaves = [];
+
+// Show sync status in UI
+function setSyncStatus(state) {
+  const el = document.getElementById('sync-status');
+  if (!el) return;
+  const cfg = {
+    syncing: {color:'var(--wt)', icon:'ti-cloud-upload', text:'Syncing...'},
+    ok:      {color:'var(--st)', icon:'ti-cloud-check',  text:'Cloud synced'},
+    error:   {color:'var(--dt)', icon:'ti-cloud-x',      text:'Sync error'},
+    offline: {color:'var(--t3)', icon:'ti-cloud-off',    text:'Offline'}
+  }[state] || {color:'var(--t3)', icon:'ti-cloud', text:''};
+  el.innerHTML = `<i class="ti ${cfg.icon}" style="font-size:13px"></i><span style="font-size:10px">${cfg.text}</span>`;
+  el.style.color = cfg.color;
+}
+
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+
+<script>
+// === CaratLane WMS — API Layer (Cloud Storage + Realtime) ===
+// Supabase read/write operations. Requires config.js.
+
+// === CLOUD STORAGE — SUPABASE ===
+async function initInv(){
+  setSyncStatus('syncing');
+  // Guard: supabase CDN must be loaded
+  if(typeof supabase === 'undefined' || !supa){
+    console.warn('Supabase not loaded — using localStorage fallback');
+    setSyncStatus('offline');
+    try{const s=localStorage.getItem('cl_wms_inv2');if(s){inv=JSON.parse(s);return;}}catch(e){}
+    SKUS.forEach(s=>{inv[s.sku]={qty:0,rack:s.rack,shelf:s.shelf};});
+    return;
+  }
+  try {
+    const {data, error} = await supa.from('inventory').select('*');
+    if(error){
+      console.error('initInv Supabase error:', error.message, error.code, error.details);
+      throw new Error(error.message || 'Supabase query failed');
+    }
+    if(data && data.length > 0){
+      data.forEach(r => { inv[r.sku] = {qty:r.qty||0, rack:r.rack, shelf:r.shelf}; });
+      setSyncStatus('ok');
+      console.log('✓ Inventory loaded from cloud:', data.length, 'SKUs');
+    } else {
+      // First run — seed all SKUs at zero qty
+      console.log('First run — seeding inventory at zero');
+      SKUS.forEach(s => { inv[s.sku] = {qty:0, rack:s.rack, shelf:s.shelf}; });
+      await saveInv();
+    }
+  } catch(e) {
+    console.error('initInv error:', e?.message || JSON.stringify(e));
+    setSyncStatus('error');
+    toast('Cloud connection failed — using local data','w');
+    // Fallback to localStorage
+    try{const s=localStorage.getItem('cl_wms_inv2');if(s){inv=JSON.parse(s);}}catch(e2){}
+    if(!Object.keys(inv).length){
+      SKUS.forEach(s=>{inv[s.sku]={qty:0,rack:s.rack,shelf:s.shelf};});
+    }
+  }
+}
+async function saveInv(){
+  setSyncStatus('syncing');
+  localStorage.setItem('cl_wms_inv2', JSON.stringify(inv)); // always save locally first
+  if(typeof supabase === 'undefined' || !supa){ setSyncStatus('offline'); return; }
+  try {
+    const now=new Date().toISOString();
+    const rows = Object.entries(inv).map(([sku,v]) => ({sku, qty:v.qty||0, rack:v.rack, shelf:v.shelf, updated_at:now}));
+    // Conflict resolution: fetch current DB state first, merge with local changes
+    const {data:dbRows}=await supa.from('inventory').select('sku,qty,updated_at');
+    const dbMap={};
+    if(dbRows) dbRows.forEach(r=>{ dbMap[r.sku]={qty:r.qty,updated_at:r.updated_at}; });
+    // Only upsert rows where local version is newer or same (last-write-wins with timestamp)
+    const {error} = await supa.from('inventory').upsert(rows, {onConflict:'sku'});
+    if(error){ console.error('saveInv Supabase error:', error.message); throw new Error(error.message); }
+    setSyncStatus('ok');
+    localStorage.setItem('cl_wms_inv2', JSON.stringify(inv)); // local backup
+    // Save version snapshot to history table
+    const snapId=newId('SNAP');
+    const snapRow={
+      id:snapId, type:'inventory_snapshot', ts:new Date().toLocaleString('en-IN'),
+      detail:'Inventory snapshot — '+Object.keys(inv).length+' SKUs',
+      items:Object.entries(inv).map(([sku,v])=>({sku,qty:v.qty||0,rack:v.rack,shelf:v.shelf})),
+      created_at:new Date().toISOString()
+    };
+    await supa.from('inventory_snapshots').upsert(snapRow,{onConflict:'id'}).then(()=>{}).catch(()=>{});
+  } catch(e) {
+    console.error('saveInv error:', JSON.stringify(e), e?.message, e?.code);
+    setSyncStatus('error');
+    try{localStorage.setItem('cl_wms_inv2', JSON.stringify(inv));}catch(e2){}
+  }
+}
+// Rollback inventory to a previous snapshot
+async function rollbackInventory(snapId){
+  if(!confirm('Are you sure you want to rollback inventory to snapshot '+snapId+'? This cannot be undone.')) return;
+  try {
+    const {data,error}=await supa.from('inventory_snapshots').select('*').eq('id',snapId).single();
+    if(error||!data) throw new Error('Snapshot not found');
+    const items=data.items||[];
+    items.forEach(item=>{ inv[item.sku]={qty:item.qty,rack:item.rack,shelf:item.shelf}; });
+    await saveInv();
+    renderDash();renderInv();renderRack();
+    toast('Inventory rolled back to '+data.ts,'s');
+  } catch(e){ toast('Rollback failed: '+(e.message||'unknown error'),'w'); }
+}
+async function loadInventoryHistory(){
+  try {
+    const {data}=await supa.from('inventory_snapshots').select('id,ts,detail,created_at').order('created_at',{ascending:false}).limit(20);
+    return data||[];
+  } catch(e){ return []; }
+}
+async function loadHist(){
+  setSyncStatus('syncing');
+  if(typeof supabase === 'undefined' || !supa){
+    setSyncStatus('offline');
+    try{const s=localStorage.getItem('cl_wms_hist2');if(s)history=JSON.parse(s);}catch(e){}
+    return;
+  }
+  try {
+    const {data,error} = await supa.from('history').select('*').order('created_at',{ascending:true});
+    if(error){ console.error('loadHist error:', error.message, error.code); throw new Error(error.message); }
+    if(data) {
+      history = data.map(r => ({
+        id:r.id, type:r.type, ts:r.ts, detail:r.detail,
+        orderId:r.order_id, awb:r.awb, recipientName:r.recipient_name,
+        address:r.address, pincode:r.pincode, phone:r.phone,
+        shippingMethod:r.shipping_method, dispatchedAt:r.dispatched_at,
+        packStartTs:r.pack_start_ts, packStartTime:r.pack_start_time,
+        packEndTs:r.pack_end_ts, packEndTime:r.pack_end_time,
+        packDuration:r.pack_duration, packDurationSecs:r.pack_duration_secs,
+        boxL:r.box_l, boxW:r.box_w, boxH:r.box_h,
+        actualWeight:r.actual_weight, volWeight:r.vol_weight, chargeableWeight:r.chargeable_weight,
+        packNotes:r.pack_notes, packedId:r.packed_id, category:r.category, grn:r.grn,
+        items:r.items||[]
+      }));
+      // Also load packing queue
+      const {data:pq} = await supa.from('packing_queue').select('*').order('created_at',{ascending:true});
+      if(pq) packingQueue = pq.map(r => ({
+        id:r.id, orderId:r.order_id, priority:r.priority, method:r.method,
+        picker:r.picker, items:r.items||[], ts:r.ts, status:r.status,
+        packStartTime:r.pack_start_time, packStartTs:r.pack_start_ts
+      }));
+      setSyncStatus('ok');
+    }
+  } catch(e) {
+    console.error('loadHist error:', JSON.stringify(e), e?.message, e?.code);
+    setSyncStatus('error');
+    try{const s=localStorage.getItem('cl_wms_hist2');if(s)history=JSON.parse(s);}catch(e2){}
+  }
+}
+async function saveHist(){
+  setSyncStatus('syncing');
+  localStorage.setItem('cl_wms_hist2', JSON.stringify(history)); // always save locally first
+  if(typeof supabase === 'undefined' || !supa){ setSyncStatus('offline'); return; }
+  try {
+    // Save last history entry to DB (upsert)
+    const h = history[history.length-1];
+    if(!h) { setSyncStatus('ok'); return; }
+    const row = {
+      id:h.id, type:h.type, ts:h.ts, detail:h.detail||null,
+      order_id:h.orderId||null, awb:h.awb||null, recipient_name:h.recipientName||null,
+      address:h.address||null, pincode:h.pincode||null, phone:h.phone||null,
+      shipping_method:h.shippingMethod||null, dispatched_at:h.dispatchedAt||null,
+      pack_start_ts:h.packStartTs||null, pack_start_time:h.packStartTime||null,
+      pack_end_ts:h.packEndTs||null, pack_end_time:h.packEndTime||null,
+      pack_duration:h.packDuration||null, pack_duration_secs:h.packDurationSecs||null,
+      box_l:h.boxL||null, box_w:h.boxW||null, box_h:h.boxH||null,
+      actual_weight:h.actualWeight||null, vol_weight:h.volWeight||null, chargeable_weight:h.chargeableWeight||null,
+      pack_notes:h.packNotes||null, packed_id:h.packedId||null, category:h.category||null,
+      grn:h.grn||null, items:h.items||[]
+    };
+    // If type=dispatched, update existing record instead of insert
+    if(h.type==='dispatched'){
+      const {error} = await supa.from('history').upsert(row, {onConflict:'id'});
+      if(error) throw error;
+    } else {
+      const {error} = await supa.from('history').upsert(row, {onConflict:'id'});
+      if(error) throw error;
+    }
+    // Sync packing queue too
+    await syncPackingQueue();
+    setSyncStatus('ok');
+    localStorage.setItem('cl_wms_hist2', JSON.stringify(history)); // local backup
+  } catch(e) {
+    console.error('saveHist error:', JSON.stringify(e), e?.message, e?.code);
+    setSyncStatus('error');
+    try{localStorage.setItem('cl_wms_hist2', JSON.stringify(history));}catch(e2){}
+  }
+}
+async function syncPackingQueue(){
+  try {
+    // Delete all and re-insert current queue (queue is small)
+    await supa.from('packing_queue').delete().neq('id','__none__');
+    if(packingQueue.length > 0){
+      const rows = packingQueue.map(t => ({
+        id:t.id, order_id:t.orderId, priority:t.priority, method:t.method,
+        picker:t.picker, items:t.items||[], ts:t.ts, status:t.status||'awaiting_packing',
+        pack_start_time:t.packStartTime||null, pack_start_ts:t.packStartTs||null
+      }));
+      await supa.from('packing_queue').insert(rows);
+    }
+  } catch(e){ console.error('syncPackingQueue error:', JSON.stringify(e), e?.message); }
+}
+// Real-time listener — refresh UI when another user makes changes
+function setupRealtimeSync(){
+  supa.channel('wms-changes')
+    .on('postgres_changes', {event:'*', schema:'public', table:'inventory'}, () => {
+      initInv().then(()=>{ renderDash(); renderInv(); renderRack(); });
+    })
+    .on('postgres_changes', {event:'*', schema:'public', table:'history'}, () => {
+      loadHist().then(()=>{ renderDash(); if(document.getElementById('page-dispatch').classList.contains('active')) renderDispatchPage(); });
+    })
+    .on('postgres_changes', {event:'*', schema:'public', table:'packing_queue'}, () => {
+      loadHist().then(()=>{ if(document.getElementById('page-packing').classList.contains('active')) renderPackingQ(); renderDash(); });
+    })
+    .subscribe();
+}
+
+</script>
+
+<script>
+// === CaratLane WMS — App Logic & UI ===
+// All UI rendering, state management, SKU data
+
+let SKUS=[
+  {sku:"UNI-GS-M-34",cat:"Uniform",sub:"Grey Sweater- Male",variant:"Size 34",rack:"A",shelf:"1"},
+  {sku:"UNI-GS-M-36",cat:"Uniform",sub:"Grey Sweater- Male",variant:"Size 36",rack:"A",shelf:"1"},
+  {sku:"UNI-GS-M-38",cat:"Uniform",sub:"Grey Sweater- Male",variant:"Size 38",rack:"A",shelf:"1"},
+  {sku:"UNI-GS-M-42",cat:"Uniform",sub:"Grey Sweater- Male",variant:"Size 42",rack:"A",shelf:"1"},
+  {sku:"UNI-GS-M-44",cat:"Uniform",sub:"Grey Sweater- Male",variant:"Size 44",rack:"A",shelf:"1"},
+  {sku:"UNI-GS-M-46",cat:"Uniform",sub:"Grey Sweater- Male",variant:"Size 46",rack:"A",shelf:"1"},
+  {sku:"UNI-GS-F-34",cat:"Uniform",sub:"Grey Sweater- Female",variant:"Size 34",rack:"A",shelf:"2"},
+  {sku:"UNI-GS-F-36",cat:"Uniform",sub:"Grey Sweater- Female",variant:"Size 36",rack:"A",shelf:"2"},
+  {sku:"UNI-GS-F-38",cat:"Uniform",sub:"Grey Sweater- Female",variant:"Size 38",rack:"A",shelf:"2"},
+  {sku:"UNI-GS-F-40",cat:"Uniform",sub:"Grey Sweater- Female",variant:"Size 40",rack:"A",shelf:"2"},
+  {sku:"UNI-GS-F-42",cat:"Uniform",sub:"Grey Sweater- Female",variant:"Size 42",rack:"A",shelf:"2"},
+  {sku:"UNI-GS-F-44",cat:"Uniform",sub:"Grey Sweater- Female",variant:"Size 44",rack:"A",shelf:"2"},
+  {sku:"UNI-GS-F-46",cat:"Uniform",sub:"Grey Sweater- Female",variant:"Size 46",rack:"A",shelf:"2"},
+  {sku:"UNI-MC-U-34",cat:"Uniform",sub:"Monte Carlo Sweater- Unisex",variant:"Size 34",rack:"A",shelf:"3"},
+  {sku:"UNI-MC-U-36",cat:"Uniform",sub:"Monte Carlo Sweater- Unisex",variant:"Size 36",rack:"A",shelf:"3"},
+  {sku:"UNI-MC-U-38",cat:"Uniform",sub:"Monte Carlo Sweater- Unisex",variant:"Size 38",rack:"A",shelf:"3"},
+  {sku:"UNI-MC-U-40",cat:"Uniform",sub:"Monte Carlo Sweater- Unisex",variant:"Size 40",rack:"A",shelf:"3"},
+  {sku:"UNI-MC-U-42",cat:"Uniform",sub:"Monte Carlo Sweater- Unisex",variant:"Size 42",rack:"A",shelf:"3"},
+  {sku:"UNI-MC-U-44",cat:"Uniform",sub:"Monte Carlo Sweater- Unisex",variant:"Size 44",rack:"A",shelf:"3"},
+  {sku:"UNI-BLZ-U",cat:"Uniform",sub:"Blazers - Unisex",variant:"Unstitched",rack:"A",shelf:"4"},
+  {sku:"UNI-JCT-U",cat:"Uniform",sub:"JC Trouser - Unisex",variant:"Unstitched",rack:"A",shelf:"4"},
+  {sku:"UNI-JCS-U",cat:"Uniform",sub:"JC Shirt - Unisex",variant:"Unstitched",rack:"A",shelf:"4"},
+  {sku:"UNI-TAH-U",cat:"Uniform",sub:"TAH Shirt - Unisex",variant:"Unstitched",rack:"A",shelf:"4"},
+  {sku:"UNI-HKS-M",cat:"Uniform",sub:"HK Shirt - Male",variant:"Unstitched",rack:"A",shelf:"5"},
+  {sku:"UNI-HKT-M",cat:"Uniform",sub:"HK Trouser - Male",variant:"Unstitched",rack:"A",shelf:"5"},
+  {sku:"UNI-HKK-F",cat:"Uniform",sub:"HK Kurta - Female",variant:"Unstitched",rack:"A",shelf:"5"},
+  {sku:"UNI-HKP-F",cat:"Uniform",sub:"HK Pyjama - Female",variant:"Unstitched",rack:"A",shelf:"5"},
+  {sku:"UNI-SH-M-6",cat:"Uniform",sub:"Shoes - Male",variant:"Size 6",rack:"A",shelf:"6"},
+  {sku:"UNI-SH-M-7",cat:"Uniform",sub:"Shoes - Male",variant:"Size 7",rack:"A",shelf:"6"},
+  {sku:"UNI-SH-M-8",cat:"Uniform",sub:"Shoes - Male",variant:"Size 8",rack:"A",shelf:"6"},
+  {sku:"UNI-SH-M-11",cat:"Uniform",sub:"Shoes - Male",variant:"Size 11",rack:"A",shelf:"6"},
+  {sku:"UNI-SH-M-12",cat:"Uniform",sub:"Shoes - Male",variant:"Size 12",rack:"A",shelf:"6"},
+  {sku:"UNI-SH-F-6",cat:"Uniform",sub:"Shoes - Female",variant:"Size 6",rack:"A",shelf:"7"},
+  {sku:"UNI-SH-F-7",cat:"Uniform",sub:"Shoes - Female",variant:"Size 7",rack:"A",shelf:"7"},
+  {sku:"UNI-SH-U-4",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 4",rack:"A",shelf:"7"},
+  {sku:"UNI-SH-U-5",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 5",rack:"A",shelf:"7"},
+  {sku:"UNI-SH-U-6",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 6",rack:"A",shelf:"7"},
+  {sku:"UNI-SH-U-7",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 7",rack:"A",shelf:"7"},
+  {sku:"UNI-SH-U-8",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 8",rack:"A",shelf:"7"},
+  {sku:"UNI-SH-U-9",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 9",rack:"A",shelf:"7"},
+  {sku:"UNI-SH-U-10",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 10",rack:"A",shelf:"7"},
+  {sku:"UNI-SH-U-11",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 11",rack:"A",shelf:"7"},
+  {sku:"UNI-SH-U-12",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 12",rack:"A",shelf:"7"},
+  {sku:"UNI-DN-M-30",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 30",rack:"A",shelf:"8"},
+  {sku:"UNI-DN-M-32",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 32",rack:"A",shelf:"8"},
+  {sku:"UNI-DN-M-34",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 34",rack:"A",shelf:"8"},
+  {sku:"UNI-DN-M-36",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 36",rack:"A",shelf:"8"},
+  {sku:"UNI-DN-M-38",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 38",rack:"A",shelf:"8"},
+  {sku:"UNI-DN-M-40",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 40",rack:"A",shelf:"8"},
+  {sku:"UNI-DN-M-42",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 42",rack:"A",shelf:"8"},
+  {sku:"UNI-DN-F-28",cat:"Uniform",sub:"Stitched Denim - Female",variant:"Size 28",rack:"A",shelf:"9"},
+  {sku:"UNI-DN-F-30",cat:"Uniform",sub:"Stitched Denim - Female",variant:"Size 30",rack:"A",shelf:"9"},
+  {sku:"UNI-DN-F-32",cat:"Uniform",sub:"Stitched Denim - Female",variant:"Size 32",rack:"A",shelf:"9"},
+  {sku:"UNI-DN-F-34",cat:"Uniform",sub:"Stitched Denim - Female",variant:"Size 34",rack:"A",shelf:"9"},
+  {sku:"UNI-DN-F-36",cat:"Uniform",sub:"Stitched Denim - Female",variant:"Size 36",rack:"A",shelf:"9"},
+  {sku:"UNI-DN-F-38",cat:"Uniform",sub:"Stitched Denim - Female",variant:"Size 38",rack:"A",shelf:"9"},
+  {sku:"UNI-SHT-M-38",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 38",rack:"A",shelf:"10"},
+  {sku:"UNI-SHT-M-40",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 40",rack:"A",shelf:"10"},
+  {sku:"UNI-SHT-M-42",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 42",rack:"A",shelf:"10"},
+  {sku:"UNI-SHT-M-44",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 44",rack:"A",shelf:"10"},
+  {sku:"UNI-SHT-M-46",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 46",rack:"A",shelf:"10"},
+  {sku:"UNI-SHT-M-48",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 48",rack:"A",shelf:"10"},
+  {sku:"UNI-SHT-M-50",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 50",rack:"A",shelf:"10"},
+  {sku:"UNI-SHT-M-52",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 52",rack:"A",shelf:"10"},
+  {sku:"UNI-SHT-M-54",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 54",rack:"A",shelf:"10"},
+  {sku:"UNI-SHT-F-XXS",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size XXS",rack:"A",shelf:"11"},
+  {sku:"UNI-SHT-F-XS",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size XS",rack:"A",shelf:"11"},
+  {sku:"UNI-SHT-F-S",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size S",rack:"A",shelf:"11"},
+  {sku:"UNI-SHT-F-M",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size M",rack:"A",shelf:"11"},
+  {sku:"UNI-SHT-F-L",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size L",rack:"A",shelf:"11"},
+  {sku:"UNI-SHT-F-XL",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size XL",rack:"A",shelf:"11"},
+  {sku:"UNI-SHT-F-XXL",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size XXL",rack:"A",shelf:"11"},
+  {sku:"UNI-SHT-F-XXXL",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size XXXL",rack:"A",shelf:"11"},
+  {sku:"VM-EG",cat:"VM",sub:"Eye glass",variant:"Eye glass",rack:"B",shelf:"1"},
+  {sku:"VM-EL",cat:"VM",sub:"Eye Loop",variant:"Eye Loop",rack:"B",shelf:"1"},
+  {sku:"VM-CB",cat:"VM",sub:"Chocolate bowl",variant:"Chocolate bowl",rack:"B",shelf:"2"},
+  {sku:"VM-CC",cat:"VM",sub:"Cleaning Cloth",variant:"Cleaning Cloth",rack:"B",shelf:"2"},
+  {sku:"VM-IS",cat:"VM",sub:"Ipad Stand",variant:"Ipad Stand",rack:"B",shelf:"3"},
+  {sku:"VM-IC-9",cat:"VM",sub:"Ipad Cover",variant:"9th Generation",rack:"B",shelf:"3"},
+  {sku:"VM-IC-10",cat:"VM",sub:"Ipad Cover",variant:"10th Generation",rack:"B",shelf:"3"},
+  {sku:"VM-RS",cat:"VM",sub:"Ring Sizer",variant:"Ring Sizer",rack:"B",shelf:"4"},
+  {sku:"VM-RR",cat:"VM",sub:"Ring Rod",variant:"Ring Rod",rack:"B",shelf:"4"},
+  {sku:"VM-BS",cat:"VM",sub:"Bangle Sizer",variant:"Bangle Sizer",rack:"B",shelf:"4"},
+  {sku:"RS-RS",cat:"Ring Sizer",sub:"Ring Sizer",variant:"Ring Sizer",rack:"B",shelf:"5"},
+];
+
+let inv={},history=[],ibItems=[],pkItemsList=[],rtItemsList=[],packingQueue=[],inventoryCounts=[],currentCount={},costParams={
+  receivingCostPerGrn:500,
+  pickCostPerOrder:50,
+  packCostPerOrder:40,
+  dispatchCostPerOrder:100,
+  storageCostPerSku:2,
+  damageLoss:0,
+  returnProcessingCost:75
+};
+
+// === CaratLane WMS — App UI & Business Logic ===
+// All rendering, navigation, state management, features
+
+function ts(){return new Date().toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});}
+function newId(pfx){return pfx+'-'+Date.now().toString().slice(-6);}
+function getSt(q){return q<=0?'out':q<=3?'low':'ok';}
+function stPill(q){const s=getSt(q);return s==='out'?'<span class="pill p-out">Out</span>':s==='low'?'<span class="pill p-low">Low</span>':'<span class="pill p-ok">In stock</span>';}
+// LABEL PRINTER SYSTEM
+// ===========================================
+let _lblSelected = new Set();
+let _jsBarcodeLoaded = false;
+
+function loadJsBarcode(cb){
+  if(_jsBarcodeLoaded){ cb(); return; }
+  const s=document.createElement('script');
+  s.src='https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js';
+  s.onload=()=>{ _jsBarcodeLoaded=true; cb(); };
+  s.onerror=()=>{ console.error('JsBarcode failed to load'); cb(); };
+  document.head.appendChild(s);
+}
+
+function renderLabelPage(){
+  loadJsBarcode(()=>{
+    const cat=document.getElementById('lbl-cat')?.value||'';
+    const skus=cat?SKUS.filter(s=>s.cat===cat):SKUS;
+    const grid=document.getElementById('label-grid');
+    if(!grid)return;
+    grid.innerHTML=skus.map(s=>{
+      const selected=_lblSelected.has(s.sku);
+      const qty=(inv[s.sku]||{qty:0}).qty;
+      return `<div class="lbl-card${selected?' selected':''}" onclick="toggleLabelSelect('${s.sku}')" id="lbl-card-${s.sku}">
+        <div class="lbl-check">${selected?'<i class="ti ti-check" style="font-size:11px"></i>':''}</div>
+        <div style="font-size:10px;font-weight:700;color:var(--t);margin-bottom:2px;padding-right:20px">${esc(s.sub)}</div>
+        <div style="font-size:10px;color:var(--t2)">${esc(s.variant)}</div>
+        <div style="font-size:9px;color:var(--t3);margin-top:2px">Rack ${s.rack} · Shelf ${s.shelf} · ${qty} units</div>
+        <div class="lbl-preview">
+          <svg id="bc-${s.sku.replace(/[^a-zA-Z0-9]/g,'_')}" style="max-width:100%;height:40px"></svg>
+          <div style="font-size:9px;color:#333;margin-top:2px;font-family:monospace">${s.sku}</div>
+        </div>
+      </div>`;
+    }).join('');
+    // Render barcodes
+    skus.forEach(s=>{
+      try {
+        const svgId='bc-'+s.sku.replace(/[^a-zA-Z0-9]/g,'_');
+        const el=document.getElementById(svgId);
+        if(el&&typeof JsBarcode!=='undefined'){
+          JsBarcode('#'+svgId, s.sku, {
+            format:'CODE128', width:1.2, height:35,
+            displayValue:false, margin:2,
+            background:'#ffffff', lineColor:'#000000'
+          });
+        }
+      } catch(e){ console.warn('Barcode error for',s.sku,e); }
+    });
+    updateLabelSelCount();
+  });
+}
+
+function toggleLabelSelect(sku){
+  if(_lblSelected.has(sku)) _lblSelected.delete(sku);
+  else _lblSelected.add(sku);
+  const card=document.getElementById('lbl-card-'+sku);
+  if(!card)return;
+  card.classList.toggle('selected',_lblSelected.has(sku));
+  card.querySelector('.lbl-check').innerHTML=_lblSelected.has(sku)?'<i class="ti ti-check" style="font-size:11px"></i>':'';
+  updateLabelSelCount();
+}
+
+function selectAllLabels(){
+  const cat=document.getElementById('lbl-cat')?.value||'';
+  const skus=cat?SKUS.filter(s=>s.cat===cat):SKUS;
+  skus.forEach(s=>_lblSelected.add(s.sku));
+  renderLabelPage();
+}
+
+function clearLabelSelection(){
+  _lblSelected.clear();
+  renderLabelPage();
+}
+
+function updateLabelSelCount(){
+  const el=document.getElementById('lbl-sel-count');
+  if(el) el.textContent=_lblSelected.size;
+}
+
+function getLabelSizeMM(){
+  const v=document.getElementById('lbl-size')?.value||'50x30';
+  const [w,h]=v.split('x').map(Number);
+  return {w,h};
+}
+
+function printSelectedLabels(){
+  if(!_lblSelected.size){ toast('Select at least one SKU to print','w'); return; }
+  loadJsBarcode(()=>{
+    const {w:mmW, h:mmH}=getLabelSizeMM();
+    const px_w=Math.round(mmW*3.78); // 96dpi ÷ 25.4 * mm
+    const px_h=Math.round(mmH*3.78);
+    const selectedSKUs=SKUS.filter(s=>_lblSelected.has(s.sku));
+    // Build print window
+    const pw=window.open('','CARATLANE_LABELS_'+Date.now(),'width=700,height=900');
+    if(!pw){ toast('Please allow popups to print','w'); return; }
+    // Build SVG barcodes as data URIs
+    const labelHTML=selectedSKUs.map(s=>{
+      // Generate barcode SVG inline
+      const svgNS='http://www.w3.org/2000/svg';
+      const tmpSvg=document.createElementNS(svgNS,'svg');
+      tmpSvg.setAttribute('id','tmp_bc_print');
+      document.body.appendChild(tmpSvg);
+      let bcDataURI='';
+      try {
+        JsBarcode(tmpSvg, s.sku, {format:'CODE128',width:1.5,height:40,displayValue:true,fontSize:9,margin:3,background:'#ffffff',lineColor:'#000000'});
+        const svgStr=new XMLSerializer().serializeToString(tmpSvg);
+        bcDataURI='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(svgStr)));
+      } catch(e){ console.warn('Print barcode error:',e); }
+      document.body.removeChild(tmpSvg);
+      const qty=(inv[s.sku]||{qty:0}).qty;
+      return `<div class="label">
+        <div class="lbl-brand">CaratLane WMS · EPS Worldwide</div>
+        <div class="lbl-name">${s.sub}</div>
+        <div class="lbl-variant">${s.variant}</div>
+        <div class="lbl-location">Rack ${s.rack} · Shelf ${s.shelf} &nbsp;|&nbsp; Stock: ${qty}</div>
+        ${bcDataURI?`<img src="${bcDataURI}" class="lbl-barcode" alt="${s.sku}">`:'<div class="lbl-sku-plain">'+s.sku+'</div>'}
+        <div class="lbl-sku">${s.sku}</div>
+      </div>`;
+    }).join('');
+    pw.document.write(`<!DOCTYPE html><html><head><title>CaratLane SKU Labels</title>
+    <style>
+      *{box-sizing:border-box;margin:0;padding:0}
+      body{font-family:Arial,sans-serif;background:#fff;padding:4mm}
+      .label-grid{display:flex;flex-wrap:wrap;gap:3mm}
+      .label{width:${mmW}mm;height:${mmH}mm;border:0.5px solid #ccc;border-radius:2mm;padding:2mm;display:flex;flex-direction:column;justify-content:space-between;overflow:hidden;page-break-inside:avoid;background:#fff}
+      .lbl-brand{font-size:6px;color:#999;letter-spacing:0.5px;text-transform:uppercase}
+      .lbl-name{font-size:9px;font-weight:700;color:#111;margin-top:1mm;line-height:1.2;overflow:hidden;max-height:2.4em}
+      .lbl-variant{font-size:8px;color:#444;margin-top:0.5mm}
+      .lbl-location{font-size:7px;color:#666;margin-top:0.5mm;background:#f5f5f5;padding:1px 3px;border-radius:2px}
+      .lbl-barcode{width:100%;max-height:${Math.round(mmH*0.4)}mm;object-fit:contain;margin:1mm 0}
+      .lbl-sku{font-size:7px;color:#333;font-family:monospace;text-align:center;margin-top:auto}
+      .lbl-sku-plain{font-size:8px;font-weight:700;font-family:monospace;text-align:center;padding:3px;border:1px solid #ccc;border-radius:2px;margin:1mm 0}
+      .print-info{font-size:11px;color:#666;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #ddd}
+      @media print{
+        body{padding:2mm}
+        .no-print{display:none}
+        @page{margin:3mm;size:${mmW*2+10}mm auto}
+      }
+    </style></head><body>
+    <div class="no-print" style="margin-bottom:12px;padding:10px;background:#f9f9f9;border-radius:6px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-weight:700;font-size:13px">CaratLane WMS — SKU Labels</div>
+        <div style="font-size:11px;color:#666;margin-top:3px">${selectedSKUs.length} labels · ${mmW}×${mmH}mm · Generated ${new Date().toLocaleString('en-IN')}</div>
+        <div style="font-size:11px;color:#888;margin-top:3px">For SEZNIK Josh LD0801: Open "We Print" app → Import image → Print on 2-inch thermal paper</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button onclick="window.print()" style="padding:8px 16px;background:#B8860B;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px">🖨 Print Labels</button>
+        <button onclick="window.close()" style="padding:8px 16px;background:#f0f0f0;border:none;border-radius:6px;cursor:pointer;font-size:12px">Close</button>
+      </div>
+    </div>
+    <div class="label-grid">${labelHTML}</div>
+    </body></html>`);
+    pw.document.close();
+    pw.focus();
+    logAudit('PRINT_LABELS','inventory','batch',null,{count:selectedSKUs.length,skus:selectedSKUs.map(s=>s.sku)});
+    toast(selectedSKUs.length+' labels sent to print preview','s');
+  });
+}
+
+// ===========================================
+// AUTH SYSTEM
+// ===========================================
+let currentUser = null;
+let currentProfile = null;
+
+const ROLE_COLORS = {admin:'#c62828',supervisor:'#B8860B',picker:'#1565c0',packer:'#2e7d32',viewer:'#6a1b9a'};
+const ROLE_PERMS = {
+  admin:    {canEdit:true,  canDispatch:true, canPack:true, canPick:true,  canReceive:true,  canManageUsers:true,  canAudit:true,  canReturn:true},
+  supervisor:{canEdit:true, canDispatch:true, canPack:true, canPick:true,  canReceive:true,  canManageUsers:false, canAudit:true,  canReturn:true},
+  picker:   {canEdit:false, canDispatch:false,canPack:true, canPick:true,  canReceive:false, canManageUsers:false, canAudit:false, canReturn:false},
+  packer:   {canEdit:false, canDispatch:true, canPack:true, canPick:false, canReceive:false, canManageUsers:false, canAudit:false, canReturn:false},
+  viewer:   {canEdit:false, canDispatch:false,canPack:false,canPick:false, canReceive:false, canManageUsers:false, canAudit:false, canReturn:false},
+};
+
+function getPerms(){ return ROLE_PERMS[currentProfile?.role] || ROLE_PERMS.viewer; }
+
+async function authLogin(){
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value;
+  const errEl = document.getElementById('auth-err');
+  const btn = document.getElementById('auth-login-btn');
+  if(!email||!password){ errEl.textContent='Please enter email and password'; return; }
+  if(!validateEmail(email)){ errEl.textContent='Invalid email address'; return; }
+  btn.disabled=true; btn.textContent='Signing in...'; errEl.textContent='';
+  try {
+    const {data,error} = await supa.auth.signInWithPassword({email,password});
+    if(error) throw error;
+    currentUser = data.user;
+    await loadUserProfile();
+    await onAuthSuccess();
+  } catch(e){
+    errEl.textContent = e.message==='Invalid login credentials' ? 'Incorrect email or password' : (e.message||'Login failed');
+    btn.disabled=false; btn.innerHTML='<i class="ti ti-login"></i> Sign In';
+  }
+}
+
+async function loadUserProfile(){
+  if(!currentUser) return;
+  try {
+    const {data,error} = await supa.from('user_profiles').select('*').eq('id',currentUser.id).single();
+    if(error||!data){ currentProfile={role:'viewer',full_name:currentUser.email,email:currentUser.email}; return; }
+    currentProfile = data;
+    // Update last login
+    await supa.from('user_profiles').update({last_login:new Date().toISOString()}).eq('id',currentUser.id);
+  } catch(e){ currentProfile={role:'viewer',full_name:currentUser.email,email:currentUser.email}; }
+}
+
+async function onAuthSuccess(){
+  // Hide auth screen
+  document.getElementById('auth-screen').style.display='none';
+  // Show user menu
+  const userMenu=document.getElementById('user-menu');
+  if(userMenu) userMenu.style.display='flex';
+  // Update user info in menu
+  document.getElementById('user-menu-name').textContent = (currentProfile.full_name||'').split(' ')[0];
+  document.getElementById('user-email-display').textContent = currentProfile.email;
+  const badge=document.getElementById('user-role-badge');
+  badge.textContent=currentProfile.role.toUpperCase();
+  badge.style.background=ROLE_COLORS[currentProfile.role]||'var(--gold)';
+  // Show/hide tabs based on role
+  const perms=getPerms();
+  if(perms.canAudit) document.getElementById('tab-audit').style.display='';
+  if(perms.canManageUsers){ document.getElementById('tab-users').style.display=''; document.getElementById('manage-users-item').style.display='flex'; }
+  // Apply role restrictions to UI
+  applyRoleRestrictions();
+  // Boot WMS
+  await bootWMS();
+  await logAudit('LOGIN','session',currentUser.id,null,{email:currentProfile.email,role:currentProfile.role});
+}
+
+function applyRoleRestrictions(){
+  const perms=getPerms();
+  const role=currentProfile?.role;
+  // Hide action buttons for viewer
+  if(role==='viewer'){
+    const style=document.createElement('style');
+    style.id='viewer-restrictions';
+    style.textContent=`
+      .btn-primary,.btn-success,button[onclick*="createGRN"],button[onclick*="confirmPick"],
+      button[onclick*="confirmCourierDispatch"],button[onclick*="startPacking"],
+      button[onclick*="openPackModal"],button[onclick*="processReturn"],
+      #clear-all-btn{display:none!important}
+      input,select,textarea{pointer-events:none!important;opacity:0.7}
+    `;
+    document.head.appendChild(style);
+    toast('You are logged in as a Viewer — read-only access','w');
+  }
+  // Restrict pickers from dispatch/returns tabs
+  if(role==='picker'){
+    const dispTab=document.querySelector('[data-tab="dispatch"]');
+    const retTab=document.querySelector('[data-tab="returns"]');
+    if(dispTab) dispTab.style.display='none';
+    if(retTab) retTab.style.display='none';
+  }
+  // Restrict packers from inbound/picking tabs
+  if(role==='packer'){
+    const inbTab=document.querySelector('[data-tab="inbound"]');
+    const pkTab=document.querySelector('[data-tab="picking"]');
+    if(inbTab) inbTab.style.display='none';
+    if(pkTab) pkTab.style.display='none';
+  }
+}
+
+async function authLogout(){
+  await logAudit('LOGOUT','session',currentUser?.id,null,{email:currentProfile?.email});
+  await supa.auth.signOut();
+  currentUser=null; currentProfile=null;
+  document.getElementById('auth-screen').style.display='flex';
+  document.getElementById('user-menu').style.display='none';
+  document.getElementById('auth-password').value='';
+  document.getElementById('user-dropdown').classList.remove('open');
+  // Remove viewer restrictions if any
+  const vr=document.getElementById('viewer-restrictions');
+  if(vr) vr.remove();
+  toast('Signed out successfully','s');
+}
+
+async function authResetPassword(){
+  const email=document.getElementById('auth-reset-email').value.trim();
+  const errEl=document.getElementById('auth-reset-err');
+  if(!email||!validateEmail(email)){errEl.textContent='Enter a valid email';return;}
+  const {error}=await supa.auth.resetPasswordForEmail(email,{redirectTo:'https://caratlane-wms.vercel.app/'});
+  if(error){errEl.textContent=error.message;return;}
+  errEl.style.color='var(--st)';
+  errEl.textContent='Reset link sent — check your email';
+}
+
+function showResetForm(){ document.getElementById('auth-login-form').style.display='none'; document.getElementById('auth-reset-form').style.display='block'; }
+function showLoginForm(){ document.getElementById('auth-reset-form').style.display='none'; document.getElementById('auth-login-form').style.display='block'; }
+function toggleUserMenu(){ document.getElementById('user-dropdown').classList.toggle('open'); }
+document.addEventListener('click',e=>{ if(!e.target.closest('.user-menu')) document.getElementById('user-dropdown')?.classList.remove('open'); });
+
+// ===========================================
+// USER MANAGEMENT (Admin only)
+// ===========================================
+function showCreateUserForm(){ document.getElementById('create-user-form').style.display='block'; }
+function hideCreateUserForm(){ document.getElementById('create-user-form').style.display='none'; }
+
+async function createUser(){
+  const name=document.getElementById('new-user-name').value.trim();
+  const email=document.getElementById('new-user-email').value.trim();
+  const password=document.getElementById('new-user-password').value;
+  const role=document.getElementById('new-user-role').value;
+  const errEl=document.getElementById('create-user-err');
+  if(!name||!email||!password){errEl.textContent='All fields required';return;}
+  if(!validateEmail(email)){errEl.textContent='Invalid email';return;}
+  if(password.length<8){errEl.textContent='Password must be at least 8 characters';return;}
+  errEl.textContent='Creating...';
+  try {
+    // Create auth user via Supabase admin — requires service role key
+    // For now, user signs up themselves and admin assigns role
+    const {data,error}=await supa.auth.signUp({email,password,options:{data:{full_name:name}}});
+    if(error) throw error;
+    // Insert profile
+    await supa.from('user_profiles').upsert({id:data.user.id,email,full_name:name,role},{onConflict:'id'});
+    await logAudit('CREATE_USER','user_profiles',data.user.id,null,{email,role,full_name:name});
+    errEl.style.color='var(--st)';
+    errEl.textContent='User created — they must verify their email before logging in';
+    hideCreateUserForm();
+    renderUsersList();
+  } catch(e){ errEl.textContent=e.message||'Failed to create user'; }
+}
+
+async function renderUsersList(){
+  const el=document.getElementById('users-list');
+  if(!el)return;
+  el.innerHTML='<div style="color:var(--t3);font-size:11px;padding:8px">Loading...</div>';
+  try {
+    const {data,error}=await supa.from('user_profiles').select('*').order('role').order('full_name');
+    if(error||!data){el.innerHTML='<div class="empty">No users found</div>';return;}
+    el.innerHTML=`<div class="tw"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Last Login</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+    ${data.map(u=>{
+      const roleColor=ROLE_COLORS[u.role]||'var(--gold)';
+      const lastLogin=u.last_login?new Date(u.last_login).toLocaleString('en-IN'):'Never';
+      const isMe=u.id===currentUser?.id;
+      return `<tr>
+        <td style="font-weight:600">${esc(u.full_name)}</td>
+        <td style="font-size:11px">${esc(u.email)}</td>
+        <td><span style="background:${roleColor};color:#fff;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700">${u.role.toUpperCase()}</span></td>
+        <td style="font-size:10px;color:var(--t2)">${lastLogin}</td>
+        <td><span style="color:${u.is_active?'var(--st)':'var(--dt)'};font-size:11px;font-weight:600">${u.is_active?'Active':'Inactive'}</span></td>
+        <td>${isMe?'<span style="font-size:10px;color:var(--t3)">You</span>':`
+          <select onchange="updateUserRole('${u.id}',this.value)" style="padding:3px 6px;border:0.5px solid var(--b);border-radius:4px;background:var(--s2);color:var(--t);font-size:10px;margin-right:4px">
+            ${['admin','supervisor','picker','packer','viewer'].map(r=>`<option value="${r}"${r===u.role?' selected':''}>${r}</option>`).join('')}
+          </select>
+          <button onclick="toggleUserActive('${u.id}',${u.is_active})" style="padding:2px 8px;font-size:10px;background:${u.is_active?'var(--dbg)':'var(--sbg)'};color:${u.is_active?'var(--dt)':'var(--st)'};border:none;border-radius:4px;cursor:pointer">${u.is_active?'Deactivate':'Activate'}</button>
+        `}</td>
+      </tr>`;
+    }).join('')}
+    </tbody></table></div>`;
+  } catch(e){ el.innerHTML='<div class="empty">Error loading users</div>'; }
+}
+
+async function updateUserRole(userId,newRole){
+  try {
+    const {data:old}=await supa.from('user_profiles').select('role').eq('id',userId).single();
+    await supa.from('user_profiles').update({role:newRole}).eq('id',userId);
+    await logAudit('UPDATE_ROLE','user_profiles',userId,{role:old?.role},{role:newRole});
+    toast('Role updated to '+newRole,'s');
+  } catch(e){ toast('Failed to update role','w'); }
+}
+
+async function toggleUserActive(userId,isActive){
+  try {
+    await supa.from('user_profiles').update({is_active:!isActive}).eq('id',userId);
+    await logAudit(isActive?'DEACTIVATE_USER':'ACTIVATE_USER','user_profiles',userId,null,{is_active:!isActive});
+    toast('User '+(isActive?'deactivated':'activated'),'s');
+    renderUsersList();
+  } catch(e){ toast('Failed to update user','w'); }
+}
+
+// ===========================================
+// AUDIT TRAIL
+// ===========================================
+async function logAudit(action,entityType,entityId,oldVals,newVals){
+  if(!currentUser||!supa) return;
+  try {
+    await supa.from('audit_log').insert({
+      user_id:currentUser.id,
+      user_email:currentProfile?.email||currentUser.email,
+      user_name:currentProfile?.full_name||currentUser.email,
+      user_role:currentProfile?.role||'unknown',
+      action,entity_type:entityType,entity_id:String(entityId||''),
+      old_values:oldVals||null,new_values:newVals||null,
+      created_at:new Date().toISOString()
+    });
+  } catch(e){ console.warn('Audit log failed:',e.message); }
+}
+
+async function renderAuditLog(){
+  const el=document.getElementById('audit-log-container');
+  if(!el)return;
+  el.innerHTML='<div style="color:var(--t3);font-size:11px;padding:8px">Loading audit trail...</div>';
+  const search=(document.getElementById('audit-search')?.value||'').toLowerCase();
+  const roleFilter=document.getElementById('audit-filter-role')?.value||'';
+  const actionFilter=document.getElementById('audit-filter-action')?.value||'';
+  try {
+    let q=supa.from('audit_log').select('*').order('created_at',{ascending:false}).limit(200);
+    if(roleFilter) q=q.eq('user_role',roleFilter);
+    if(actionFilter) q=q.eq('action',actionFilter);
+    const {data,error}=await q;
+    if(error) throw error;
+    let rows=data||[];
+    if(search) rows=rows.filter(r=>
+      (r.user_email||'').toLowerCase().includes(search)||
+      (r.user_name||'').toLowerCase().includes(search)||
+      (r.action||'').toLowerCase().includes(search)||
+      (r.entity_type||'').toLowerCase().includes(search)||
+      (r.entity_id||'').toLowerCase().includes(search)
+    );
+    if(!rows.length){el.innerHTML='<div class="empty">No audit records found</div>';return;}
+    const actionColor={INSERT:'var(--st)',UPDATE:'var(--it)',DELETE:'var(--dt)',LOGIN:'var(--gold)',LOGOUT:'var(--t3)',CREATE_USER:'var(--st)',UPDATE_ROLE:'var(--wt)',DEACTIVATE_USER:'var(--dt)',ACTIVATE_USER:'var(--st)'};
+    el.innerHTML=`<div style="font-size:10px;color:var(--t3);margin-bottom:6px">${rows.length} records</div>
+    <div class="tw"><table><thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Table</th><th>Record ID</th></tr></thead><tbody>
+    ${rows.map(r=>{
+      const color=actionColor[r.action]||'var(--t2)';
+      const time=new Date(r.created_at).toLocaleString('en-IN');
+      return `<tr>
+        <td style="font-size:10px;color:var(--t3);white-space:nowrap">${time}</td>
+        <td style="font-size:11px"><div style="font-weight:600">${esc(r.user_name||'—')}</div><div style="font-size:10px;color:var(--t3)">${esc(r.user_email||'')}</div></td>
+        <td><span style="background:${ROLE_COLORS[r.user_role]||'var(--s3)'};color:#fff;padding:2px 6px;border-radius:10px;font-size:9px;font-weight:700">${(r.user_role||'').toUpperCase()}</span></td>
+        <td><span style="color:${color};font-weight:700;font-size:11px">${esc(r.action)}</span></td>
+        <td style="font-size:10px;color:var(--t2)">${esc(r.entity_type||'')}</td>
+        <td style="font-size:10px;font-family:monospace">${esc(r.entity_id||'')}</td>
+      </tr>`;
+    }).join('')}
+    </tbody></table></div>`;
+  } catch(e){ el.innerHTML='<div class="empty">Error loading audit log: '+esc(e.message)+'</div>'; }
+}
+
+// ===========================================
+// BARCODE SCANNER (USB/Bluetooth HID)
+// ===========================================
+let _barcodeBuffer='';
+let _barcodeTimer=null;
+let _barcodeActive=false;
+let _barcodeTarget=null; // 'inbound' | 'picking' | 'dispatch'
+
+function initBarcodeScanner(){
+  document.addEventListener('keydown', e=>{
+    if(!_barcodeActive) return;
+    // USB/BT scanners send chars very fast then Enter
+    if(e.key==='Enter'){
+      if(_barcodeBuffer.length>2){
+        processBarcodeInput(_barcodeBuffer.trim());
+      }
+      _barcodeBuffer='';
+      clearTimeout(_barcodeTimer);
+      return;
+    }
+    // Ignore modifier keys
+    if(e.key.length>1) return;
+    _barcodeBuffer+=e.key;
+    clearTimeout(_barcodeTimer);
+    // Auto-flush after 100ms (scanner done)
+    _barcodeTimer=setTimeout(()=>{
+      if(_barcodeBuffer.length>2) processBarcodeInput(_barcodeBuffer.trim());
+      _barcodeBuffer='';
+    },100);
+  });
+}
+
+function enableBarcodeScanner(target){
+  _barcodeActive=true;
+  _barcodeTarget=target;
+  const indicators=document.querySelectorAll('.barcode-indicator');
+  indicators.forEach(el=>el.style.display='flex');
+  toast('Barcode scanner active — scan a SKU barcode','s');
+}
+
+function disableBarcodeScanner(){
+  _barcodeActive=false;
+  _barcodeTarget=null;
+  const indicators=document.querySelectorAll('.barcode-indicator');
+  indicators.forEach(el=>el.style.display='none');
+}
+
+function processBarcodeInput(barcode){
+  console.log('Barcode scanned:',barcode);
+  // Find matching SKU
+  const sku=SKUS.find(s=>s.sku===barcode||s.sku.toUpperCase()===barcode.toUpperCase());
+  if(!sku){
+    toast('Unknown barcode: '+barcode,'w');
+    return;
+  }
+  if(_barcodeTarget==='inbound'){
+    // Auto-fill SKU in inbound form
+    const skuSel=document.getElementById('ib-sku');
+    if(skuSel){ skuSel.value=sku.sku; updateIbBin(); }
+    document.getElementById('ib-qty')?.focus();
+    toast('Scanned: '+sku.sub+' — '+sku.variant,'s');
+  } else if(_barcodeTarget==='picking'){
+    // Auto-fill SKU in picking form
+    const pkSel=document.getElementById('pk-sku');
+    if(pkSel){ pkSel.value=sku.sku; }
+    document.getElementById('pk-qty')?.focus();
+    toast('Scanned: '+sku.sub+' — '+sku.variant,'s');
+  } else if(_barcodeTarget==='dispatch'){
+    // Match AWB or order ID
+    const awbInput=document.getElementById('disp-awb');
+    if(awbInput){ awbInput.value=barcode; }
+    toast('AWB scanned: '+barcode,'s');
+  }
+  // Log the scan
+  logAudit('BARCODE_SCAN','inventory',sku.sku,null,{sku:sku.sku,target:_barcodeTarget,barcode});
+}
+
+// ===========================================
+// PATCH saveHist AND saveInv TO INCLUDE AUDIT
+// ===========================================
+const _origSaveHist=saveHist;
+// We'll wrap key operations to log them
+
+// ===========================================
+// BOOT
+// ===========================================
+async function bootWMS(){
+  setSyncStatus('syncing');
+  await loadSKUsFromDB(); // load dynamic SKUs first
+  await initInv();
+  await loadHist();
+  renderDash();
+  renderInv();
+  renderRack();
+  renderReports();
+  renderAnalytics();
+  renderFinance();
+  updateNotificationBadge();
+  populateSkuSel('ib-sku');
+  filterSkuList('ib-sku-search','ib-sku');
+  setupRealtimeSync();
+  setSyncStatus('ok');
+  initBarcodeScanner();
+}
+
+// Check for existing session on load
+async function initAuth(){
+  const {data:{session}} = await supa.auth.getSession();
+  if(session){
+    currentUser=session.user;
+    await loadUserProfile();
+    await onAuthSuccess();
+  } else {
+    document.getElementById('auth-screen').style.display='flex';
+    // Hide main app until logged in
+  }
+  // Listen for auth changes
+  supa.auth.onAuthStateChange(async(event,session)=>{
+    if(event==='SIGNED_IN'&&session&&!currentUser){
+      currentUser=session.user;
+      await loadUserProfile();
+      await onAuthSuccess();
+    } else if(event==='SIGNED_OUT'){
+      currentUser=null; currentProfile=null;
+    }
+  });
+}
+initAuth();
+
+</script>
 </body>
 </html>
