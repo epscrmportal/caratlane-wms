@@ -106,6 +106,298 @@ function newId(pfx){return pfx+'-'+Date.now().toString().slice(-6);}
 function getSt(q){return q<=0?'out':q<=3?'low':'ok';}
 function stPill(q){const s=getSt(q);return s==='out'?'<span class="pill p-out">Out</span>':s==='low'?'<span class="pill p-low">Low</span>':'<span class="pill p-ok">In stock</span>';}
 
+// ═══════════════════════════════════════════
+// ANALYTICS DASHBOARD
+// ═══════════════════════════════════════════
+let _chartsLoaded = false;
+
+function loadChartsLib(cb){
+  if(_chartsLoaded){ cb(); return; }
+  const s=document.createElement('script');
+  s.src='https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+  s.onload=()=>{ _chartsLoaded=true; cb(); };
+  s.onerror=()=>{ console.error('Chart.js failed'); cb(); };
+  document.head.appendChild(s);
+}
+
+async function renderAnalytics(){
+  const analyticsEl = document.getElementById('page-analytics');
+  if(!analyticsEl) return;
+  
+  // Show loading
+  analyticsEl.innerHTML = '<div style="padding:20px;text-align:center;color:var(--t3)">Loading analytics...</div>';
+  
+  loadChartsLib(()=>{
+    renderKPICards();
+    renderAlertsPanel();
+    renderABCAnalysis();
+    renderLowStockList();
+    renderPerformanceMetrics();
+    renderCycleTimes();
+    renderComplianceLog();
+  });
+}
+
+function calcKPIs(){
+  const today = ts().split(' ')[0];
+  const thisWeek = new Date();
+  thisWeek.setDate(thisWeek.getDate()-7);
+  
+  let todayInbound=0, todayDispatched=0, todayReturns=0;
+  let weekInbound=0, weekDispatched=0, weekReturns=0;
+  let totalPicks=0, totalPacks=0;
+  let exceptions=0;
+  let damageCount=0;
+  
+  history.forEach(h=>{
+    const hDate = (h.ts||'').split(' ')[0];
+    const hTime = new Date(h.ts||new Date());
+    
+    if(h.type==='grn' && hDate===today) todayInbound+=parseInt(h.detail||0);
+    if(h.type==='dispatch' && hDate===today) todayDispatched++;
+    if(h.type==='return' && hDate===today) todayReturns++;
+    if(h.type==='grn' && hTime>=thisWeek) weekInbound+=parseInt(h.detail||0);
+    if(h.type==='dispatch' && hTime>=thisWeek) weekDispatched++;
+    if(h.type==='return' && hTime>=thisWeek) weekReturns++;
+    if(h.type==='pick') totalPicks++;
+    if(h.type==='pack') totalPacks++;
+    if(h.type==='exception') exceptions++;
+    if(h.issue && h.issue.toLowerCase().includes('damage')) damageCount++;
+  });
+  
+  const totalSKUs = Object.keys(inv).length;
+  const outOfStock = Object.values(inv).filter(i=>i.qty<=0).length;
+  const lowStock = Object.values(inv).filter(i=>i.qty>0&&i.qty<=5).length;
+  
+  return {
+    todayInbound, todayDispatched, todayReturns,
+    weekInbound, weekDispatched, weekReturns,
+    totalPicks, totalPacks, exceptions, damageCount,
+    totalSKUs, outOfStock, lowStock
+  };
+}
+
+function renderKPICards(){
+  const kpis = calcKPIs();
+  const el = document.getElementById('kpi-cards');
+  if(!el) return;
+  
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px">
+      <div style="background:var(--s2);padding:12px;border-radius:8px;border-left:4px solid var(--st)">
+        <div style="font-size:10px;color:var(--t3);font-weight:600;margin-bottom:3px">TODAY — Inbound</div>
+        <div style="font-size:18px;font-weight:700;color:var(--st)">${kpis.todayInbound}</div>
+        <div style="font-size:9px;color:var(--t3);margin-top:3px">units received</div>
+      </div>
+      <div style="background:var(--s2);padding:12px;border-radius:8px;border-left:4px solid var(--it)">
+        <div style="font-size:10px;color:var(--t3);font-weight:600;margin-bottom:3px">TODAY — Dispatch</div>
+        <div style="font-size:18px;font-weight:700;color:var(--it)">${kpis.todayDispatched}</div>
+        <div style="font-size:9px;color:var(--t3);margin-top:3px">orders sent</div>
+      </div>
+      <div style="background:var(--s2);padding:12px;border-radius:8px;border-left:4px solid var(--wt)">
+        <div style="font-size:10px;color:var(--t3);font-weight:600;margin-bottom:3px">TODAY — Returns</div>
+        <div style="font-size:18px;font-weight:700;color:var(--wt)">${kpis.todayReturns}</div>
+        <div style="font-size:9px;color:var(--t3);margin-top:3px">items returned</div>
+      </div>
+      <div style="background:var(--s2);padding:12px;border-radius:8px;border-left:4px solid var(--dt)">
+        <div style="font-size:10px;color:var(--t3);font-weight:600;margin-bottom:3px">STOCK STATUS</div>
+        <div style="font-size:18px;font-weight:700;color:var(--dt)">${kpis.outOfStock}</div>
+        <div style="font-size:9px;color:var(--t3);margin-top:3px">out of stock</div>
+      </div>
+      <div style="background:var(--s2);padding:12px;border-radius:8px;border-left:4px solid var(--wt)">
+        <div style="font-size:10px;color:var(--t3);font-weight:600;margin-bottom:3px">STOCK STATUS</div>
+        <div style="font-size:18px;font-weight:700;color:var(--wt)">${kpis.lowStock}</div>
+        <div style="font-size:9px;color:var(--t3);margin-top:3px">low stock (≤5)</div>
+      </div>
+      <div style="background:var(--s2);padding:12px;border-radius:8px;border-left:4px solid var(--dt)">
+        <div style="font-size:10px;color:var(--t3);font-weight:600;margin-bottom:3px">EXCEPTIONS</div>
+        <div style="font-size:18px;font-weight:700;color:var(--dt)">${kpis.exceptions}</div>
+        <div style="font-size:9px;color:var(--t3);margin-top:3px">total issues</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderAlertsPanel(){
+  const el = document.getElementById('alerts-panel');
+  if(!el) return;
+  
+  const kpis = calcKPIs();
+  const alerts = [];
+  
+  if(kpis.outOfStock>0) alerts.push({level:'critical',msg:\`\${kpis.outOfStock} SKUs are out of stock\`});
+  if(kpis.lowStock>0) alerts.push({level:'warning',msg:\`\${kpis.lowStock} SKUs have low stock\`});
+  if(kpis.exceptions>0) alerts.push({level:'warning',msg:\`\${kpis.exceptions} exceptions reported\`});
+  if(kpis.damageCount>0) alerts.push({level:'critical',msg:\`\${kpis.damageCount} damaged items logged\`});
+  
+  if(!alerts.length){
+    el.innerHTML = '<div style="padding:10px;font-size:11px;color:var(--st);background:var(--sbg);border-radius:6px">✓ No active alerts</div>';
+    return;
+  }
+  
+  el.innerHTML = alerts.map(a=>{
+    const color = a.level==='critical'?'var(--dt)':'var(--wt)';
+    const bg = a.level==='critical'?'var(--dbg)':'var(--wbg)';
+    return \`<div style="padding:10px;margin-bottom:6px;border-left:3px solid \${color};background:\${bg};border-radius:4px;font-size:11px">⚠ \${a.msg}</div>\`;
+  }).join('');
+}
+
+function renderABCAnalysis(){
+  const el = document.getElementById('abc-analysis');
+  if(!el) return;
+  
+  // A = fast-moving (>5 dispatches), B = medium (2-5), C = slow (<2)
+  const skuData = SKUS.map(s=>{
+    const dispatchCount = history.filter(h=>h.type==='dispatch'&&h.items&&JSON.stringify(h.items).includes(s.sku)).length;
+    const qty = inv[s.sku]?.qty||0;
+    return {sku:s.sku, sub:s.sub, dispatchCount, qty, cat:'C'};
+  });
+  
+  const aItems = skuData.filter(s=>s.dispatchCount>5);
+  const bItems = skuData.filter(s=>s.dispatchCount>=2&&s.dispatchCount<=5);
+  const cItems = skuData.filter(s=>s.dispatchCount<2);
+  
+  aItems.forEach(s=>s.cat='A');
+  bItems.forEach(s=>s.cat='B');
+  
+  el.innerHTML = \`
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">
+      <div style="background:var(--s2);padding:10px;border-radius:6px;border-left:4px solid var(--st)">
+        <div style="font-size:10px;color:var(--t3);font-weight:600;margin-bottom:2px">A — Fast Moving</div>
+        <div style="font-size:16px;font-weight:700;color:var(--st)">\${aItems.length}</div>
+        <div style="font-size:9px;color:var(--t3)">high priority items</div>
+      </div>
+      <div style="background:var(--s2);padding:10px;border-radius:6px;border-left:4px solid var(--it)">
+        <div style="font-size:10px;color:var(--t3);font-weight:600;margin-bottom:2px">B — Medium Moving</div>
+        <div style="font-size:16px;font-weight:700;color:var(--it)">\${bItems.length}</div>
+        <div style="font-size:9px;color:var(--t3)">steady items</div>
+      </div>
+      <div style="background:var(--s2);padding:10px;border-radius:6px;border-left:4px solid var(--t3)">
+        <div style="font-size:10px;color:var(--t3);font-weight:600;margin-bottom:2px">C — Slow Moving</div>
+        <div style="font-size:16px;font-weight:700;color:var(--t3)">\${cItems.length}</div>
+        <div style="font-size:9px;color:var(--t3)">slow items</div>
+      </div>
+    </div>
+    <div style="font-size:10px;color:var(--t3)">
+      <strong>A Items (stock first priority):</strong> \${aItems.slice(0,5).map(s=>s.sub).join(', ')}\${aItems.length>5?'...':''}<br>
+      <strong>C Items (overstock risk):</strong> \${cItems.slice(0,5).map(s=>s.sub).join(', ')}\${cItems.length>5?'...':''}
+    </div>
+  \`;
+}
+
+function renderLowStockList(){
+  const el = document.getElementById('low-stock-list');
+  if(!el) return;
+  
+  const lowItems = SKUS
+    .map(s=>({sku:s.sku,sub:s.sub,variant:s.variant,qty:inv[s.sku]?.qty||0,rack:s.rack,shelf:s.shelf}))
+    .filter(s=>s.qty<=5&&s.qty>0)
+    .sort((a,b)=>a.qty-b.qty);
+  
+  if(!lowItems.length){
+    el.innerHTML = '<div style="padding:10px;font-size:11px;color:var(--st);background:var(--sbg);border-radius:6px">✓ All items well-stocked</div>';
+    return;
+  }
+  
+  el.innerHTML = \`<div class="tw"><table><thead><tr><th>SKU</th><th>Item</th><th>Stock</th><th>Location</th></tr></thead><tbody>
+    \${lowItems.map(s=>\`<tr><td style="font-family:monospace;font-size:10px">\${s.sku}</td><td style="font-size:11px"><strong>\${esc(s.sub)}</strong><br><span style="color:var(--t3);font-size:9px">\${esc(s.variant)}</span></td><td style="font-weight:700;color:var(--wt)">\${s.qty} units</td><td style="font-size:10px">Rack \${s.rack} · Shelf \${s.shelf}</td></tr>\`).join('')}
+  </tbody></table></div>\`;
+}
+
+function renderPerformanceMetrics(){
+  const el = document.getElementById('performance-metrics');
+  if(!el) return;
+  
+  // Calculate pick accuracy (right SKU, right qty)
+  const totalPicks = history.filter(h=>h.type==='pick').length;
+  const errorPicks = history.filter(h=>h.type==='pick'&&h.error).length;
+  const accuracy = totalPicks>0?Math.round((1-errorPicks/totalPicks)*100):100;
+  
+  // Count picks by user
+  const picksByUser = {};
+  history.filter(h=>h.type==='pick').forEach(h=>{
+    const user = h.picker_name||'Unknown';
+    picksByUser[user]=(picksByUser[user]||0)+1;
+  });
+  
+  const topPickers = Object.entries(picksByUser)
+    .sort((a,b)=>b[1]-a[1])
+    .slice(0,3)
+    .map(([name,count])=>({name,count}));
+  
+  el.innerHTML = \`
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+      <div style="background:var(--s2);padding:10px;border-radius:6px">
+        <div style="font-size:10px;color:var(--t3);font-weight:600;margin-bottom:4px">Pick Accuracy</div>
+        <div style="font-size:24px;font-weight:700;color:var(--st)">\${accuracy}%</div>
+        <div style="font-size:9px;color:var(--t3)">correct picks / total</div>
+      </div>
+      <div style="background:var(--s2);padding:10px;border-radius:6px">
+        <div style="font-size:10px;color:var(--t3);font-weight:600;margin-bottom:4px">Total Picks</div>
+        <div style="font-size:24px;font-weight:700;color:var(--it)">\${totalPicks}</div>
+        <div style="font-size:9px;color:var(--t3)">this period</div>
+      </div>
+    </div>
+    <div style="font-size:10px;color:var(--t3)">
+      <strong>Top Pickers:</strong><br>
+      \${topPickers.map((p,i)=>\`\${i+1}. \${esc(p.name)}: \${p.count} picks<br>\`).join('')}
+    </div>
+  \`;
+}
+
+function renderCycleTimes(){
+  const el = document.getElementById('cycle-times');
+  if(!el) return;
+  
+  // Pack duration = time from start to end
+  const packTimes = history
+    .filter(h=>h.type==='pack'&&h.pack_duration_secs)
+    .map(h=>h.pack_duration_secs);
+  
+  const avgPackTime = packTimes.length>0?Math.round(packTimes.reduce((a,b)=>a+b)/packTimes.length/60):0;
+  const minPackTime = packTimes.length>0?Math.min(...packTimes)/60:0;
+  const maxPackTime = packTimes.length>0?Math.max(...packTimes)/60:0;
+  
+  el.innerHTML = \`
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px">
+      <div style="background:var(--s2);padding:10px;border-radius:6px;text-align:center">
+        <div style="font-size:10px;color:var(--t3);margin-bottom:3px">Average</div>
+        <div style="font-size:16px;font-weight:700;color:var(--it)">\${avgPackTime} min</div>
+      </div>
+      <div style="background:var(--s2);padding:10px;border-radius:6px;text-align:center">
+        <div style="font-size:10px;color:var(--t3);margin-bottom:3px">Fastest</div>
+        <div style="font-size:16px;font-weight:700;color:var(--st)">\${Math.round(minPackTime)} min</div>
+      </div>
+      <div style="background:var(--s2);padding:10px;border-radius:6px;text-align:center">
+        <div style="font-size:10px;color:var(--t3);margin-bottom:3px">Slowest</div>
+        <div style="font-size:16px;font-weight:700;color:var(--dt)">\${Math.round(maxPackTime)} min</div>
+      </div>
+    </div>
+  \`;
+}
+
+function renderComplianceLog(){
+  const el = document.getElementById('compliance-log');
+  if(!el) return;
+  
+  const exceptions = history
+    .filter(h=>h.issue||h.exception)
+    .sort((a,b)=>new Date(b.ts)-new Date(a.ts))
+    .slice(0,20);
+  
+  if(!exceptions.length){
+    el.innerHTML = '<div style="padding:10px;font-size:11px;color:var(--st);background:var(--sbg);border-radius:6px">✓ No exceptions recorded</div>';
+    return;
+  }
+  
+  el.innerHTML = \`<div class="tw"><table><thead><tr><th>Date</th><th>Type</th><th>Issue</th><th>Status</th></tr></thead><tbody>
+    \${exceptions.map(e=>{
+      const color = e.issue?'var(--dt)':'var(--t3)';
+      return \`<tr><td style="font-size:10px;color:var(--t3)">\${(e.ts||'').substring(0,16)}</td><td style="font-size:10px">\${e.type||'exception'}</td><td style="font-size:11px"><strong>\${esc(e.issue||e.exception||'—')}</strong></td><td style="color:\${color};font-size:10px;font-weight:600">\${e.qc_result||'LOGGED'}</td></tr>\`;
+    }).join('')}
+  </tbody></table></div>\`;
+}
+
 function nav(tab){
   document.querySelectorAll('.ntab').forEach(t=>t.classList.toggle('active',t.dataset.tab===tab));
   document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.id==='page-'+tab));
@@ -113,6 +405,7 @@ function nav(tab){
   if(tab==='dashboard')renderDash();
   if(tab==='inventory'){renderInv();renderInvVersionHistory();}
   if(tab==='labels'){renderLabelPage();}
+  if(tab==='analytics'){renderAnalytics();}
   if(tab==='audit'){renderAuditLog();}
   if(tab==='users'){renderUsersList();}
   if(tab==='rack')renderRack();
