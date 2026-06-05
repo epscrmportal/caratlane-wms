@@ -190,6 +190,35 @@ tr:hover td{background:var(--s2)}
   .kpi-row{grid-template-columns:1fr 1fr}
 }
 
+/* LABEL PRINTER */
+.lbl-card{background:var(--s);border:1.5px solid var(--b);border-radius:8px;padding:10px;cursor:pointer;transition:all .15s;position:relative}
+.lbl-card:hover{border-color:var(--gold)}
+.lbl-card.selected{border-color:var(--gold);background:var(--ibg)}
+.lbl-card .lbl-check{position:absolute;top:7px;right:7px;width:18px;height:18px;border-radius:4px;border:1.5px solid var(--b);background:var(--s2);display:flex;align-items:center;justify-content:center}
+.lbl-card.selected .lbl-check{background:var(--gold);border-color:var(--gold);color:#fff}
+.lbl-preview{background:#fff;border-radius:4px;padding:8px 6px;margin-top:8px;text-align:center;font-family:monospace}
+/* AUTH SCREEN */
+#auth-screen{position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px}
+.auth-card{background:var(--s);border-radius:16px;padding:32px;width:100%;max-width:400px;box-shadow:0 8px 40px rgba(0,0,0,.15)}
+.auth-logo{display:flex;align-items:center;gap:12px;margin-bottom:28px}
+.auth-gem{width:44px;height:44px;background:linear-gradient(135deg,var(--gold),var(--gold-d));border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;color:#fff}
+.auth-title{font-size:18px;font-weight:700;color:var(--t)}
+.auth-sub{font-size:11px;color:var(--t2);margin-top:2px}
+.auth-field{margin-bottom:14px}
+.auth-field label{font-size:11px;font-weight:600;color:var(--t2);display:block;margin-bottom:5px}
+.auth-field input{width:100%;padding:10px 12px;border:1px solid var(--b);border-radius:8px;background:var(--s2);color:var(--t);font-size:13px;transition:border .2s}
+.auth-field input:focus{outline:none;border-color:var(--gold)}
+.auth-btn{width:100%;padding:12px;background:var(--gold);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;margin-top:6px;transition:background .2s}
+.auth-btn:hover{background:var(--gold-d)}
+.auth-btn:disabled{background:var(--b);cursor:not-allowed;color:var(--t3)}
+.auth-err{color:var(--dt);font-size:11px;margin-top:8px;text-align:center;min-height:16px}
+.user-menu{position:relative}
+.user-menu-btn{display:flex;align-items:center;gap:6px;padding:5px 10px;background:var(--s2);border:none;border-radius:6px;cursor:pointer;color:var(--t);font-size:11px;font-weight:600}
+.user-dropdown{position:absolute;right:0;top:calc(100% + 6px);background:var(--s);border:0.5px solid var(--b);border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,.15);min-width:200px;z-index:200;display:none}
+.user-dropdown.open{display:block}
+.user-dropdown-item{padding:10px 14px;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:8px;color:var(--t);border-bottom:0.5px solid var(--b)}
+.user-dropdown-item:last-child{border-bottom:none}
+.user-dropdown-item:hover{background:var(--s2)}
 /* MOBILE DASHBOARD */
 .mobile-view{min-height:70vh}
 #page-mobile{max-width:480px;margin:0 auto;background:#fff}
@@ -234,6 +263,48 @@ tr:hover td{background:var(--s2)}
 <h1 class="sr-only">CaratLane Warehouse Management System — EPS Worldwide Integrated Logistics</h1>
 <div id="toast"></div>
 
+<!-- ═══ AUTH SCREEN ═══ -->
+<div id="auth-screen">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <div class="auth-gem">CL</div>
+      <div>
+        <div class="auth-title">CaratLane WMS</div>
+        <div class="auth-sub">EPS Worldwide Integrated Logistics · Mumbai</div>
+      </div>
+    </div>
+    <div id="auth-login-form">
+      <div class="auth-field">
+        <label for="auth-email">Email address</label>
+        <input type="email" id="auth-email" placeholder="you@epsworldwide.com" autocomplete="email">
+      </div>
+      <div class="auth-field">
+        <label for="auth-password">Password</label>
+        <input type="password" id="auth-password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')authLogin()">
+      </div>
+      <button class="auth-btn" id="auth-login-btn" onclick="authLogin()">
+        <i class="ti ti-login"></i> Sign In
+      </button>
+      <div class="auth-err" id="auth-err"></div>
+      <div style="margin-top:16px;text-align:center">
+        <span style="font-size:11px;color:var(--t3)">Forgot password? </span>
+        <span style="font-size:11px;color:var(--gold);cursor:pointer" onclick="showResetForm()">Reset via email</span>
+      </div>
+    </div>
+    <div id="auth-reset-form" style="display:none">
+      <div class="auth-field">
+        <label for="auth-reset-email">Your email address</label>
+        <input type="email" id="auth-reset-email" placeholder="you@epsworldwide.com">
+      </div>
+      <button class="auth-btn" onclick="authResetPassword()"><i class="ti ti-mail"></i> Send Reset Link</button>
+      <div class="auth-err" id="auth-reset-err"></div>
+      <div style="margin-top:12px;text-align:center">
+        <span style="font-size:11px;color:var(--gold);cursor:pointer" onclick="showLoginForm()">← Back to login</span>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="topbar">
   <div class="logo">
     <div class="logo-gem">CL</div>
@@ -248,10 +319,13 @@ tr:hover td{background:var(--s2)}
     <div class="ntab" data-tab="returns" onclick="nav('returns')"><i class="ti ti-package-export"></i>Returns (§4)</div>
     <div class="ntab" data-tab="inventory" onclick="nav('inventory')"><i class="ti ti-package"></i>Inventory</div>
     <div class="ntab" data-tab="rack" onclick="nav('rack')"><i class="ti ti-layout-rows"></i>Rack View</div>
+    <div class="ntab" data-tab="labels" onclick="nav('labels')"><i class="ti ti-printer"></i>Label Printer</div>
     <div class="ntab" data-tab="reports" onclick="nav('reports')"><i class="ti ti-chart-bar"></i>Reports</div>
     <div class="ntab" data-tab="sop" onclick="nav('sop')"><i class="ti ti-file-text"></i>SOP</div>
     <div class="ntab" data-tab="invcount" onclick="nav('invcount')"><i class="ti ti-list-check"></i>Inventory Count</div>
     <div class="ntab" data-tab="mobile" onclick="nav('mobile')"><i class="ti ti-device-mobile"></i>Mobile Dashboard</div>
+    <div class="ntab" data-tab="audit" onclick="nav('audit')" id="tab-audit" style="display:none"><i class="ti ti-shield-check"></i>Audit Trail</div>
+    <div class="ntab" data-tab="users" onclick="nav('users')" id="tab-users" style="display:none"><i class="ti ti-users"></i>Users</div>
     <button onclick="toggleMenu()" style="margin-left:auto;background:none;border:none;padding:0 15px;height:100%;cursor:pointer;color:var(--t2);font-size:11px;display:flex;align-items:center;gap:4px;transition:color 0.15s" onmouseover="this.style.color='var(--t)'" onmouseout="this.style.color='var(--t2)'">
       <i class="ti ti-dots-vertical"></i>More
     </button>
@@ -307,6 +381,22 @@ tr:hover td{background:var(--s2)}
     <div id="sync-status" style="display:flex;align-items:center;gap:4px;color:var(--t3)"><i class="ti ti-cloud" style="font-size:13px"></i><span style="font-size:10px">Connecting...</span></div>
     <i class="ti ti-bell" style="font-size:16px;color:var(--t2)"></i>
     <span class="abadge" id="alert-ct">0</span>
+    <div class="user-menu" id="user-menu" style="display:none">
+      <button class="user-menu-btn" onclick="toggleUserMenu()">
+        <i class="ti ti-user-circle" style="font-size:15px"></i>
+        <span id="user-menu-name">User</span>
+        <span id="user-role-badge" class="auth-role-badge" style="background:var(--gold);color:#fff;font-size:9px;padding:2px 6px">—</span>
+        <i class="ti ti-chevron-down" style="font-size:11px"></i>
+      </button>
+      <div class="user-dropdown" id="user-dropdown">
+        <div class="user-dropdown-item" style="pointer-events:none;opacity:.6" id="user-info-item">
+          <i class="ti ti-id-badge"></i><span id="user-email-display">—</span>
+        </div>
+        <div class="user-dropdown-item" onclick="nav('audit')"><i class="ti ti-shield-check"></i>Audit Trail</div>
+        <div class="user-dropdown-item" id="manage-users-item" onclick="nav('users')" style="display:none"><i class="ti ti-users"></i>Manage Users</div>
+        <div class="user-dropdown-item" onclick="authLogout()" style="color:var(--dt)"><i class="ti ti-logout"></i>Sign Out</div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -331,6 +421,10 @@ tr:hover td{background:var(--s2)}
 
 <!-- ═══ INBOUND (SOP §1) ═══ -->
 <div id="page-inbound" class="page">
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+    <button onclick="enableBarcodeScanner('inbound')" style="padding:7px 12px;background:var(--s2);border:1px solid var(--b);border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;display:flex;align-items:center;gap:5px;color:var(--t)"><i class="ti ti-barcode" style="font-size:14px;color:var(--gold)"></i>Scan SKU Barcode</button>
+    <div class="barcode-indicator" style="display:none;align-items:center;gap:5px;padding:4px 10px;background:var(--sbg);border-radius:6px;font-size:10px;color:var(--st);font-weight:600"><i class="ti ti-scan"></i>Scanner active — scan now<button onclick="disableBarcodeScanner()" style="background:none;border:none;cursor:pointer;color:var(--dt);font-size:12px;margin-left:4px">×</button></div>
+  </div>
   <div class="fg2">
     <div>
       <div class="panel">
@@ -405,6 +499,10 @@ tr:hover td{background:var(--s2)}
 
 <!-- ═══ PICKING (SOP §2) ═══ -->
 <div id="page-picking" class="page">
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+    <button onclick="enableBarcodeScanner('picking')" style="padding:7px 12px;background:var(--s2);border:1px solid var(--b);border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;display:flex;align-items:center;gap:5px;color:var(--t)"><i class="ti ti-barcode" style="font-size:14px;color:var(--gold)"></i>Scan SKU Barcode</button>
+    <div class="barcode-indicator" style="display:none;align-items:center;gap:5px;padding:4px 10px;background:var(--sbg);border-radius:6px;font-size:10px;color:var(--st);font-weight:600"><i class="ti ti-scan"></i>Scanner active — scan now<button onclick="disableBarcodeScanner()" style="background:none;border:none;cursor:pointer;color:var(--dt);font-size:12px;margin-left:4px">×</button></div>
+  </div>
   <div class="fg2">
     <div>
       <div class="panel">
@@ -539,6 +637,10 @@ tr:hover td{background:var(--s2)}
 <!-- ═══ DISPATCH (SOP §3 Stage D) ═══ -->
 <div id="page-dispatch" class="page">
   <div id="dispatch-sameday-alert"></div>
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+    <button onclick="enableBarcodeScanner('dispatch')" style="padding:7px 12px;background:var(--s2);border:1px solid var(--b);border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;display:flex;align-items:center;gap:5px;color:var(--t)"><i class="ti ti-barcode" style="font-size:14px;color:var(--gold)"></i>Scan AWB Barcode</button>
+    <div class="barcode-indicator" style="display:none;align-items:center;gap:5px;padding:4px 10px;background:var(--sbg);border-radius:6px;font-size:10px;color:var(--st);font-weight:600"><i class="ti ti-scan"></i>Scanner active — scan AWB label now<button onclick="disableBarcodeScanner()" style="background:none;border:none;cursor:pointer;color:var(--dt);font-size:12px;margin-left:4px">×</button></div>
+  </div>
   <div class="fg2">
     <div>
       <div class="stitle">Packed orders awaiting dispatch</div>
@@ -660,6 +762,46 @@ tr:hover td{background:var(--s2)}
   <div class="rack-wrap" id="rack-a"></div>
   <div class="stitle" style="margin-top:4px">Rack B — VM &amp; accessories (shelves B1–B5)</div>
   <div class="rack-wrap" id="rack-b"></div>
+</div>
+
+<!-- ═══ LABEL PRINTER ═══ -->
+<div id="page-labels" class="page">
+
+  <!-- JsBarcode CDN loaded lazily -->
+  <div id="jsbarcode-loader"></div>
+
+  <!-- TOP TOOLBAR -->
+  <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:14px">
+    <div style="font-weight:700;font-size:13px;color:var(--t);display:flex;align-items:center;gap:6px">
+      <i class="ti ti-printer" style="color:var(--gold)"></i> SKU Barcode Label Generator
+    </div>
+    <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
+      <select id="lbl-cat" onchange="renderLabelPage()" style="padding:6px 10px;border:0.5px solid var(--b);border-radius:6px;background:var(--s2);color:var(--t);font-size:11px">
+        <option value="">All categories</option>
+        <option value="Uniform">Uniform</option>
+        <option value="VM">VM / Accessories</option>
+      </select>
+      <select id="lbl-size" onchange="renderLabelPage()" style="padding:6px 10px;border:0.5px solid var(--b);border-radius:6px;background:var(--s2);color:var(--t);font-size:11px">
+        <option value="50x30">50×30mm (Standard)</option>
+        <option value="40x20">40×20mm (Small)</option>
+        <option value="50x25">50×25mm (Shelf tag)</option>
+      </select>
+      <button onclick="selectAllLabels()" style="padding:6px 12px;background:var(--s2);border:0.5px solid var(--b);border-radius:6px;cursor:pointer;font-size:11px;color:var(--t)"><i class="ti ti-checkbox"></i> Select All</button>
+      <button onclick="clearLabelSelection()" style="padding:6px 12px;background:var(--s2);border:0.5px solid var(--b);border-radius:6px;cursor:pointer;font-size:11px;color:var(--t)"><i class="ti ti-square"></i> Clear</button>
+      <button onclick="printSelectedLabels()" style="padding:6px 14px;background:var(--gold);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;display:flex;align-items:center;gap:5px"><i class="ti ti-printer"></i> Print Selected (<span id="lbl-sel-count">0</span>)</button>
+    </div>
+  </div>
+
+  <!-- INFO BOX -->
+  <div class="info-box" style="margin-bottom:12px">
+    <i class="ti ti-info-circle"></i>
+    Labels are formatted for <strong>50mm (2-inch) thermal paper</strong> — compatible with SEZNIK Josh LD0801.
+    Select SKUs → Click Print → Save/open the print page → Send to printer via <strong>We Print app</strong> or Windows print dialog.
+  </div>
+
+  <!-- LABEL GRID -->
+  <div id="label-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px"></div>
+
 </div>
 
 <!-- ═══ REPORTS & MIS (SOP §6) ═══ -->
@@ -1158,6 +1300,72 @@ tr:hover td{background:var(--s2)}
   </div>
 </div>
 
+<!-- ═══ AUDIT TRAIL ═══ -->
+<div id="page-audit" class="page">
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+    <div class="stitle"><i class="ti ti-shield-check"></i> Audit Trail — All System Actions</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <input type="text" id="audit-search" placeholder="Search user, action, table..." oninput="renderAuditLog()" style="padding:6px 10px;border:0.5px solid var(--b);border-radius:6px;background:var(--s2);color:var(--t);font-size:11px;width:200px">
+      <select id="audit-filter-role" onchange="renderAuditLog()" style="padding:6px;border:0.5px solid var(--b);border-radius:6px;background:var(--s2);color:var(--t);font-size:11px">
+        <option value="">All roles</option>
+        <option value="admin">Admin</option>
+        <option value="supervisor">Supervisor</option>
+        <option value="picker">Picker</option>
+        <option value="packer">Packer</option>
+        <option value="viewer">Viewer</option>
+      </select>
+      <select id="audit-filter-action" onchange="renderAuditLog()" style="padding:6px;border:0.5px solid var(--b);border-radius:6px;background:var(--s2);color:var(--t);font-size:11px">
+        <option value="">All actions</option>
+        <option value="INSERT">Insert</option>
+        <option value="UPDATE">Update</option>
+        <option value="DELETE">Delete</option>
+      </select>
+    </div>
+  </div>
+  <div id="audit-log-container"></div>
+</div>
+
+<!-- ═══ USER MANAGEMENT ═══ -->
+<div id="page-users" class="page">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+    <div class="stitle"><i class="ti ti-users"></i> User Management</div>
+    <button onclick="showCreateUserForm()" class="btn-primary"><i class="ti ti-user-plus"></i> Add User</button>
+  </div>
+  <div id="create-user-form" style="display:none;background:var(--s2);border-radius:10px;padding:14px 16px;margin-bottom:14px">
+    <div style="font-weight:600;font-size:12px;margin-bottom:10px">Create New User</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      <div>
+        <label for="new-user-name" style="font-size:10px;color:var(--t2);display:block;margin-bottom:3px;font-weight:600">Full Name</label>
+        <input type="text" id="new-user-name" placeholder="e.g. Rahul Sharma" style="width:100%;padding:8px;border:0.5px solid var(--b);border-radius:6px;background:var(--s);color:var(--t);font-size:12px">
+      </div>
+      <div>
+        <label for="new-user-email" style="font-size:10px;color:var(--t2);display:block;margin-bottom:3px;font-weight:600">Email</label>
+        <input type="email" id="new-user-email" placeholder="user@epsworldwide.com" style="width:100%;padding:8px;border:0.5px solid var(--b);border-radius:6px;background:var(--s);color:var(--t);font-size:12px">
+      </div>
+      <div>
+        <label for="new-user-password" style="font-size:10px;color:var(--t2);display:block;margin-bottom:3px;font-weight:600">Temporary Password</label>
+        <input type="password" id="new-user-password" placeholder="Min 8 characters" style="width:100%;padding:8px;border:0.5px solid var(--b);border-radius:6px;background:var(--s);color:var(--t);font-size:12px">
+      </div>
+      <div>
+        <label for="new-user-role" style="font-size:10px;color:var(--t2);display:block;margin-bottom:3px;font-weight:600">Role</label>
+        <select id="new-user-role" style="width:100%;padding:8px;border:0.5px solid var(--b);border-radius:6px;background:var(--s);color:var(--t);font-size:12px">
+          <option value="picker">Picker</option>
+          <option value="packer">Packer</option>
+          <option value="supervisor">Supervisor</option>
+          <option value="viewer">Viewer (CaratLane)</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button onclick="createUser()" class="btn-primary"><i class="ti ti-user-plus"></i> Create User</button>
+      <button onclick="hideCreateUserForm()" style="padding:7px 14px;background:var(--s3);border:none;border-radius:6px;cursor:pointer;font-size:11px">Cancel</button>
+    </div>
+    <div id="create-user-err" style="font-size:11px;color:var(--dt);margin-top:6px"></div>
+  </div>
+  <div id="users-list"></div>
+</div>
+
 </div><!-- end .wrap -->
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
@@ -1516,6 +1724,9 @@ function nav(tab){
   updateNotificationBadge();
   if(tab==='dashboard')renderDash();
   if(tab==='inventory'){renderInv();renderInvVersionHistory();}
+  if(tab==='labels'){renderLabelPage();}
+  if(tab==='audit'){renderAuditLog();}
+  if(tab==='users'){renderUsersList();}
   if(tab==='rack')renderRack();
   if(tab==='dispatch')renderDispatchPage();
   if(tab==='packing')renderPackingQ();
@@ -4260,6 +4471,523 @@ async function addSKU(skuObj){
     return true;
   } catch(e){ console.error('addSKU error:',e); toast('SKU saved locally only','w'); return true; }
 }
+// ═══════════════════════════════════════════
+// LABEL PRINTER SYSTEM
+// ═══════════════════════════════════════════
+let _lblSelected = new Set();
+let _jsBarcodeLoaded = false;
+
+function loadJsBarcode(cb){
+  if(_jsBarcodeLoaded){ cb(); return; }
+  const s=document.createElement('script');
+  s.src='https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js';
+  s.onload=()=>{ _jsBarcodeLoaded=true; cb(); };
+  s.onerror=()=>{ console.error('JsBarcode failed to load'); cb(); };
+  document.head.appendChild(s);
+}
+
+function renderLabelPage(){
+  loadJsBarcode(()=>{
+    const cat=document.getElementById('lbl-cat')?.value||'';
+    const skus=cat?SKUS.filter(s=>s.cat===cat):SKUS;
+    const grid=document.getElementById('label-grid');
+    if(!grid)return;
+    grid.innerHTML=skus.map(s=>{
+      const selected=_lblSelected.has(s.sku);
+      const qty=(inv[s.sku]||{qty:0}).qty;
+      return `<div class="lbl-card${selected?' selected':''}" onclick="toggleLabelSelect('${s.sku}')" id="lbl-card-${s.sku}">
+        <div class="lbl-check">${selected?'<i class="ti ti-check" style="font-size:11px"></i>':''}</div>
+        <div style="font-size:10px;font-weight:700;color:var(--t);margin-bottom:2px;padding-right:20px">${esc(s.sub)}</div>
+        <div style="font-size:10px;color:var(--t2)">${esc(s.variant)}</div>
+        <div style="font-size:9px;color:var(--t3);margin-top:2px">Rack ${s.rack} · Shelf ${s.shelf} · ${qty} units</div>
+        <div class="lbl-preview">
+          <svg id="bc-${s.sku.replace(/[^a-zA-Z0-9]/g,'_')}" style="max-width:100%;height:40px"></svg>
+          <div style="font-size:9px;color:#333;margin-top:2px;font-family:monospace">${s.sku}</div>
+        </div>
+      </div>`;
+    }).join('');
+    // Render barcodes
+    skus.forEach(s=>{
+      try {
+        const svgId='bc-'+s.sku.replace(/[^a-zA-Z0-9]/g,'_');
+        const el=document.getElementById(svgId);
+        if(el&&typeof JsBarcode!=='undefined'){
+          JsBarcode('#'+svgId, s.sku, {
+            format:'CODE128', width:1.2, height:35,
+            displayValue:false, margin:2,
+            background:'#ffffff', lineColor:'#000000'
+          });
+        }
+      } catch(e){ console.warn('Barcode error for',s.sku,e); }
+    });
+    updateLabelSelCount();
+  });
+}
+
+function toggleLabelSelect(sku){
+  if(_lblSelected.has(sku)) _lblSelected.delete(sku);
+  else _lblSelected.add(sku);
+  const card=document.getElementById('lbl-card-'+sku);
+  if(!card)return;
+  card.classList.toggle('selected',_lblSelected.has(sku));
+  card.querySelector('.lbl-check').innerHTML=_lblSelected.has(sku)?'<i class="ti ti-check" style="font-size:11px"></i>':'';
+  updateLabelSelCount();
+}
+
+function selectAllLabels(){
+  const cat=document.getElementById('lbl-cat')?.value||'';
+  const skus=cat?SKUS.filter(s=>s.cat===cat):SKUS;
+  skus.forEach(s=>_lblSelected.add(s.sku));
+  renderLabelPage();
+}
+
+function clearLabelSelection(){
+  _lblSelected.clear();
+  renderLabelPage();
+}
+
+function updateLabelSelCount(){
+  const el=document.getElementById('lbl-sel-count');
+  if(el) el.textContent=_lblSelected.size;
+}
+
+function getLabelSizeMM(){
+  const v=document.getElementById('lbl-size')?.value||'50x30';
+  const [w,h]=v.split('x').map(Number);
+  return {w,h};
+}
+
+function printSelectedLabels(){
+  if(!_lblSelected.size){ toast('Select at least one SKU to print','w'); return; }
+  loadJsBarcode(()=>{
+    const {w:mmW, h:mmH}=getLabelSizeMM();
+    const px_w=Math.round(mmW*3.78); // 96dpi ÷ 25.4 * mm
+    const px_h=Math.round(mmH*3.78);
+    const selectedSKUs=SKUS.filter(s=>_lblSelected.has(s.sku));
+    // Build print window
+    const pw=window.open('','CARATLANE_LABELS_'+Date.now(),'width=700,height=900');
+    if(!pw){ toast('Please allow popups to print','w'); return; }
+    // Build SVG barcodes as data URIs
+    const labelHTML=selectedSKUs.map(s=>{
+      // Generate barcode SVG inline
+      const svgNS='http://www.w3.org/2000/svg';
+      const tmpSvg=document.createElementNS(svgNS,'svg');
+      tmpSvg.setAttribute('id','tmp_bc_print');
+      document.body.appendChild(tmpSvg);
+      let bcDataURI='';
+      try {
+        JsBarcode(tmpSvg, s.sku, {format:'CODE128',width:1.5,height:40,displayValue:true,fontSize:9,margin:3,background:'#ffffff',lineColor:'#000000'});
+        const svgStr=new XMLSerializer().serializeToString(tmpSvg);
+        bcDataURI='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(svgStr)));
+      } catch(e){ console.warn('Print barcode error:',e); }
+      document.body.removeChild(tmpSvg);
+      const qty=(inv[s.sku]||{qty:0}).qty;
+      return `<div class="label">
+        <div class="lbl-brand">CaratLane WMS · EPS Worldwide</div>
+        <div class="lbl-name">${s.sub}</div>
+        <div class="lbl-variant">${s.variant}</div>
+        <div class="lbl-location">Rack ${s.rack} · Shelf ${s.shelf} &nbsp;|&nbsp; Stock: ${qty}</div>
+        ${bcDataURI?`<img src="${bcDataURI}" class="lbl-barcode" alt="${s.sku}">`:'<div class="lbl-sku-plain">'+s.sku+'</div>'}
+        <div class="lbl-sku">${s.sku}</div>
+      </div>`;
+    }).join('');
+    pw.document.write(`<!DOCTYPE html><html><head><title>CaratLane SKU Labels</title>
+    <style>
+      *{box-sizing:border-box;margin:0;padding:0}
+      body{font-family:Arial,sans-serif;background:#fff;padding:4mm}
+      .label-grid{display:flex;flex-wrap:wrap;gap:3mm}
+      .label{width:${mmW}mm;height:${mmH}mm;border:0.5px solid #ccc;border-radius:2mm;padding:2mm;display:flex;flex-direction:column;justify-content:space-between;overflow:hidden;page-break-inside:avoid;background:#fff}
+      .lbl-brand{font-size:6px;color:#999;letter-spacing:0.5px;text-transform:uppercase}
+      .lbl-name{font-size:9px;font-weight:700;color:#111;margin-top:1mm;line-height:1.2;overflow:hidden;max-height:2.4em}
+      .lbl-variant{font-size:8px;color:#444;margin-top:0.5mm}
+      .lbl-location{font-size:7px;color:#666;margin-top:0.5mm;background:#f5f5f5;padding:1px 3px;border-radius:2px}
+      .lbl-barcode{width:100%;max-height:${Math.round(mmH*0.4)}mm;object-fit:contain;margin:1mm 0}
+      .lbl-sku{font-size:7px;color:#333;font-family:monospace;text-align:center;margin-top:auto}
+      .lbl-sku-plain{font-size:8px;font-weight:700;font-family:monospace;text-align:center;padding:3px;border:1px solid #ccc;border-radius:2px;margin:1mm 0}
+      .print-info{font-size:11px;color:#666;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #ddd}
+      @media print{
+        body{padding:2mm}
+        .no-print{display:none}
+        @page{margin:3mm;size:${mmW*2+10}mm auto}
+      }
+    </style></head><body>
+    <div class="no-print" style="margin-bottom:12px;padding:10px;background:#f9f9f9;border-radius:6px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-weight:700;font-size:13px">CaratLane WMS — SKU Labels</div>
+        <div style="font-size:11px;color:#666;margin-top:3px">${selectedSKUs.length} labels · ${mmW}×${mmH}mm · Generated ${new Date().toLocaleString('en-IN')}</div>
+        <div style="font-size:11px;color:#888;margin-top:3px">For SEZNIK Josh LD0801: Open "We Print" app → Import image → Print on 2-inch thermal paper</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button onclick="window.print()" style="padding:8px 16px;background:#B8860B;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px">🖨 Print Labels</button>
+        <button onclick="window.close()" style="padding:8px 16px;background:#f0f0f0;border:none;border-radius:6px;cursor:pointer;font-size:12px">Close</button>
+      </div>
+    </div>
+    <div class="label-grid">${labelHTML}</div>
+    </body></html>`);
+    pw.document.close();
+    pw.focus();
+    logAudit('PRINT_LABELS','inventory','batch',null,{count:selectedSKUs.length,skus:selectedSKUs.map(s=>s.sku)});
+    toast(selectedSKUs.length+' labels sent to print preview','s');
+  });
+}
+
+// ═══════════════════════════════════════════
+// AUTH SYSTEM
+// ═══════════════════════════════════════════
+let currentUser = null;
+let currentProfile = null;
+
+const ROLE_COLORS = {admin:'#c62828',supervisor:'#B8860B',picker:'#1565c0',packer:'#2e7d32',viewer:'#6a1b9a'};
+const ROLE_PERMS = {
+  admin:    {canEdit:true,  canDispatch:true, canPack:true, canPick:true,  canReceive:true,  canManageUsers:true,  canAudit:true,  canReturn:true},
+  supervisor:{canEdit:true, canDispatch:true, canPack:true, canPick:true,  canReceive:true,  canManageUsers:false, canAudit:true,  canReturn:true},
+  picker:   {canEdit:false, canDispatch:false,canPack:true, canPick:true,  canReceive:false, canManageUsers:false, canAudit:false, canReturn:false},
+  packer:   {canEdit:false, canDispatch:true, canPack:true, canPick:false, canReceive:false, canManageUsers:false, canAudit:false, canReturn:false},
+  viewer:   {canEdit:false, canDispatch:false,canPack:false,canPick:false, canReceive:false, canManageUsers:false, canAudit:false, canReturn:false},
+};
+
+function getPerms(){ return ROLE_PERMS[currentProfile?.role] || ROLE_PERMS.viewer; }
+
+async function authLogin(){
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value;
+  const errEl = document.getElementById('auth-err');
+  const btn = document.getElementById('auth-login-btn');
+  if(!email||!password){ errEl.textContent='Please enter email and password'; return; }
+  if(!validateEmail(email)){ errEl.textContent='Invalid email address'; return; }
+  btn.disabled=true; btn.textContent='Signing in...'; errEl.textContent='';
+  try {
+    const {data,error} = await supa.auth.signInWithPassword({email,password});
+    if(error) throw error;
+    currentUser = data.user;
+    await loadUserProfile();
+    await onAuthSuccess();
+  } catch(e){
+    errEl.textContent = e.message==='Invalid login credentials' ? 'Incorrect email or password' : (e.message||'Login failed');
+    btn.disabled=false; btn.innerHTML='<i class="ti ti-login"></i> Sign In';
+  }
+}
+
+async function loadUserProfile(){
+  if(!currentUser) return;
+  try {
+    const {data,error} = await supa.from('user_profiles').select('*').eq('id',currentUser.id).single();
+    if(error||!data){ currentProfile={role:'viewer',full_name:currentUser.email,email:currentUser.email}; return; }
+    currentProfile = data;
+    // Update last login
+    await supa.from('user_profiles').update({last_login:new Date().toISOString()}).eq('id',currentUser.id);
+  } catch(e){ currentProfile={role:'viewer',full_name:currentUser.email,email:currentUser.email}; }
+}
+
+async function onAuthSuccess(){
+  // Hide auth screen
+  document.getElementById('auth-screen').style.display='none';
+  // Show user menu
+  const userMenu=document.getElementById('user-menu');
+  if(userMenu) userMenu.style.display='flex';
+  // Update user info in menu
+  document.getElementById('user-menu-name').textContent = (currentProfile.full_name||'').split(' ')[0];
+  document.getElementById('user-email-display').textContent = currentProfile.email;
+  const badge=document.getElementById('user-role-badge');
+  badge.textContent=currentProfile.role.toUpperCase();
+  badge.style.background=ROLE_COLORS[currentProfile.role]||'var(--gold)';
+  // Show/hide tabs based on role
+  const perms=getPerms();
+  if(perms.canAudit) document.getElementById('tab-audit').style.display='';
+  if(perms.canManageUsers){ document.getElementById('tab-users').style.display=''; document.getElementById('manage-users-item').style.display='flex'; }
+  // Apply role restrictions to UI
+  applyRoleRestrictions();
+  // Boot WMS
+  await bootWMS();
+  await logAudit('LOGIN','session',currentUser.id,null,{email:currentProfile.email,role:currentProfile.role});
+}
+
+function applyRoleRestrictions(){
+  const perms=getPerms();
+  const role=currentProfile?.role;
+  // Hide action buttons for viewer
+  if(role==='viewer'){
+    const style=document.createElement('style');
+    style.id='viewer-restrictions';
+    style.textContent=`
+      .btn-primary,.btn-success,button[onclick*="createGRN"],button[onclick*="confirmPick"],
+      button[onclick*="confirmCourierDispatch"],button[onclick*="startPacking"],
+      button[onclick*="openPackModal"],button[onclick*="processReturn"],
+      #clear-all-btn{display:none!important}
+      input,select,textarea{pointer-events:none!important;opacity:0.7}
+    `;
+    document.head.appendChild(style);
+    toast('You are logged in as a Viewer — read-only access','w');
+  }
+  // Restrict pickers from dispatch/returns tabs
+  if(role==='picker'){
+    const dispTab=document.querySelector('[data-tab="dispatch"]');
+    const retTab=document.querySelector('[data-tab="returns"]');
+    if(dispTab) dispTab.style.display='none';
+    if(retTab) retTab.style.display='none';
+  }
+  // Restrict packers from inbound/picking tabs
+  if(role==='packer'){
+    const inbTab=document.querySelector('[data-tab="inbound"]');
+    const pkTab=document.querySelector('[data-tab="picking"]');
+    if(inbTab) inbTab.style.display='none';
+    if(pkTab) pkTab.style.display='none';
+  }
+}
+
+async function authLogout(){
+  await logAudit('LOGOUT','session',currentUser?.id,null,{email:currentProfile?.email});
+  await supa.auth.signOut();
+  currentUser=null; currentProfile=null;
+  document.getElementById('auth-screen').style.display='flex';
+  document.getElementById('user-menu').style.display='none';
+  document.getElementById('auth-password').value='';
+  document.getElementById('user-dropdown').classList.remove('open');
+  // Remove viewer restrictions if any
+  const vr=document.getElementById('viewer-restrictions');
+  if(vr) vr.remove();
+  toast('Signed out successfully','s');
+}
+
+async function authResetPassword(){
+  const email=document.getElementById('auth-reset-email').value.trim();
+  const errEl=document.getElementById('auth-reset-err');
+  if(!email||!validateEmail(email)){errEl.textContent='Enter a valid email';return;}
+  const {error}=await supa.auth.resetPasswordForEmail(email,{redirectTo:'https://caratlane-wms.vercel.app/'});
+  if(error){errEl.textContent=error.message;return;}
+  errEl.style.color='var(--st)';
+  errEl.textContent='Reset link sent — check your email';
+}
+
+function showResetForm(){ document.getElementById('auth-login-form').style.display='none'; document.getElementById('auth-reset-form').style.display='block'; }
+function showLoginForm(){ document.getElementById('auth-reset-form').style.display='none'; document.getElementById('auth-login-form').style.display='block'; }
+function toggleUserMenu(){ document.getElementById('user-dropdown').classList.toggle('open'); }
+document.addEventListener('click',e=>{ if(!e.target.closest('.user-menu')) document.getElementById('user-dropdown')?.classList.remove('open'); });
+
+// ═══════════════════════════════════════════
+// USER MANAGEMENT (Admin only)
+// ═══════════════════════════════════════════
+function showCreateUserForm(){ document.getElementById('create-user-form').style.display='block'; }
+function hideCreateUserForm(){ document.getElementById('create-user-form').style.display='none'; }
+
+async function createUser(){
+  const name=document.getElementById('new-user-name').value.trim();
+  const email=document.getElementById('new-user-email').value.trim();
+  const password=document.getElementById('new-user-password').value;
+  const role=document.getElementById('new-user-role').value;
+  const errEl=document.getElementById('create-user-err');
+  if(!name||!email||!password){errEl.textContent='All fields required';return;}
+  if(!validateEmail(email)){errEl.textContent='Invalid email';return;}
+  if(password.length<8){errEl.textContent='Password must be at least 8 characters';return;}
+  errEl.textContent='Creating...';
+  try {
+    // Create auth user via Supabase admin — requires service role key
+    // For now, user signs up themselves and admin assigns role
+    const {data,error}=await supa.auth.signUp({email,password,options:{data:{full_name:name}}});
+    if(error) throw error;
+    // Insert profile
+    await supa.from('user_profiles').upsert({id:data.user.id,email,full_name:name,role},{onConflict:'id'});
+    await logAudit('CREATE_USER','user_profiles',data.user.id,null,{email,role,full_name:name});
+    errEl.style.color='var(--st)';
+    errEl.textContent='User created — they must verify their email before logging in';
+    hideCreateUserForm();
+    renderUsersList();
+  } catch(e){ errEl.textContent=e.message||'Failed to create user'; }
+}
+
+async function renderUsersList(){
+  const el=document.getElementById('users-list');
+  if(!el)return;
+  el.innerHTML='<div style="color:var(--t3);font-size:11px;padding:8px">Loading...</div>';
+  try {
+    const {data,error}=await supa.from('user_profiles').select('*').order('role').order('full_name');
+    if(error||!data){el.innerHTML='<div class="empty">No users found</div>';return;}
+    el.innerHTML=`<div class="tw"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Last Login</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+    ${data.map(u=>{
+      const roleColor=ROLE_COLORS[u.role]||'var(--gold)';
+      const lastLogin=u.last_login?new Date(u.last_login).toLocaleString('en-IN'):'Never';
+      const isMe=u.id===currentUser?.id;
+      return `<tr>
+        <td style="font-weight:600">${esc(u.full_name)}</td>
+        <td style="font-size:11px">${esc(u.email)}</td>
+        <td><span style="background:${roleColor};color:#fff;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700">${u.role.toUpperCase()}</span></td>
+        <td style="font-size:10px;color:var(--t2)">${lastLogin}</td>
+        <td><span style="color:${u.is_active?'var(--st)':'var(--dt)'};font-size:11px;font-weight:600">${u.is_active?'Active':'Inactive'}</span></td>
+        <td>${isMe?'<span style="font-size:10px;color:var(--t3)">You</span>':`
+          <select onchange="updateUserRole('${u.id}',this.value)" style="padding:3px 6px;border:0.5px solid var(--b);border-radius:4px;background:var(--s2);color:var(--t);font-size:10px;margin-right:4px">
+            ${['admin','supervisor','picker','packer','viewer'].map(r=>`<option value="${r}"${r===u.role?' selected':''}>${r}</option>`).join('')}
+          </select>
+          <button onclick="toggleUserActive('${u.id}',${u.is_active})" style="padding:2px 8px;font-size:10px;background:${u.is_active?'var(--dbg)':'var(--sbg)'};color:${u.is_active?'var(--dt)':'var(--st)'};border:none;border-radius:4px;cursor:pointer">${u.is_active?'Deactivate':'Activate'}</button>
+        `}</td>
+      </tr>`;
+    }).join('')}
+    </tbody></table></div>`;
+  } catch(e){ el.innerHTML='<div class="empty">Error loading users</div>'; }
+}
+
+async function updateUserRole(userId,newRole){
+  try {
+    const {data:old}=await supa.from('user_profiles').select('role').eq('id',userId).single();
+    await supa.from('user_profiles').update({role:newRole}).eq('id',userId);
+    await logAudit('UPDATE_ROLE','user_profiles',userId,{role:old?.role},{role:newRole});
+    toast('Role updated to '+newRole,'s');
+  } catch(e){ toast('Failed to update role','w'); }
+}
+
+async function toggleUserActive(userId,isActive){
+  try {
+    await supa.from('user_profiles').update({is_active:!isActive}).eq('id',userId);
+    await logAudit(isActive?'DEACTIVATE_USER':'ACTIVATE_USER','user_profiles',userId,null,{is_active:!isActive});
+    toast('User '+(isActive?'deactivated':'activated'),'s');
+    renderUsersList();
+  } catch(e){ toast('Failed to update user','w'); }
+}
+
+// ═══════════════════════════════════════════
+// AUDIT TRAIL
+// ═══════════════════════════════════════════
+async function logAudit(action,entityType,entityId,oldVals,newVals){
+  if(!currentUser||!supa) return;
+  try {
+    await supa.from('audit_log').insert({
+      user_id:currentUser.id,
+      user_email:currentProfile?.email||currentUser.email,
+      user_name:currentProfile?.full_name||currentUser.email,
+      user_role:currentProfile?.role||'unknown',
+      action,entity_type:entityType,entity_id:String(entityId||''),
+      old_values:oldVals||null,new_values:newVals||null,
+      created_at:new Date().toISOString()
+    });
+  } catch(e){ console.warn('Audit log failed:',e.message); }
+}
+
+async function renderAuditLog(){
+  const el=document.getElementById('audit-log-container');
+  if(!el)return;
+  el.innerHTML='<div style="color:var(--t3);font-size:11px;padding:8px">Loading audit trail...</div>';
+  const search=(document.getElementById('audit-search')?.value||'').toLowerCase();
+  const roleFilter=document.getElementById('audit-filter-role')?.value||'';
+  const actionFilter=document.getElementById('audit-filter-action')?.value||'';
+  try {
+    let q=supa.from('audit_log').select('*').order('created_at',{ascending:false}).limit(200);
+    if(roleFilter) q=q.eq('user_role',roleFilter);
+    if(actionFilter) q=q.eq('action',actionFilter);
+    const {data,error}=await q;
+    if(error) throw error;
+    let rows=data||[];
+    if(search) rows=rows.filter(r=>
+      (r.user_email||'').toLowerCase().includes(search)||
+      (r.user_name||'').toLowerCase().includes(search)||
+      (r.action||'').toLowerCase().includes(search)||
+      (r.entity_type||'').toLowerCase().includes(search)||
+      (r.entity_id||'').toLowerCase().includes(search)
+    );
+    if(!rows.length){el.innerHTML='<div class="empty">No audit records found</div>';return;}
+    const actionColor={INSERT:'var(--st)',UPDATE:'var(--it)',DELETE:'var(--dt)',LOGIN:'var(--gold)',LOGOUT:'var(--t3)',CREATE_USER:'var(--st)',UPDATE_ROLE:'var(--wt)',DEACTIVATE_USER:'var(--dt)',ACTIVATE_USER:'var(--st)'};
+    el.innerHTML=`<div style="font-size:10px;color:var(--t3);margin-bottom:6px">${rows.length} records</div>
+    <div class="tw"><table><thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Table</th><th>Record ID</th></tr></thead><tbody>
+    ${rows.map(r=>{
+      const color=actionColor[r.action]||'var(--t2)';
+      const time=new Date(r.created_at).toLocaleString('en-IN');
+      return `<tr>
+        <td style="font-size:10px;color:var(--t3);white-space:nowrap">${time}</td>
+        <td style="font-size:11px"><div style="font-weight:600">${esc(r.user_name||'—')}</div><div style="font-size:10px;color:var(--t3)">${esc(r.user_email||'')}</div></td>
+        <td><span style="background:${ROLE_COLORS[r.user_role]||'var(--s3)'};color:#fff;padding:2px 6px;border-radius:10px;font-size:9px;font-weight:700">${(r.user_role||'').toUpperCase()}</span></td>
+        <td><span style="color:${color};font-weight:700;font-size:11px">${esc(r.action)}</span></td>
+        <td style="font-size:10px;color:var(--t2)">${esc(r.entity_type||'')}</td>
+        <td style="font-size:10px;font-family:monospace">${esc(r.entity_id||'')}</td>
+      </tr>`;
+    }).join('')}
+    </tbody></table></div>`;
+  } catch(e){ el.innerHTML='<div class="empty">Error loading audit log: '+esc(e.message)+'</div>'; }
+}
+
+// ═══════════════════════════════════════════
+// BARCODE SCANNER (USB/Bluetooth HID)
+// ═══════════════════════════════════════════
+let _barcodeBuffer='';
+let _barcodeTimer=null;
+let _barcodeActive=false;
+let _barcodeTarget=null; // 'inbound' | 'picking' | 'dispatch'
+
+function initBarcodeScanner(){
+  document.addEventListener('keydown', e=>{
+    if(!_barcodeActive) return;
+    // USB/BT scanners send chars very fast then Enter
+    if(e.key==='Enter'){
+      if(_barcodeBuffer.length>2){
+        processBarcodeInput(_barcodeBuffer.trim());
+      }
+      _barcodeBuffer='';
+      clearTimeout(_barcodeTimer);
+      return;
+    }
+    // Ignore modifier keys
+    if(e.key.length>1) return;
+    _barcodeBuffer+=e.key;
+    clearTimeout(_barcodeTimer);
+    // Auto-flush after 100ms (scanner done)
+    _barcodeTimer=setTimeout(()=>{
+      if(_barcodeBuffer.length>2) processBarcodeInput(_barcodeBuffer.trim());
+      _barcodeBuffer='';
+    },100);
+  });
+}
+
+function enableBarcodeScanner(target){
+  _barcodeActive=true;
+  _barcodeTarget=target;
+  const indicators=document.querySelectorAll('.barcode-indicator');
+  indicators.forEach(el=>el.style.display='flex');
+  toast('Barcode scanner active — scan a SKU barcode','s');
+}
+
+function disableBarcodeScanner(){
+  _barcodeActive=false;
+  _barcodeTarget=null;
+  const indicators=document.querySelectorAll('.barcode-indicator');
+  indicators.forEach(el=>el.style.display='none');
+}
+
+function processBarcodeInput(barcode){
+  console.log('Barcode scanned:',barcode);
+  // Find matching SKU
+  const sku=SKUS.find(s=>s.sku===barcode||s.sku.toUpperCase()===barcode.toUpperCase());
+  if(!sku){
+    toast('Unknown barcode: '+barcode,'w');
+    return;
+  }
+  if(_barcodeTarget==='inbound'){
+    // Auto-fill SKU in inbound form
+    const skuSel=document.getElementById('ib-sku');
+    if(skuSel){ skuSel.value=sku.sku; updateIbBin(); }
+    document.getElementById('ib-qty')?.focus();
+    toast('Scanned: '+sku.sub+' — '+sku.variant,'s');
+  } else if(_barcodeTarget==='picking'){
+    // Auto-fill SKU in picking form
+    const pkSel=document.getElementById('pk-sku');
+    if(pkSel){ pkSel.value=sku.sku; }
+    document.getElementById('pk-qty')?.focus();
+    toast('Scanned: '+sku.sub+' — '+sku.variant,'s');
+  } else if(_barcodeTarget==='dispatch'){
+    // Match AWB or order ID
+    const awbInput=document.getElementById('disp-awb');
+    if(awbInput){ awbInput.value=barcode; }
+    toast('AWB scanned: '+barcode,'s');
+  }
+  // Log the scan
+  logAudit('BARCODE_SCAN','inventory',sku.sku,null,{sku:sku.sku,target:_barcodeTarget,barcode});
+}
+
+// ═══════════════════════════════════════════
+// PATCH saveHist AND saveInv TO INCLUDE AUDIT
+// ═══════════════════════════════════════════
+const _origSaveHist=saveHist;
+// We'll wrap key operations to log them
+
+// ═══════════════════════════════════════════
+// BOOT
+// ═══════════════════════════════════════════
 async function bootWMS(){
   setSyncStatus('syncing');
   await loadSKUsFromDB(); // load dynamic SKUs first
@@ -4276,8 +5004,32 @@ async function bootWMS(){
   filterSkuList('ib-sku-search','ib-sku');
   setupRealtimeSync();
   setSyncStatus('ok');
+  initBarcodeScanner();
 }
-bootWMS();
+
+// Check for existing session on load
+async function initAuth(){
+  const {data:{session}} = await supa.auth.getSession();
+  if(session){
+    currentUser=session.user;
+    await loadUserProfile();
+    await onAuthSuccess();
+  } else {
+    document.getElementById('auth-screen').style.display='flex';
+    // Hide main app until logged in
+  }
+  // Listen for auth changes
+  supa.auth.onAuthStateChange(async(event,session)=>{
+    if(event==='SIGNED_IN'&&session&&!currentUser){
+      currentUser=session.user;
+      await loadUserProfile();
+      await onAuthSuccess();
+    } else if(event==='SIGNED_OUT'){
+      currentUser=null; currentProfile=null;
+    }
+  });
+}
+initAuth();
 </script>
 </body>
 </html>
