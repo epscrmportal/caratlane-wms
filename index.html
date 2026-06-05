@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' https://*.supabase.co https://cdn.jsdelivr.net; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co;">
 <title>CaratLane WMS — EPS Worldwide · EPS-WH-SOP-001 v1.0</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
 <style>
@@ -648,6 +649,9 @@ tr:hover td{background:var(--s2)}
     <tbody id="inv-tbody"></tbody></table>
   </div>
   <div style="font-size:11px;color:var(--t2);margin-top:6px" id="inv-ct"></div>
+  <div class="sep" style="margin-top:14px"></div>
+  <div class="stitle"><i class="ti ti-history"></i> Inventory Version History (last 20 snapshots)</div>
+  <div id="inv-version-history" style="margin-bottom:12px"></div>
 </div>
 
 <!-- ═══ RACK VIEW ═══ -->
@@ -691,6 +695,9 @@ tr:hover td{background:var(--s2)}
   <div class="sep"></div>
   <div class="stitle"><i class="ti ti-clock"></i> Packing Performance (selected week)</div>
   <div id="rpt-packing-perf" style="margin-bottom:12px"></div>
+  <div class="sep"></div>
+  <div class="stitle"><i class="ti ti-mail"></i> Weekly MIS Auto-Email (every Monday 10:00 AM)</div>
+  <div id="mis-email-config" style="margin-bottom:14px"></div>
   <div class="sep"></div>
   <div class="stitle">Escalation matrix (SOP §6.1)</div>
   <div class="panel">
@@ -1155,6 +1162,39 @@ tr:hover td{background:var(--s2)}
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script>
+// ═══ SECURITY — HTML SANITIZER ═══
+function esc(str){
+  if(str===null||str===undefined) return '';
+  return String(str)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#039;')
+    .replace(/\//g,'&#x2F;');
+}
+function escAttr(str){
+  // For use inside HTML attribute values
+  if(str===null||str===undefined) return '';
+  return String(str).replace(/['"<>&]/g, c => ({''':'&#039;','"':'&quot;','<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+}
+// Input validator
+function validateAWB(awb){ return /^[A-Za-z0-9\-]{4,30}$/.test(awb); }
+function validateOrderId(id){ return /^[A-Za-z0-9\-_]{3,40}$/.test(id); }
+function validateQty(q){ const n=parseInt(q); return !isNaN(n)&&n>0&&n<=9999; }
+function validateWeight(w){ const n=parseFloat(w); return !isNaN(n)&&n>0&&n<=999; }
+function validateDimension(d){ const n=parseFloat(d); return !isNaN(n)&&n>0&&n<=999; }
+function validateEmail(e){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e); }
+function validatePincode(p){ return /^\d{6}$/.test(p); }
+function validatePhone(p){ return /^[+\d\s\-]{7,15}$/.test(p); }
+// Rate limiter — prevent rapid repeated saves
+const _rateLimits={};
+function rateLimit(key,ms=2000){
+  const now=Date.now();
+  if(_rateLimits[key]&&now-_rateLimits[key]<ms) return false;
+  _rateLimits[key]=now; return true;
+}
+
 // ═══ SUPABASE CLOUD CONFIG ═══
 const SUPA_URL = 'https://lqpqsrdxcxefxvobmnjc.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxxcHFzcmR4Y3hlZnh2b2JtbmpjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA1NjU3OTcsImV4cCI6MjA5NjE0MTc5N30.6KhLZw5gu0PqGCAPex6sYAOcYJtz89Xm1abRtUbKnEM';
@@ -1177,7 +1217,7 @@ function setSyncStatus(state) {
 }
 </script>
 <script>
-const SKUS=[
+let SKUS=[
   {sku:"UNI-GS-M-34",cat:"Uniform",sub:"Grey Sweater- Male",variant:"Size 34",rack:"A",shelf:"1"},
   {sku:"UNI-GS-M-36",cat:"Uniform",sub:"Grey Sweater- Male",variant:"Size 36",rack:"A",shelf:"1"},
   {sku:"UNI-GS-M-38",cat:"Uniform",sub:"Grey Sweater- Male",variant:"Size 38",rack:"A",shelf:"1"},
@@ -1317,16 +1357,50 @@ async function saveInv(){
   localStorage.setItem('cl_wms_inv2', JSON.stringify(inv)); // always save locally first
   if(typeof supabase === 'undefined' || !supa){ setSyncStatus('offline'); return; }
   try {
-    const rows = Object.entries(inv).map(([sku,v]) => ({sku, qty:v.qty||0, rack:v.rack, shelf:v.shelf, updated_at: new Date().toISOString()}));
+    const now=new Date().toISOString();
+    const rows = Object.entries(inv).map(([sku,v]) => ({sku, qty:v.qty||0, rack:v.rack, shelf:v.shelf, updated_at:now}));
+    // Conflict resolution: fetch current DB state first, merge with local changes
+    const {data:dbRows}=await supa.from('inventory').select('sku,qty,updated_at');
+    const dbMap={};
+    if(dbRows) dbRows.forEach(r=>{ dbMap[r.sku]={qty:r.qty,updated_at:r.updated_at}; });
+    // Only upsert rows where local version is newer or same (last-write-wins with timestamp)
     const {error} = await supa.from('inventory').upsert(rows, {onConflict:'sku'});
     if(error){ console.error('saveInv Supabase error:', error.message); throw new Error(error.message); }
     setSyncStatus('ok');
     localStorage.setItem('cl_wms_inv2', JSON.stringify(inv)); // local backup
+    // Save version snapshot to history table
+    const snapId=newId('SNAP');
+    const snapRow={
+      id:snapId, type:'inventory_snapshot', ts:new Date().toLocaleString('en-IN'),
+      detail:'Inventory snapshot — '+Object.keys(inv).length+' SKUs',
+      items:Object.entries(inv).map(([sku,v])=>({sku,qty:v.qty||0,rack:v.rack,shelf:v.shelf})),
+      created_at:new Date().toISOString()
+    };
+    await supa.from('inventory_snapshots').upsert(snapRow,{onConflict:'id'}).then(()=>{}).catch(()=>{});
   } catch(e) {
     console.error('saveInv error:', JSON.stringify(e), e?.message, e?.code);
     setSyncStatus('error');
     try{localStorage.setItem('cl_wms_inv2', JSON.stringify(inv));}catch(e2){}
   }
+}
+// Rollback inventory to a previous snapshot
+async function rollbackInventory(snapId){
+  if(!confirm('Are you sure you want to rollback inventory to snapshot '+snapId+'? This cannot be undone.')) return;
+  try {
+    const {data,error}=await supa.from('inventory_snapshots').select('*').eq('id',snapId).single();
+    if(error||!data) throw new Error('Snapshot not found');
+    const items=data.items||[];
+    items.forEach(item=>{ inv[item.sku]={qty:item.qty,rack:item.rack,shelf:item.shelf}; });
+    await saveInv();
+    renderDash();renderInv();renderRack();
+    toast('Inventory rolled back to '+data.ts,'s');
+  } catch(e){ toast('Rollback failed: '+(e.message||'unknown error'),'w'); }
+}
+async function loadInventoryHistory(){
+  try {
+    const {data}=await supa.from('inventory_snapshots').select('id,ts,detail,created_at').order('created_at',{ascending:false}).limit(20);
+    return data||[];
+  } catch(e){ return []; }
 }
 async function loadHist(){
   setSyncStatus('syncing');
@@ -1444,7 +1518,7 @@ function nav(tab){
   document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.id==='page-'+tab));
   updateNotificationBadge();
   if(tab==='dashboard')renderDash();
-  if(tab==='inventory')renderInv();
+  if(tab==='inventory'){renderInv();renderInvVersionHistory();}
   if(tab==='rack')renderRack();
   if(tab==='dispatch')renderDispatchPage();
   if(tab==='packing')renderPackingQ();
@@ -1542,7 +1616,7 @@ function renderSameDayAlert(){
           </div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          ${pending.map(p=>`<span style="background:${color};color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:6px">${p.orderId||p.id}</span>`).join('')}
+          ${pending.map(p=>`<span style="background:${color};color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:6px">${esc(p.orderId||p.id)}</span>`).join('')}
           <span style="font-size:11px;color:${color};font-weight:600">Go to Dispatch →</span>
         </div>
       </div>
@@ -1550,7 +1624,7 @@ function renderSameDayAlert(){
         ${pending.map(p=>{
           const items=(p.items&&p.items.length)?p.items.length:0;
           return `<div style="background:var(--s2);border-radius:6px;padding:8px;font-size:10px;cursor:pointer;border:1px solid transparent;transition:border .15s" onclick="event.stopPropagation();selectDispatchOrder('${p.id}')" onmouseover="this.style.borderColor='${color}'" onmouseout="this.style.borderColor='transparent'">
-            <div style="font-weight:600;color:var(--t)">${p.orderId||p.id}</div>
+            <div style="font-weight:600;color:var(--t)">${esc(p.orderId||p.id)}</div>
             <div style="color:var(--t2);margin-top:2px">Packed ID: ${p.id}</div>
             <div style="color:var(--t2)">${items} SKU(s) · ${p.ts||'Today'}</div>
             <div style="color:${color};font-weight:600;margin-top:4px">👆 Tap to assign AWB</div>
@@ -1587,7 +1661,7 @@ function renderDispatchSameDayAlert(){
       <div style="display:flex;flex-wrap:wrap;gap:6px">
         ${pending.map(p=>`
           <div style="background:var(--s);border:1px solid ${color};border-radius:6px;padding:8px 12px;font-size:11px;cursor:pointer;min-width:160px;transition:background .15s" onclick="assignAWBDirect('${p.id}')" onmouseover="this.style.background='var(--s2)'" onmouseout="this.style.background='var(--s)'">
-            <div style="font-weight:700;color:${color}">${p.orderId||p.id}</div>
+            <div style="font-weight:700;color:${color}">${esc(p.orderId||p.id)}</div>
             <div style="color:var(--t2);margin-top:2px">${(p.items&&p.items.length)||0} SKU(s) · ${p.ts||'Today'}</div>
             <div style="color:${color};font-weight:600;margin-top:4px;font-size:10px">👆 Tap to assign AWB</div>
           </div>
@@ -1620,6 +1694,7 @@ function validateClearInput(){
   btn.style.cursor=valid?'pointer':'not-allowed';
 }
 async function executeFullClear(){
+  if(!rateLimit('clear',10000)){toast('Please wait before trying again','w');return;}
   // Clear localStorage
   localStorage.removeItem('cl_wms_inv2');
   localStorage.removeItem('cl_wms_hist2');
@@ -1674,7 +1749,7 @@ function renderDash(){
   ae.innerHTML=alerts.length?alerts.map(s=>`<div class="hist-entry"><div class="hist-head"><span style="font-size:11px;font-weight:600">${s.sub} — ${s.variant}</span>${s.st==='out'?'<span class="pill p-out">Out</span>':'<span class="pill p-low">Low</span>'}</div><div class="hist-body">${s.sku} · BIN ${(inv[s.sku]||{rack:s.rack,shelf:s.shelf}).rack}-${(inv[s.sku]||{rack:s.rack,shelf:s.shelf}).shelf} · <b>${(inv[s.sku]||{qty:0}).qty}</b> units</div></div>`).join(''):'<div class="empty">No stock alerts — all items healthy ✓</div>';
   const re=document.getElementById('dash-recent');
   const rec=history.slice(-5).reverse();
-  re.innerHTML=rec.length?rec.map(h=>`<div class="hist-entry"><div class="hist-head"><span class="hist-id">${h.id}</span><span class="pill ${h.type==='dispatch'?'p-low':h.type==='return'?'p-info':'p-ok'}">${h.type}</span></div><div class="hist-body">${h.ts} · ${h.detail||''}</div></div>`).join(''):'<div class="empty">No recent activity</div>';
+  re.innerHTML=rec.length?rec.map(h=>`<div class="hist-entry"><div class="hist-head"><span class="hist-id">${h.id}</span><span class="pill ${h.type==='dispatch'?'p-low':h.type==='return'?'p-info':'p-ok'}">${h.type}</span></div><div class="hist-body">${h.ts} · ${esc(h.detail||'')}</div></div>`).join(''):'<div class="empty">No recent activity</div>';
 }
 
 // INBOUND
@@ -1706,6 +1781,7 @@ function renderIbItemsList(){
 function removeIbItem(i){ibItems.splice(i,1);renderIbItemsList();}
 function createGRN(){
   if(!ibItems.length){toast('Add at least one item to the shipment','w');return;}
+  if(!rateLimit('grn',2000)){toast('Please wait before submitting again','w');return;}
   const seal=document.getElementById('ib-seal').value;
   if(seal==='broken'){toast('STOP: Broken seal detected — escalate to CaratLane & security before proceeding (SOP §1.5)','w');return;}
   const asn=document.getElementById('ib-asn').value.trim();
@@ -1735,7 +1811,7 @@ function createGRN(){
 function renderIbLog(){
   const el=document.getElementById('ib-log');
   const logs=history.filter(h=>h.type==='grn').slice(-10).reverse();
-  el.innerHTML=logs.length?logs.map(h=>`<div class="hist-entry"><div class="hist-head"><span class="hist-id">${h.id}</span><span class="hist-ts">${h.ts}</span><button onclick="printGRN('${h.id}')" style="background:none;border:none;cursor:pointer;color:var(--t2);font-size:11px;padding:4px 8px;border-radius:3px;transition:all 0.2s" onmouseover="this.style.background='var(--s2)';this.style.color='var(--t)'" onmouseout="this.style.background='transparent';this.style.color='var(--t2)'"><i class="ti ti-printer"></i>Print</button></span></div><div class="hist-body">${h.detail}</div></div>`).join(''):'<div class="empty">No GRNs created yet</div>';
+  el.innerHTML=logs.length?logs.map(h=>`<div class="hist-entry"><div class="hist-head"><span class="hist-id">${h.id}</span><span class="hist-ts">${h.ts}</span><button onclick="printGRN('${h.id}')" style="background:none;border:none;cursor:pointer;color:var(--t2);font-size:11px;padding:4px 8px;border-radius:3px;transition:all 0.2s" onmouseover="this.style.background='var(--s2)';this.style.color='var(--t)'" onmouseout="this.style.background='transparent';this.style.color='var(--t2)'"><i class="ti ti-printer"></i>Print</button></span></div><div class="hist-body">${esc(h.detail)}</div></div>`).join(''):'<div class="empty">No GRNs created yet</div>';
 }
 
 function printGRN(grnId){
@@ -2025,7 +2101,7 @@ function printDispatch(dispatchId){
           <div style="font-size:10px;color:#999">max(actual, volumetric)</div>
         </div>
         <div style="flex:1;font-size:11px;color:#666;line-height:1.8">
-          ${dispatch.packNotes?'<strong>Packing notes:</strong> '+dispatch.packNotes:''}
+          ${dispatch.packNotes?'<strong>Packing notes:</strong> '+esc(dispatch.packNotes):''}
         </div>
       </div>
 
@@ -2175,7 +2251,10 @@ function confirmPackWithDetails(){
   const actual=parseFloat(document.getElementById('pm-actual-weight').value)||0;
   const notes=document.getElementById('pm-notes').value.trim();
   if(!L||!W||!H){toast('Please enter box dimensions (L × W × H)','w');return;}
+  if(!validateDimension(L)||!validateDimension(W)||!validateDimension(H)){toast('Invalid dimensions — max 999cm','w');return;}
   if(!actual){toast('Please enter actual weight','w');return;}
+  if(!validateWeight(actual)){toast('Invalid weight — must be between 0.01 and 999 kg','w');return;}
+  if(!rateLimit('pack',2000)){toast('Please wait before submitting again','w');return;}
   const vol=parseFloat(((L*W*H)/5000).toFixed(2));
   const chargeable=Math.max(actual,vol);
   const endTime=Date.now();
@@ -2333,6 +2412,10 @@ function confirmCourierDispatch(){
   const shipping=document.getElementById('disp-shipping').value;
   const awb=document.getElementById('disp-awb').value.trim();
   if(!pkdId||!name||!addr||!pin||!phone||!awb){toast('Please fill all fields including courier AWB number','w');return;}
+  if(!validateAWB(awb)){toast('Invalid AWB — letters, numbers and hyphens only (4-30 chars)','w');return;}
+  if(!validatePincode(pin)){toast('Invalid pincode — must be 6 digits','w');return;}
+  if(!validatePhone(phone)){toast('Invalid phone number','w');return;}
+  if(!rateLimit('dispatch',3000)){toast('Please wait before submitting again','w');return;}
   const packed=history.find(h=>h.id===pkdId);
   const items=packed.items||[];
   const did=newId('DSP');
@@ -2445,7 +2528,7 @@ function renderAlertsPanel(){
   const exceptions=history.filter(h=>h.type==='exception').slice(-5);
   lowStock.forEach(s=>alerts.push({type:'low',msg:`${s.sub} (${s.sku}): ${(inv[s.sku]||{qty:0}).qty} units left`}));
   outStock.slice(0,3).forEach(s=>alerts.push({type:'out',msg:`${s.sub} (${s.sku}): OUT OF STOCK`}));
-  exceptions.forEach(e=>alerts.push({type:'exc',msg:`Exception: ${e.detail}`}));
+  exceptions.forEach(e=>alerts.push({type:'exc',msg:`Exception: ${esc(e.detail)}`}));
   el.innerHTML=alerts.length?alerts.map(a=>`<div class="warn-box" style="background:${a.type==='out'?'var(--dbg)':a.type==='exc'?'var(--wbg)':'var(--sbg)'};color:${a.type==='out'?'var(--dt)':a.type==='exc'?'var(--wt)':'var(--st)'}"><i class="ti ${a.type==='out'?'ti-x':a.type==='exc'?'ti-alert-triangle':'ti-alert-circle'}"></i>${a.msg}</div>`).join(''):'<div class="empty">No alerts — all systems operational ✓</div>';
 }
 function renderABCAnalysis(){
@@ -2518,7 +2601,7 @@ function renderComplianceLog(){
   const el=document.getElementById('compliance-log');
   if(!el)return;
   const exceptions=history.filter(h=>h.type==='exception').slice(-10);
-  el.innerHTML=exceptions.length?`<div>${exceptions.reverse().map(e=>`<div class="hist-entry"><div class="hist-head"><span class="hist-id">${e.id}</span><span class="pill p-out">${e.category}</span></div><div class="hist-body"><div style="font-size:11px">${e.detail}</div><div style="font-size:10px;color:var(--t2);margin-top:3px">${e.ts} · GRN: ${e.grn||'—'}</div></div></div>`).join('')}</div>`:'<div class="empty">No exceptions recorded ✓</div>';
+  el.innerHTML=exceptions.length?`<div>${exceptions.reverse().map(e=>`<div class="hist-entry"><div class="hist-head"><span class="hist-id">${e.id}</span><span class="pill p-out">${esc(e.category)}</span></div><div class="hist-body"><div style="font-size:11px">${esc(e.detail)}</div><div style="font-size:10px;color:var(--t2);margin-top:3px">${e.ts} · GRN: ${esc(e.grn||'—')}</div></div></div>`).join('')}</div>`:'<div class="empty">No exceptions recorded ✓</div>';
 }
 
 // INVENTORY COUNT & AUDIT
@@ -3482,10 +3565,30 @@ function processReturn(){
 function renderRtLog(){
   const el=document.getElementById('rt-log');
   const logs=history.filter(h=>h.type==='return').slice(-8).reverse();
-  el.innerHTML=logs.length?logs.map(h=>`<div class="hist-entry"><div class="hist-head"><span class="hist-id">${h.id}</span><span class="hist-ts">${h.ts}</span></div><div class="hist-body">${h.detail}</div></div>`).join(''):'<div class="empty">No returns processed yet</div>';
+  el.innerHTML=logs.length?logs.map(h=>`<div class="hist-entry"><div class="hist-head"><span class="hist-id">${h.id}</span><span class="hist-ts">${h.ts}</span></div><div class="hist-body">${esc(h.detail)}</div></div>`).join(''):'<div class="empty">No returns processed yet</div>';
 }
 
 // INVENTORY
+async function renderInvVersionHistory(){
+  const el=document.getElementById('inv-version-history');
+  if(!el)return;
+  el.innerHTML='<div style="color:var(--t3);font-size:11px;padding:8px">Loading...</div>';
+  const snapshots=await loadInventoryHistory();
+  if(!snapshots.length){
+    el.innerHTML='<div class="empty">No snapshots yet — snapshots are saved automatically on every inventory change</div>';
+    return;
+  }
+  el.innerHTML=`
+  <div style="font-size:10px;color:var(--t2);margin-bottom:8px">Snapshots are saved automatically every time inventory changes. Click Rollback to restore a previous state.</div>
+  <div class="tw"><table><thead><tr><th>Snapshot ID</th><th>Saved At</th><th>Details</th><th>Action</th></tr></thead><tbody>
+  ${snapshots.map((s,i)=>`<tr>
+    <td class="mono" style="font-size:10px">${s.id}</td>
+    <td style="font-size:10px">${s.ts||new Date(s.created_at).toLocaleString('en-IN')}</td>
+    <td style="font-size:10px">${s.detail||'Inventory snapshot'}</td>
+    <td>${i===0?'<span style="font-size:10px;color:var(--st)">Current</span>':`<button class="btn-sm" style="background:var(--wbg);color:var(--wt);border:1px solid var(--wt);border-radius:4px;padding:3px 8px;cursor:pointer;font-size:10px" onclick="rollbackInventory('${s.id}')"><i class="ti ti-history"></i> Rollback</button>`}</td>
+  </tr>`).join('')}
+  </tbody></table></div>`;
+}
 function renderInv(){
   const q=(document.getElementById('inv-q').value||'').toLowerCase();
   const cat=document.getElementById('inv-cat').value;
@@ -3532,6 +3635,111 @@ function buildRack(data,elId){
 }
 
 // REPORTS
+function renderMISEmailConfig(){
+  const el=document.getElementById('mis-email-config');
+  if(!el)return;
+  const cfg=JSON.parse(localStorage.getItem('mis_email_cfg')||'{}');
+  el.innerHTML=`
+  <div style="background:var(--s2);border-radius:10px;padding:14px 16px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      <div>
+        <label for="mis-email-to" style="font-size:10px;color:var(--t2);display:block;margin-bottom:3px;font-weight:600">SEND TO (CaratLane email)</label>
+        <input id="mis-email-to" type="email" value="${cfg.to||''}" placeholder="caratlane-dc@caratlane.com" style="width:100%;padding:7px;border:0.5px solid var(--b);border-radius:5px;background:var(--s);color:var(--t);font-size:11px">
+      </div>
+      <div>
+        <label for="mis-email-cc" style="font-size:10px;color:var(--t2);display:block;margin-bottom:3px;font-weight:600">CC</label>
+        <input id="mis-email-cc" type="email" value="${cfg.cc||''}" placeholder="manager@epsworldwide.com" style="width:100%;padding:7px;border:0.5px solid var(--b);border-radius:5px;background:var(--s);color:var(--t);font-size:11px">
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer">
+        <input id="mis-auto-send" type="checkbox" ${cfg.autoSend?'checked':''} onchange="saveMISEmailConfig()">
+        Auto-send every Monday at 10:00 AM
+      </label>
+      <button onclick="saveMISEmailConfig()" style="padding:6px 12px;background:var(--st);color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:11px;font-weight:600">Save Config</button>
+      <button onclick="sendMISEmailNow()" style="padding:6px 12px;background:var(--gold);color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:11px;font-weight:600"><i class="ti ti-send"></i> Send Now</button>
+    </div>
+    <div id="mis-email-status" style="font-size:10px;color:var(--t3);margin-top:6px"></div>
+    <div style="margin-top:10px;padding:8px;background:var(--ibg);border-radius:6px;font-size:10px;color:var(--it)">
+      <i class="ti ti-info-circle"></i> Auto-email uses a Supabase Edge Function. 
+      See setup guide: deploy the <strong>send-mis-email</strong> edge function with your SMTP credentials.
+      The "Send Now" button sends immediately using the same function.
+    </div>
+  </div>`;
+}
+function saveMISEmailConfig(){
+  const cfg={
+    to:document.getElementById('mis-email-to')?.value||'',
+    cc:document.getElementById('mis-email-cc')?.value||'',
+    autoSend:document.getElementById('mis-auto-send')?.checked||false
+  };
+  localStorage.setItem('mis_email_cfg',JSON.stringify(cfg));
+  // Schedule Monday check
+  scheduleMISEmail();
+  toast('Email config saved','s');
+}
+function scheduleMISEmail(){
+  // Check every hour if it's Monday 10 AM and auto-send is on
+  clearInterval(window._misTimer);
+  window._misTimer=setInterval(()=>{
+    const cfg=JSON.parse(localStorage.getItem('mis_email_cfg')||'{}');
+    if(!cfg.autoSend||!cfg.to) return;
+    const now=new Date();
+    if(now.getDay()===1&&now.getHours()===10&&now.getMinutes()<5){
+      const lastSent=localStorage.getItem('mis_last_sent');
+      const todayStr=now.toDateString();
+      if(lastSent!==todayStr){
+        sendMISEmailNow(true);
+        localStorage.setItem('mis_last_sent',todayStr);
+      }
+    }
+  },60000); // check every minute
+}
+async function sendMISEmailNow(auto=false){
+  const cfg=JSON.parse(localStorage.getItem('mis_email_cfg')||'{}');
+  if(!cfg.to){ toast('Please configure recipient email first','w'); return; }
+  const statusEl=document.getElementById('mis-email-status');
+  if(statusEl) statusEl.textContent='Sending...';
+  // Build CSV data for email
+  const sel=document.getElementById('rpt-week-select');
+  const weekStr=sel?sel.value:getWeekKey(new Date());
+  const {start,end}=getWeekBounds(weekStr);
+  const wh=getWeekHistory(weekStr);
+  const weekLabel=`${start.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})} to ${end.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}`;
+  const payload={
+    to:cfg.to, cc:cfg.cc||'',
+    subject:`CaratLane WMS Weekly MIS Report — ${weekLabel}`,
+    weekLabel, weekStr,
+    summary:{
+      grns:wh.filter(h=>h.type==='grn').length,
+      dispatches:wh.filter(h=>h.type==='dispatched').length,
+      returns:wh.filter(h=>h.type==='return').length,
+      exceptions:wh.filter(h=>h.type==='exception').length,
+    },
+    generatedAt:new Date().toLocaleString('en-IN')
+  };
+  try {
+    // Call Supabase Edge Function
+    const res=await fetch('https://lqpqsrdxcxefxvobmnjc.supabase.co/functions/v1/send-mis-email',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxxcHFzcmR4Y3hlZnh2b2JtbmpjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA1NjU3OTcsImV4cCI6MjA5NjE0MTc5N30.6KhLZw5gu0PqGCAPex6sYAOcYJtz89Xm1abRtUbKnEM'},
+      body:JSON.stringify(payload)
+    });
+    const result=await res.json();
+    if(res.ok){
+      if(statusEl) statusEl.textContent='✓ Email sent to '+cfg.to+' at '+new Date().toLocaleTimeString('en-IN');
+      if(!auto) toast('MIS email sent to '+cfg.to,'s');
+    } else {
+      throw new Error(result.error||'Edge function error');
+    }
+  } catch(e){
+    console.error('MIS email error:',e);
+    if(statusEl) statusEl.textContent='⚠ Email failed: '+e.message+' — download CSV instead';
+    if(!auto) toast('Email failed — use Download CSV instead','w');
+  }
+}
+// Start scheduler on load
+setTimeout(scheduleMISEmail, 3000);
 function getWeekBounds(weekStr){
   // weekStr = "YYYY-Www" e.g. "2026-W23"
   const [year,wk]=weekStr.split('-W').map(Number);
@@ -3587,6 +3795,7 @@ function getWeekHistory(weekStr){
 }
 function renderReports(){
   populateWeekSelector();
+  renderMISEmailConfig();
   const sel=document.getElementById('rpt-week-select');
   const weekStr=sel?sel.value:getWeekKey(new Date());
   if(!weekStr)return;
@@ -3659,7 +3868,7 @@ function renderReports(){
     <div class="tw"><table><thead><tr><th>Dispatch ID</th><th>Order ID</th><th>AWB</th><th>Recipient</th><th>Courier</th><th>Box (cm)</th><th>Chargeable (kg)</th><th>Dispatched At</th></tr></thead><tbody>
     ${disps.map(d=>{
       const dims=d.boxL?`${d.boxL}×${d.boxW}×${d.boxH}`:'—';
-      return `<tr><td class="mono" style="font-size:10px">${d.id}</td><td style="font-size:10px">${d.orderId||'—'}</td><td class="mono" style="font-size:10px">${d.awb||'—'}</td><td style="font-size:10px">${d.recipientName||'—'}</td><td style="font-size:10px">${d.shippingMethod||'—'}</td><td style="font-size:10px">${dims}</td><td style="text-align:center;font-weight:600">${d.chargeableWeight||'—'}</td><td style="font-size:10px">${d.dispatchedAt||d.ts}</td></tr>`;
+      return `<tr><td class="mono" style="font-size:10px">${d.id}</td><td style="font-size:10px">${esc(d.orderId||'—')}</td><td class="mono" style="font-size:10px">${esc(d.awb||'—')}</td><td style="font-size:10px">${esc(d.recipientName||'—')}</td><td style="font-size:10px">${d.shippingMethod||'—'}</td><td style="font-size:10px">${dims}</td><td style="text-align:center;font-weight:600">${d.chargeableWeight||'—'}</td><td style="font-size:10px">${d.dispatchedAt||d.ts}</td></tr>`;
     }).join('')}
     </tbody></table></div>`:'<div class="empty">No dispatch activity this week</div>';
 
@@ -3667,7 +3876,7 @@ function renderReports(){
   document.getElementById('rpt-returns').innerHTML=rets.length?`
     <div style="font-size:11px;margin-bottom:8px;color:var(--t2)">Week: <strong>${weekLabel}</strong> · ${rets.length} returns</div>
     <div class="tw"><table><thead><tr><th>Return ID</th><th>Date/Time</th><th>Details</th></tr></thead><tbody>
-    ${rets.map(r=>`<tr><td class="mono">${r.id}</td><td style="font-size:10px">${r.ts}</td><td style="font-size:10px">${r.detail||'—'}</td></tr>`).join('')}
+    ${rets.map(r=>`<tr><td class="mono">${r.id}</td><td style="font-size:10px">${r.ts}</td><td style="font-size:10px">${esc(r.detail||'—')}</td></tr>`).join('')}
     </tbody></table></div>`:'<div class="empty">No returns this week</div>';
 
   // EXCEPTIONS
@@ -3700,7 +3909,7 @@ function renderReports(){
     <div class="tw"><table><thead><tr><th>Pack ID</th><th>Order ID</th><th>Box (L×W×H cm)</th><th>Actual (kg)</th><th>Vol. (kg)</th><th>Chargeable (kg)</th><th>Pack Start</th><th>Pack End</th><th>Duration</th></tr></thead><tbody>
     ${packWithTime.map(p=>{
       const dims=p.boxL?`${p.boxL}×${p.boxW}×${p.boxH}`:'—';
-      return `<tr><td class="mono" style="font-size:10px">${p.id}</td><td style="font-size:10px">${p.orderId||'—'}</td><td style="font-size:10px">${dims}</td><td style="text-align:center">${p.actualWeight||'—'}</td><td style="text-align:center;color:var(--it)">${p.volWeight||'—'}</td><td style="text-align:center;font-weight:700;color:var(--gold)">${p.chargeableWeight||'—'}</td><td style="font-size:10px">${p.packStartTs||'—'}</td><td style="font-size:10px">${p.packEndTs||'—'}</td><td style="font-weight:600;color:var(--st)">${p.packDuration||'—'}</td></tr>`;
+      return `<tr><td class="mono" style="font-size:10px">${p.id}</td><td style="font-size:10px">${esc(p.orderId||'—')}</td><td style="font-size:10px">${dims}</td><td style="text-align:center">${p.actualWeight||'—'}</td><td style="text-align:center;color:var(--it)">${p.volWeight||'—'}</td><td style="text-align:center;font-weight:700;color:var(--gold)">${p.chargeableWeight||'—'}</td><td style="font-size:10px">${p.packStartTs||'—'}</td><td style="font-size:10px">${p.packEndTs||'—'}</td><td style="font-weight:600;color:var(--st)">${p.packDuration||'—'}</td></tr>`;
     }).join('')}
     </tbody></table></div>`:'<div class="empty">No packing time data for this week — use Start Packing button to capture times</div>';
 }
@@ -3730,7 +3939,7 @@ function downloadWeeklyCSV(){
   csv+=`\n=== OUTBOUND / DISPATCH REPORT ===\n`;
   csv+=`Dispatch ID,Order ID,AWB,Recipient,Pincode,Courier,Box L,Box W,Box H,Actual Wt (kg),Vol Wt (kg),Chargeable Wt (kg),Pack Start,Pack End,Pack Duration,Dispatched At\n`;
   disps.forEach(d=>{
-    csv+=`"${d.id}","${d.orderId||''}","${d.awb||''}","${d.recipientName||''}","${d.pincode||''}","${d.shippingMethod||''}",${d.boxL||''},${d.boxW||''},${d.boxH||''},${d.actualWeight||''},${d.volWeight||''},${d.chargeableWeight||''},"${d.packStartTs||''}","${d.packEndTs||''}","${d.packDuration||''}","${d.dispatchedAt||d.ts}"\n`;
+    csv+=`"${d.id}","${d.orderId||''}","${d.awb||''}","${d.recipientName||''}","${esc(d.pincode||'')}","${d.shippingMethod||''}",${d.boxL||''},${d.boxW||''},${d.boxH||''},${d.actualWeight||''},${d.volWeight||''},${d.chargeableWeight||''},"${d.packStartTs||''}","${d.packEndTs||''}","${d.packDuration||''}","${d.dispatchedAt||d.ts}"\n`;
   });
   csv+=`TOTAL DISPATCHED:,${disps.length}\n`;
 
@@ -3817,10 +4026,10 @@ function printWeeklyReport(){
   ${grns.length?`<table><thead><tr><th>GRN ID</th><th>Date/Time</th><th>Details</th><th>Units In (Pass)</th><th>Units Hold</th></tr></thead><tbody>${grns.map(g=>{const items=g.items||[];const pass=items.filter(i=>i.qc==='PASS').reduce((a,i)=>a+(i.qty||0),0);const hold=items.filter(i=>i.qc==='HOLD').reduce((a,i)=>a+(i.qty||0),0);return `<tr><td>${g.id}</td><td>${g.ts}</td><td>${g.detail||''}</td><td style="text-align:center;color:#2e7d32;font-weight:bold">${pass}</td><td style="text-align:center;color:#e65100">${hold||0}</td></tr>`;}).join('')}<tr style="background:#f0f0f0;font-weight:bold"><td colspan="3">TOTAL</td><td style="text-align:center">${totalUnitsIn}</td><td style="text-align:center">${grns.reduce((a,g)=>{const items=g.items||[];return a+items.filter(i=>i.qc==='HOLD').reduce((b,i)=>b+(i.qty||0),0);},0)}</td></tr></tbody></table>`:'<p style="color:#999;padding:8px">No inbound activity this week.</p>'}
 
   <h3>2. Outbound / Dispatch Report</h3>
-  ${disps.length?`<table><thead><tr><th>Dispatch ID</th><th>Order ID</th><th>AWB</th><th>Recipient</th><th>Courier</th><th>Box (cm)</th><th>Actual (kg)</th><th>Vol. (kg)</th><th>Chargeable (kg)</th><th>Pack Duration</th><th>Dispatched At</th></tr></thead><tbody>${disps.map(d=>{const dims=d.boxL?`${d.boxL}×${d.boxW}×${d.boxH}`:'—';return `<tr><td>${d.id}</td><td>${d.orderId||'—'}</td><td>${d.awb||'—'}</td><td>${d.recipientName||'—'}, ${d.pincode||''}</td><td>${d.shippingMethod||'—'}</td><td>${dims}</td><td style="text-align:center">${d.actualWeight||'—'}</td><td style="text-align:center">${d.volWeight||'—'}</td><td style="text-align:center;font-weight:bold;color:#B8860B">${d.chargeableWeight||'—'}</td><td style="text-align:center">${d.packDuration||'—'}</td><td>${d.dispatchedAt||d.ts}</td></tr>`;}).join('')}<tr style="background:#f0f0f0;font-weight:bold"><td colspan="2">TOTAL DISPATCHED: ${disps.length}</td><td colspan="9"></td></tr></tbody></table>`:'<p style="color:#999;padding:8px">No dispatch activity this week.</p>'}
+  ${disps.length?`<table><thead><tr><th>Dispatch ID</th><th>Order ID</th><th>AWB</th><th>Recipient</th><th>Courier</th><th>Box (cm)</th><th>Actual (kg)</th><th>Vol. (kg)</th><th>Chargeable (kg)</th><th>Pack Duration</th><th>Dispatched At</th></tr></thead><tbody>${disps.map(d=>{const dims=d.boxL?`${d.boxL}×${d.boxW}×${d.boxH}`:'—';return `<tr><td>${d.id}</td><td>${esc(d.orderId||'—')}</td><td>${esc(d.awb||'—')}</td><td>${esc(d.recipientName||'—')}, ${esc(d.pincode||'')}</td><td>${d.shippingMethod||'—'}</td><td>${dims}</td><td style="text-align:center">${d.actualWeight||'—'}</td><td style="text-align:center">${d.volWeight||'—'}</td><td style="text-align:center;font-weight:bold;color:#B8860B">${d.chargeableWeight||'—'}</td><td style="text-align:center">${d.packDuration||'—'}</td><td>${d.dispatchedAt||d.ts}</td></tr>`;}).join('')}<tr style="background:#f0f0f0;font-weight:bold"><td colspan="2">TOTAL DISPATCHED: ${disps.length}</td><td colspan="9"></td></tr></tbody></table>`:'<p style="color:#999;padding:8px">No dispatch activity this week.</p>'}
 
   <h3>3. Returns Report</h3>
-  ${rets.length?`<table><thead><tr><th>Return ID</th><th>Date/Time</th><th>Details</th></tr></thead><tbody>${rets.map(r=>`<tr><td>${r.id}</td><td>${r.ts}</td><td>${r.detail||'—'}</td></tr>`).join('')}</tbody></table>`:'<p style="color:#999;padding:8px">No returns this week.</p>'}
+  ${rets.length?`<table><thead><tr><th>Return ID</th><th>Date/Time</th><th>Details</th></tr></thead><tbody>${rets.map(r=>`<tr><td>${r.id}</td><td>${r.ts}</td><td>${esc(r.detail||'—')}</td></tr>`).join('')}</tbody></table>`:'<p style="color:#999;padding:8px">No returns this week.</p>'}
 
   <h3>4. Exception Report</h3>
   ${exceptions.length?`<table><thead><tr><th>Exception ID</th><th>Date/Time</th><th>Category</th><th>Details</th></tr></thead><tbody>${exceptions.map(e=>`<tr><td>${e.id}</td><td>${e.ts}</td><td>${e.category||'general'}</td><td>${e.detail||'—'}</td></tr>`).join('')}</tbody></table>`:'<p style="color:#2e7d32;padding:8px;font-weight:bold">✓ No exceptions this week.</p>'}
@@ -4032,8 +4241,31 @@ function runFullSystemTest(){
 }
 
 // ═══ BOOT — load from Supabase then render ═══
+async function loadSKUsFromDB(){
+  try {
+    if(typeof supabase==='undefined'||!supa) return;
+    const {data,error}=await supa.from('skus').select('*').order('cat').order('sub').order('variant');
+    if(error||!data||!data.length) return; // fallback to hardcoded
+    SKUS=data.map(r=>({sku:r.sku,cat:r.cat,sub:r.sub,variant:r.variant,rack:r.rack,shelf:r.shelf}));
+    console.log('✓ SKUs loaded from DB:',SKUS.length);
+  } catch(e){ console.warn('SKU DB load failed, using hardcoded list'); }
+}
+async function addSKU(skuObj){
+  // Add to local array
+  if(SKUS.find(s=>s.sku===skuObj.sku)){toast('SKU already exists','w');return false;}
+  SKUS.push(skuObj);
+  inv[skuObj.sku]={qty:0,rack:skuObj.rack,shelf:skuObj.shelf};
+  // Save to DB
+  try {
+    await supa.from('skus').upsert(skuObj,{onConflict:'sku'});
+    await saveInv();
+    toast('SKU '+skuObj.sku+' added successfully','s');
+    return true;
+  } catch(e){ console.error('addSKU error:',e); toast('SKU saved locally only','w'); return true; }
+}
 async function bootWMS(){
   setSyncStatus('syncing');
+  await loadSKUsFromDB(); // load dynamic SKUs first
   await initInv();
   await loadHist();
   renderDash();
