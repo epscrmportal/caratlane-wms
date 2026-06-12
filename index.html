@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self' https://*.supabase.co https://cdn.jsdelivr.net; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' https://*.supabase.co https://cdn.jsdelivr.net; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://cdn.jsdelivr.net;">
 <title>CaratLane WMS — EPS Worldwide · EPS-WH-SOP-001 v1.0</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
 <style>
@@ -381,14 +381,14 @@ tr:hover td{background:var(--s2)}
     <div id="sync-status" style="display:flex;align-items:center;gap:4px;color:var(--t3)"><i class="ti ti-cloud" style="font-size:13px"></i><span style="font-size:10px">Connecting...</span></div>
     <i class="ti ti-bell" style="font-size:16px;color:var(--t2)"></i>
     <span class="abadge" id="alert-ct">0</span>
-    <div class="user-menu" id="user-menu" style="display:none">
-      <button class="user-menu-btn" onclick="toggleUserMenu()">
+    <div class="user-menu" id="user-menu" style="display:flex;align-items:center">
+      <button class="user-menu-btn" onclick="toggleUserMenu()" style="background:none;border:1px solid var(--b);border-radius:6px;padding:6px 10px;color:var(--t);font-size:11px;cursor:pointer;display:flex;align-items:center;gap:6px;font-weight:600">
         <i class="ti ti-user-circle" style="font-size:15px"></i>
         <span id="user-menu-name">User</span>
         <span id="user-role-badge" class="auth-role-badge" style="background:var(--gold);color:#fff;font-size:9px;padding:2px 6px">—</span>
         <i class="ti ti-chevron-down" style="font-size:11px"></i>
       </button>
-      <div class="user-dropdown" id="user-dropdown">
+      <div class="user-dropdown" id="user-dropdown" style="position:fixed;top:55px;right:20px;background:var(--s);border:1px solid var(--b);border-radius:8px;min-width:180px;z-index:10000;box-shadow:0 8px 24px rgba(0,0,0,0.3);display:none">
         <div class="user-dropdown-item" style="pointer-events:none;opacity:.6" id="user-info-item">
           <i class="ti ti-id-badge"></i><span id="user-email-display">—</span>
         </div>
