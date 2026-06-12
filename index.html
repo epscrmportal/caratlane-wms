@@ -4736,17 +4736,32 @@ function applyRoleRestrictions(){
 }
 
 async function authLogout(){
-  await logAudit('LOGOUT','session',currentUser?.id,null,{email:currentProfile?.email});
-  await supa.auth.signOut();
-  currentUser=null; currentProfile=null;
-  document.getElementById('auth-screen').style.display='flex';
-  document.getElementById('user-menu').style.display='none';
-  document.getElementById('auth-password').value='';
-  document.getElementById('user-dropdown').classList.remove('open');
-  // Remove viewer restrictions if any
-  const vr=document.getElementById('viewer-restrictions');
-  if(vr) vr.remove();
-  toast('Signed out successfully','s');
+  try {
+    console.log('Logging out...');
+    // Sign out from Supabase
+    await supa.auth.signOut();
+    // Clear all storage
+    localStorage.clear();
+    sessionStorage.clear();
+    // Clear global variables
+    currentUser = null;
+    currentProfile = null;
+    // Hide app, show login
+    document.querySelector('.wrap').style.display = 'none';
+    document.getElementById('auth-screen').style.display = 'flex';
+    document.getElementById('user-menu').style.display = 'none';
+    // Close any open dropdowns
+    const dropdown = document.getElementById('user-dropdown');
+    if(dropdown) dropdown.style.display = 'none';
+    console.log('✓ Logged out successfully - login screen shown');
+  } catch(err){
+    console.error('Logout error:', err);
+    // Force logout even if error
+    localStorage.clear();
+    sessionStorage.clear();
+    document.querySelector('.wrap').style.display = 'none';
+    document.getElementById('auth-screen').style.display = 'flex';
+  }
 }
 
 async function authResetPassword(){
@@ -4761,12 +4776,15 @@ async function authResetPassword(){
 
 function showResetForm(){ document.getElementById('auth-login-form').style.display='none'; document.getElementById('auth-reset-form').style.display='block'; }
 function showLoginForm(){ document.getElementById('auth-reset-form').style.display='none'; document.getElementById('auth-login-form').style.display='block'; }
-function toggleUserMenu(){ document.getElementById('user-dropdown').classList.toggle('open'); }
-document.addEventListener('click',e=>{ if(!e.target.closest('.user-menu')) document.getElementById('user-dropdown')?.classList.remove('open'); });
+function toggleUserMenu(){
+  const dropdown = document.getElementById('user-dropdown');
+  if(!dropdown) return;
+  const isOpen = dropdown.style.display === 'block';
+  dropdown.style.display = isOpen ? 'none' : 'block';
+  console.log('Dropdown toggled:', dropdown.style.display);
+}
 
-// ═══════════════════════════════════════════
-// USER MANAGEMENT (Admin only)
-// ═══════════════════════════════════════════
+
 function showCreateUserForm(){ document.getElementById('create-user-form').style.display='block'; }
 function hideCreateUserForm(){ document.getElementById('create-user-form').style.display='none'; }
 
