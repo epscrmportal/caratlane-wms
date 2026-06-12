@@ -1700,7 +1700,11 @@ async function syncPackingQueue(){
   } catch(e){ console.error('syncPackingQueue error:', JSON.stringify(e), e?.message); }
 }
 // Real-time listener — refresh UI when another user makes changes
+let realtimeSyncSetup = false;
 function setupRealtimeSync(){
+  if(realtimeSyncSetup) return; // Already set up - prevent double subscription
+  realtimeSyncSetup = true;
+  
   supa.channel('wms-changes')
     .on('postgres_changes', {event:'*', schema:'public', table:'inventory'}, () => {
       initInv().then(()=>{ renderDash(); renderInv(); renderRack(); });
