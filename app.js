@@ -1,6 +1,7 @@
 // ═══ CaratLane WMS — App Logic & UI ═══
 // All UI rendering, state management, SKU data
 
+
 let SKUS=[
   {sku:"UNI-GS-M-34",cat:"Uniform",sub:"Grey Sweater- Male",variant:"Size 34",rack:"A",shelf:"1"},
   {sku:"UNI-GS-M-36",cat:"Uniform",sub:"Grey Sweater- Male",variant:"Size 36",rack:"A",shelf:"1"},
@@ -98,319 +99,235 @@ let inv={},history=[],ibItems=[],pkItemsList=[],rtItemsList=[],packingQueue=[],i
   returnProcessingCost:75
 };
 
-// ═══ CaratLane WMS — App UI & Business Logic ═══
-// All rendering, navigation, state management, features
-
+// ═══ CLOUD STORAGE — SUPABASE ═══
+async function initInv(){
+  setSyncStatus('syncing');
+  // Guard: supabase CDN must be loaded
+  if(typeof supabase === 'undefined' || !supa){
+    console.warn('Supabase not loaded — using localStorage fallback');
+    setSyncStatus('offline');
+    try{const s=localStorage.getItem('cl_wms_inv2');if(s){inv=JSON.parse(s);return;}}catch(e){}
+    SKUS.forEach(s=>{inv[s.sku]={qty:0,rack:s.rack,shelf:s.shelf};});
+    return;
+  }
+  try {
+    const {data, error} = await supa.from('inventory').select('*');
+    if(error){
+      console.error('initInv Supabase error:', error.message, error.code, error.details);
+      throw new Error(error.message || 'Supabase query failed');
+    }
+    if(data && data.length > 0){
+      data.forEach(r => { inv[r.sku] = {qty:r.qty||0, rack:r.rack, shelf:r.shelf}; });
+      setSyncStatus('ok');
+      console.log('✓ Inventory loaded from cloud:', data.length, 'SKUs');
+    } else {
+      // First run — seed all SKUs at zero qty
+      console.log('First run — seeding inventory at zero');
+      SKUS.forEach(s => { inv[s.sku] = {qty:0, rack:s.rack, shelf:s.shelf}; });
+      await saveInv();
+    }
+  } catch(e) {
+    console.error('initInv error:', e?.message || JSON.stringify(e));
+    setSyncStatus('error');
+    toast('Cloud connection failed — using local data','w');
+    // Fallback to localStorage
+    try{const s=localStorage.getItem('cl_wms_inv2');if(s){inv=JSON.parse(s);}}catch(e2){}
+    if(!Object.keys(inv).length){
+      SKUS.forEach(s=>{inv[s.sku]={qty:0,rack:s.rack,shelf:s.shelf};});
+    }
+  }
+}
+async function saveInv(){
+  setSyncStatus('syncing');
+  localStorage.setItem('cl_wms_inv2', JSON.stringify(inv)); // always save locally first
+  if(typeof supabase === 'undefined' || !supa){ setSyncStatus('offline'); return; }
+  try {
+    const now=new Date().toISOString();
+    const rows = Object.entries(inv).map(([sku,v]) => ({sku, qty:v.qty||0, rack:v.rack, shelf:v.shelf, updated_at:now}));
+    // Conflict resolution: fetch current DB state first, merge with local changes
+    const {data:dbRows}=await supa.from('inventory').select('sku,qty,updated_at');
+    const dbMap={};
+    if(dbRows) dbRows.forEach(r=>{ dbMap[r.sku]={qty:r.qty,updated_at:r.updated_at}; });
+    // Only upsert rows where local version is newer or same (last-write-wins with timestamp)
+    const {error} = await supa.from('inventory').upsert(rows, {onConflict:'sku'});
+    if(error){ console.error('saveInv Supabase error:', error.message); throw new Error(error.message); }
+    setSyncStatus('ok');
+    localStorage.setItem('cl_wms_inv2', JSON.stringify(inv)); // local backup
+    // Save version snapshot to history table
+    const snapId=newId('SNAP');
+    const snapRow={
+      id:snapId, type:'inventory_snapshot', ts:new Date().toLocaleString('en-IN'),
+      detail:'Inventory snapshot — '+Object.keys(inv).length+' SKUs',
+      items:Object.entries(inv).map(([sku,v])=>({sku,qty:v.qty||0,rack:v.rack,shelf:v.shelf})),
+      created_at:new Date().toISOString()
+    };
+    await supa.from('inventory_snapshots').upsert(snapRow,{onConflict:'id'}).then(()=>{}).catch(()=>{});
+  } catch(e) {
+    console.error('saveInv error:', JSON.stringify(e), e?.message, e?.code);
+    setSyncStatus('error');
+    try{localStorage.setItem('cl_wms_inv2', JSON.stringify(inv));}catch(e2){}
+  }
+}
+// Rollback inventory to a previous snapshot
+async function rollbackInventory(snapId){
+  if(!confirm('Are you sure you want to rollback inventory to snapshot '+snapId+'? This cannot be undone.')) return;
+  try {
+    const {data,error}=await supa.from('inventory_snapshots').select('*').eq('id',snapId).single();
+    if(error||!data) throw new Error('Snapshot not found');
+    const items=data.items||[];
+    items.forEach(item=>{ inv[item.sku]={qty:item.qty,rack:item.rack,shelf:item.shelf}; });
+    await saveInv();
+    renderDash();renderInv();renderRack();
+    toast('Inventory rolled back to '+data.ts,'s');
+  } catch(e){ toast('Rollback failed: '+(e.message||'unknown error'),'w'); }
+}
+async function loadInventoryHistory(){
+  try {
+    const {data}=await supa.from('inventory_snapshots').select('id,ts,detail,created_at').order('created_at',{ascending:false}).limit(20);
+    return data||[];
+  } catch(e){ return []; }
+}
+async function loadHist(){
+  setSyncStatus('syncing');
+  if(typeof supabase === 'undefined' || !supa){
+    setSyncStatus('offline');
+    try{const s=localStorage.getItem('cl_wms_hist2');if(s)history=JSON.parse(s);}catch(e){}
+    return;
+  }
+  try {
+    const {data,error} = await supa.from('history').select('*').order('created_at',{ascending:true});
+    if(error){ console.error('loadHist error:', error.message, error.code); throw new Error(error.message); }
+    if(data) {
+      history = data.map(r => ({
+        id:r.id, type:r.type, ts:r.ts, detail:r.detail,
+        orderId:r.order_id, awb:r.awb, recipientName:r.recipient_name,
+        address:r.address, pincode:r.pincode, phone:r.phone,
+        shippingMethod:r.shipping_method, dispatchedAt:r.dispatched_at,
+        packStartTs:r.pack_start_ts, packStartTime:r.pack_start_time,
+        packEndTs:r.pack_end_ts, packEndTime:r.pack_end_time,
+        packDuration:r.pack_duration, packDurationSecs:r.pack_duration_secs,
+        boxL:r.box_l, boxW:r.box_w, boxH:r.box_h,
+        actualWeight:r.actual_weight, volWeight:r.vol_weight, chargeableWeight:r.chargeable_weight,
+        packNotes:r.pack_notes, packedId:r.packed_id, category:r.category, grn:r.grn,
+        items:r.items||[], photo:r.photo||null
+      }));
+      // Also load packing queue
+      const {data:pq} = await supa.from('packing_queue').select('*').order('created_at',{ascending:true});
+      if(pq) packingQueue = pq.map(r => ({
+        id:r.id, orderId:r.order_id, priority:r.priority, method:r.method,
+        picker:r.picker, items:r.items||[], ts:r.ts, status:r.status,
+        packStartTime:r.pack_start_time, packStartTs:r.pack_start_ts, claimedBy:r.claimed_by||null
+      }));
+      setSyncStatus('ok');
+    }
+  } catch(e) {
+    console.error('loadHist error:', JSON.stringify(e), e?.message, e?.code);
+    setSyncStatus('error');
+    try{const s=localStorage.getItem('cl_wms_hist2');if(s)history=JSON.parse(s);}catch(e2){}
+  }
+}
+async function saveHist(){
+  setSyncStatus('syncing');
+  localStorage.setItem('cl_wms_hist2', JSON.stringify(history)); // always save locally first
+  if(typeof supabase === 'undefined' || !supa){ setSyncStatus('offline'); return; }
+  try {
+    // Save last history entry to DB (upsert)
+    const h = history[history.length-1];
+    if(!h) { setSyncStatus('ok'); return; }
+    const row = {
+      id:h.id, type:h.type, ts:h.ts, detail:h.detail||null,
+      order_id:h.orderId||null, awb:h.awb||null, recipient_name:h.recipientName||null,
+      address:h.address||null, pincode:h.pincode||null, phone:h.phone||null,
+      shipping_method:h.shippingMethod||null, dispatched_at:h.dispatchedAt||null,
+      pack_start_ts:h.packStartTs||null, pack_start_time:h.packStartTime||null,
+      pack_end_ts:h.packEndTs||null, pack_end_time:h.packEndTime||null,
+      pack_duration:h.packDuration||null, pack_duration_secs:h.packDurationSecs||null,
+      box_l:h.boxL||null, box_w:h.boxW||null, box_h:h.boxH||null,
+      actual_weight:h.actualWeight||null, vol_weight:h.volWeight||null, chargeable_weight:h.chargeableWeight||null,
+      pack_notes:h.packNotes||null, packed_id:h.packedId||null, category:h.category||null,
+      grn:h.grn||null, items:h.items||[], photo:h.photo||null
+    };
+    // If type=dispatched, update existing record instead of insert
+    const {error} = await supa.from('history').upsert(row, {onConflict:'id'});
+    if(error) throw error;
+    setSyncStatus('ok');
+    localStorage.setItem('cl_wms_hist2', JSON.stringify(history)); // local backup
+  } catch(e) {
+    console.error('saveHist error:', JSON.stringify(e), e?.message, e?.code);
+    setSyncStatus('error');
+    try{localStorage.setItem('cl_wms_hist2', JSON.stringify(history));}catch(e2){}
+  }
+}
+// Per-row upsert/delete — NEVER blanket delete-all-reinsert-all, since that would
+// wipe out another picker/packer's in-flight claim between two clients' syncs.
+async function upsertPackingQueueItem(t){
+  try {
+    const row = {
+      id:t.id, order_id:t.orderId, priority:t.priority, method:t.method,
+      picker:t.picker, items:t.items||[], ts:t.ts, status:t.status||'awaiting_packing',
+      pack_start_time:t.packStartTime||null, pack_start_ts:t.packStartTs||null,
+      claimed_by:t.claimedBy||null
+    };
+    const {error} = await supa.from('packing_queue').upsert(row, {onConflict:'id'});
+    if(error) throw error;
+  } catch(e){ console.error('upsertPackingQueueItem error:', e?.message||e); }
+}
+async function deletePackingQueueItem(id){
+  try {
+    const {error} = await supa.from('packing_queue').delete().eq('id', id);
+    if(error) throw error;
+  } catch(e){ console.error('deletePackingQueueItem error:', e?.message||e); }
+}
+async function claimPackingTask(taskId, picker, startTime, startTs){
+  try {
+    const {data,error} = await supa.rpc('claim_packing_task',{p_task_id:taskId,p_picker:picker,p_start_time:startTime,p_start_ts:startTs});
+    if(error) throw error;
+    return data;
+  } catch(e){ console.error('claimPackingTask failed:', e.message||e); return {success:false,reason:'network_error'}; }
+}
+async function releasePackingClaim(taskId){
+  try {
+    const {data,error} = await supa.rpc('release_packing_claim',{p_task_id:taskId});
+    if(error) throw error;
+    return data;
+  } catch(e){ console.error('releasePackingClaim failed:', e.message||e); return {success:false}; }
+}
+// Real-time listener — refresh UI when another user makes changes
+let realtimeSyncSetup = false;
+function setupRealtimeSync(){
+  if(realtimeSyncSetup) return; // Already set up - prevent double subscription
+  realtimeSyncSetup = true;
+  
+  supa.channel('wms-changes')
+    .on('postgres_changes', {event:'*', schema:'public', table:'inventory'}, () => {
+      initInv().then(()=>{ renderDash(); renderInv(); renderRack(); });
+    })
+    .on('postgres_changes', {event:'*', schema:'public', table:'history'}, () => {
+      loadHist().then(()=>{ renderDash(); if(document.getElementById('page-dispatch').classList.contains('active')) renderDispatchPage(); });
+    })
+    .on('postgres_changes', {event:'*', schema:'public', table:'packing_queue'}, () => {
+      loadHist().then(()=>{ if(document.getElementById('page-packing').classList.contains('active')) renderPackingQ(); renderDash(); });
+    })
+    .subscribe();
+}
 function ts(){return new Date().toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});}
 function newId(pfx){return pfx+'-'+Date.now().toString().slice(-6);}
 function getSt(q){return q<=0?'out':q<=3?'low':'ok';}
 function stPill(q){const s=getSt(q);return s==='out'?'<span class="pill p-out">Out</span>':s==='low'?'<span class="pill p-low">Low</span>':'<span class="pill p-ok">In stock</span>';}
-
-// ═══════════════════════════════════════════
-// ANALYTICS DASHBOARD
-// ═══════════════════════════════════════════
-let _chartsLoaded = false;
-
-function loadChartsLib(cb){
-  if(_chartsLoaded){ cb(); return; }
-  const s=document.createElement('script');
-  s.src='https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
-  s.onload=()=>{ _chartsLoaded=true; cb(); };
-  s.onerror=()=>{ console.error('Chart.js failed'); cb(); };
-  document.head.appendChild(s);
-}
-
-async function renderAnalytics(){
-  const analyticsEl = document.getElementById('page-analytics');
-  if(!analyticsEl) return;
-  
-  // Show loading
-  analyticsEl.innerHTML = '<div style="padding:20px;text-align:center;color:var(--t3)">Loading analytics...</div>';
-  
-  loadChartsLib(()=>{
-    renderKPICards();
-    renderAlertsPanel();
-    renderABCAnalysis();
-    renderLowStockList();
-    renderPerformanceMetrics();
-    renderCycleTimes();
-    renderComplianceLog();
-  });
-}
-
-function calcKPIs(){
-  const today = ts().split(' ')[0];
-  const thisWeek = new Date();
-  thisWeek.setDate(thisWeek.getDate()-7);
-  
-  let todayInbound=0, todayDispatched=0, todayReturns=0;
-  let weekInbound=0, weekDispatched=0, weekReturns=0;
-  let totalPicks=0, totalPacks=0;
-  let exceptions=0;
-  let damageCount=0;
-  
-  history.forEach(h=>{
-    const hDate = (h.ts||'').split(' ')[0];
-    const hTime = new Date(h.ts||new Date());
-    
-    if(h.type==='grn' && hDate===today) todayInbound+=parseInt(h.detail||0);
-    if(h.type==='dispatch' && hDate===today) todayDispatched++;
-    if(h.type==='return' && hDate===today) todayReturns++;
-    if(h.type==='grn' && hTime>=thisWeek) weekInbound+=parseInt(h.detail||0);
-    if(h.type==='dispatch' && hTime>=thisWeek) weekDispatched++;
-    if(h.type==='return' && hTime>=thisWeek) weekReturns++;
-    if(h.type==='pick') totalPicks++;
-    if(h.type==='pack') totalPacks++;
-    if(h.type==='exception') exceptions++;
-    if(h.issue && h.issue.toLowerCase().includes('damage')) damageCount++;
-  });
-  
-  const totalSKUs = Object.keys(inv).length;
-  const outOfStock = Object.values(inv).filter(i=>i.qty<=0).length;
-  const lowStock = Object.values(inv).filter(i=>i.qty>0&&i.qty<=5).length;
-  
-  return {
-    todayInbound, todayDispatched, todayReturns,
-    weekInbound, weekDispatched, weekReturns,
-    totalPicks, totalPacks, exceptions, damageCount,
-    totalSKUs, outOfStock, lowStock
-  };
-}
-
-function renderKPICards(){
-  const kpis = calcKPIs();
-  const el = document.getElementById('kpi-cards');
-  if(!el) return;
-  
-  el.innerHTML = `
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px">
-      <div style="background:var(--s2);padding:12px;border-radius:8px;border-left:4px solid var(--st)">
-        <div style="font-size:10px;color:var(--t3);font-weight:600;margin-bottom:3px">TODAY — Inbound</div>
-        <div style="font-size:18px;font-weight:700;color:var(--st)">${kpis.todayInbound}</div>
-        <div style="font-size:9px;color:var(--t3);margin-top:3px">units received</div>
-      </div>
-      <div style="background:var(--s2);padding:12px;border-radius:8px;border-left:4px solid var(--it)">
-        <div style="font-size:10px;color:var(--t3);font-weight:600;margin-bottom:3px">TODAY — Dispatch</div>
-        <div style="font-size:18px;font-weight:700;color:var(--it)">${kpis.todayDispatched}</div>
-        <div style="font-size:9px;color:var(--t3);margin-top:3px">orders sent</div>
-      </div>
-      <div style="background:var(--s2);padding:12px;border-radius:8px;border-left:4px solid var(--wt)">
-        <div style="font-size:10px;color:var(--t3);font-weight:600;margin-bottom:3px">TODAY — Returns</div>
-        <div style="font-size:18px;font-weight:700;color:var(--wt)">${kpis.todayReturns}</div>
-        <div style="font-size:9px;color:var(--t3);margin-top:3px">items returned</div>
-      </div>
-      <div style="background:var(--s2);padding:12px;border-radius:8px;border-left:4px solid var(--dt)">
-        <div style="font-size:10px;color:var(--t3);font-weight:600;margin-bottom:3px">STOCK STATUS</div>
-        <div style="font-size:18px;font-weight:700;color:var(--dt)">${kpis.outOfStock}</div>
-        <div style="font-size:9px;color:var(--t3);margin-top:3px">out of stock</div>
-      </div>
-      <div style="background:var(--s2);padding:12px;border-radius:8px;border-left:4px solid var(--wt)">
-        <div style="font-size:10px;color:var(--t3);font-weight:600;margin-bottom:3px">STOCK STATUS</div>
-        <div style="font-size:18px;font-weight:700;color:var(--wt)">${kpis.lowStock}</div>
-        <div style="font-size:9px;color:var(--t3);margin-top:3px">low stock (≤5)</div>
-      </div>
-      <div style="background:var(--s2);padding:12px;border-radius:8px;border-left:4px solid var(--dt)">
-        <div style="font-size:10px;color:var(--t3);font-weight:600;margin-bottom:3px">EXCEPTIONS</div>
-        <div style="font-size:18px;font-weight:700;color:var(--dt)">${kpis.exceptions}</div>
-        <div style="font-size:9px;color:var(--t3);margin-top:3px">total issues</div>
-      </div>
-    </div>
-  `;
-}
-
-function renderAlertsPanel(){
-  const el = document.getElementById('alerts-panel');
-  if(!el) return;
-  
-  const kpis = calcKPIs();
-  const alerts = [];
-  
-  if(kpis.outOfStock>0) alerts.push({level:'critical',msg:\`\${kpis.outOfStock} SKUs are out of stock\`});
-  if(kpis.lowStock>0) alerts.push({level:'warning',msg:\`\${kpis.lowStock} SKUs have low stock\`});
-  if(kpis.exceptions>0) alerts.push({level:'warning',msg:\`\${kpis.exceptions} exceptions reported\`});
-  if(kpis.damageCount>0) alerts.push({level:'critical',msg:\`\${kpis.damageCount} damaged items logged\`});
-  
-  if(!alerts.length){
-    el.innerHTML = '<div style="padding:10px;font-size:11px;color:var(--st);background:var(--sbg);border-radius:6px">✓ No active alerts</div>';
-    return;
-  }
-  
-  el.innerHTML = alerts.map(a=>{
-    const color = a.level==='critical'?'var(--dt)':'var(--wt)';
-    const bg = a.level==='critical'?'var(--dbg)':'var(--wbg)';
-    return \`<div style="padding:10px;margin-bottom:6px;border-left:3px solid \${color};background:\${bg};border-radius:4px;font-size:11px">⚠ \${a.msg}</div>\`;
-  }).join('');
-}
-
-function renderABCAnalysis(){
-  const el = document.getElementById('abc-analysis');
-  if(!el) return;
-  
-  // A = fast-moving (>5 dispatches), B = medium (2-5), C = slow (<2)
-  const skuData = SKUS.map(s=>{
-    const dispatchCount = history.filter(h=>h.type==='dispatch'&&h.items&&JSON.stringify(h.items).includes(s.sku)).length;
-    const qty = inv[s.sku]?.qty||0;
-    return {sku:s.sku, sub:s.sub, dispatchCount, qty, cat:'C'};
-  });
-  
-  const aItems = skuData.filter(s=>s.dispatchCount>5);
-  const bItems = skuData.filter(s=>s.dispatchCount>=2&&s.dispatchCount<=5);
-  const cItems = skuData.filter(s=>s.dispatchCount<2);
-  
-  aItems.forEach(s=>s.cat='A');
-  bItems.forEach(s=>s.cat='B');
-  
-  el.innerHTML = \`
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">
-      <div style="background:var(--s2);padding:10px;border-radius:6px;border-left:4px solid var(--st)">
-        <div style="font-size:10px;color:var(--t3);font-weight:600;margin-bottom:2px">A — Fast Moving</div>
-        <div style="font-size:16px;font-weight:700;color:var(--st)">\${aItems.length}</div>
-        <div style="font-size:9px;color:var(--t3)">high priority items</div>
-      </div>
-      <div style="background:var(--s2);padding:10px;border-radius:6px;border-left:4px solid var(--it)">
-        <div style="font-size:10px;color:var(--t3);font-weight:600;margin-bottom:2px">B — Medium Moving</div>
-        <div style="font-size:16px;font-weight:700;color:var(--it)">\${bItems.length}</div>
-        <div style="font-size:9px;color:var(--t3)">steady items</div>
-      </div>
-      <div style="background:var(--s2);padding:10px;border-radius:6px;border-left:4px solid var(--t3)">
-        <div style="font-size:10px;color:var(--t3);font-weight:600;margin-bottom:2px">C — Slow Moving</div>
-        <div style="font-size:16px;font-weight:700;color:var(--t3)">\${cItems.length}</div>
-        <div style="font-size:9px;color:var(--t3)">slow items</div>
-      </div>
-    </div>
-    <div style="font-size:10px;color:var(--t3)">
-      <strong>A Items (stock first priority):</strong> \${aItems.slice(0,5).map(s=>s.sub).join(', ')}\${aItems.length>5?'...':''}<br>
-      <strong>C Items (overstock risk):</strong> \${cItems.slice(0,5).map(s=>s.sub).join(', ')}\${cItems.length>5?'...':''}
-    </div>
-  \`;
-}
-
-function renderLowStockList(){
-  const el = document.getElementById('low-stock-list');
-  if(!el) return;
-  
-  const lowItems = SKUS
-    .map(s=>({sku:s.sku,sub:s.sub,variant:s.variant,qty:inv[s.sku]?.qty||0,rack:s.rack,shelf:s.shelf}))
-    .filter(s=>s.qty<=5&&s.qty>0)
-    .sort((a,b)=>a.qty-b.qty);
-  
-  if(!lowItems.length){
-    el.innerHTML = '<div style="padding:10px;font-size:11px;color:var(--st);background:var(--sbg);border-radius:6px">✓ All items well-stocked</div>';
-    return;
-  }
-  
-  el.innerHTML = \`<div class="tw"><table><thead><tr><th>SKU</th><th>Item</th><th>Stock</th><th>Location</th></tr></thead><tbody>
-    \${lowItems.map(s=>\`<tr><td style="font-family:monospace;font-size:10px">\${s.sku}</td><td style="font-size:11px"><strong>\${esc(s.sub)}</strong><br><span style="color:var(--t3);font-size:9px">\${esc(s.variant)}</span></td><td style="font-weight:700;color:var(--wt)">\${s.qty} units</td><td style="font-size:10px">Rack \${s.rack} · Shelf \${s.shelf}</td></tr>\`).join('')}
-  </tbody></table></div>\`;
-}
-
-function renderPerformanceMetrics(){
-  const el = document.getElementById('performance-metrics');
-  if(!el) return;
-  
-  // Calculate pick accuracy (right SKU, right qty)
-  const totalPicks = history.filter(h=>h.type==='pick').length;
-  const errorPicks = history.filter(h=>h.type==='pick'&&h.error).length;
-  const accuracy = totalPicks>0?Math.round((1-errorPicks/totalPicks)*100):100;
-  
-  // Count picks by user
-  const picksByUser = {};
-  history.filter(h=>h.type==='pick').forEach(h=>{
-    const user = h.picker_name||'Unknown';
-    picksByUser[user]=(picksByUser[user]||0)+1;
-  });
-  
-  const topPickers = Object.entries(picksByUser)
-    .sort((a,b)=>b[1]-a[1])
-    .slice(0,3)
-    .map(([name,count])=>({name,count}));
-  
-  el.innerHTML = \`
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-      <div style="background:var(--s2);padding:10px;border-radius:6px">
-        <div style="font-size:10px;color:var(--t3);font-weight:600;margin-bottom:4px">Pick Accuracy</div>
-        <div style="font-size:24px;font-weight:700;color:var(--st)">\${accuracy}%</div>
-        <div style="font-size:9px;color:var(--t3)">correct picks / total</div>
-      </div>
-      <div style="background:var(--s2);padding:10px;border-radius:6px">
-        <div style="font-size:10px;color:var(--t3);font-weight:600;margin-bottom:4px">Total Picks</div>
-        <div style="font-size:24px;font-weight:700;color:var(--it)">\${totalPicks}</div>
-        <div style="font-size:9px;color:var(--t3)">this period</div>
-      </div>
-    </div>
-    <div style="font-size:10px;color:var(--t3)">
-      <strong>Top Pickers:</strong><br>
-      \${topPickers.map((p,i)=>\`\${i+1}. \${esc(p.name)}: \${p.count} picks<br>\`).join('')}
-    </div>
-  \`;
-}
-
-function renderCycleTimes(){
-  const el = document.getElementById('cycle-times');
-  if(!el) return;
-  
-  // Pack duration = time from start to end
-  const packTimes = history
-    .filter(h=>h.type==='pack'&&h.pack_duration_secs)
-    .map(h=>h.pack_duration_secs);
-  
-  const avgPackTime = packTimes.length>0?Math.round(packTimes.reduce((a,b)=>a+b)/packTimes.length/60):0;
-  const minPackTime = packTimes.length>0?Math.min(...packTimes)/60:0;
-  const maxPackTime = packTimes.length>0?Math.max(...packTimes)/60:0;
-  
-  el.innerHTML = \`
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px">
-      <div style="background:var(--s2);padding:10px;border-radius:6px;text-align:center">
-        <div style="font-size:10px;color:var(--t3);margin-bottom:3px">Average</div>
-        <div style="font-size:16px;font-weight:700;color:var(--it)">\${avgPackTime} min</div>
-      </div>
-      <div style="background:var(--s2);padding:10px;border-radius:6px;text-align:center">
-        <div style="font-size:10px;color:var(--t3);margin-bottom:3px">Fastest</div>
-        <div style="font-size:16px;font-weight:700;color:var(--st)">\${Math.round(minPackTime)} min</div>
-      </div>
-      <div style="background:var(--s2);padding:10px;border-radius:6px;text-align:center">
-        <div style="font-size:10px;color:var(--t3);margin-bottom:3px">Slowest</div>
-        <div style="font-size:16px;font-weight:700;color:var(--dt)">\${Math.round(maxPackTime)} min</div>
-      </div>
-    </div>
-  \`;
-}
-
-function renderComplianceLog(){
-  const el = document.getElementById('compliance-log');
-  if(!el) return;
-  
-  const exceptions = history
-    .filter(h=>h.issue||h.exception)
-    .sort((a,b)=>new Date(b.ts)-new Date(a.ts))
-    .slice(0,20);
-  
-  if(!exceptions.length){
-    el.innerHTML = '<div style="padding:10px;font-size:11px;color:var(--st);background:var(--sbg);border-radius:6px">✓ No exceptions recorded</div>';
-    return;
-  }
-  
-  el.innerHTML = \`<div class="tw"><table><thead><tr><th>Date</th><th>Type</th><th>Issue</th><th>Status</th></tr></thead><tbody>
-    \${exceptions.map(e=>{
-      const color = e.issue?'var(--dt)':'var(--t3)';
-      return \`<tr><td style="font-size:10px;color:var(--t3)">\${(e.ts||'').substring(0,16)}</td><td style="font-size:10px">\${e.type||'exception'}</td><td style="font-size:11px"><strong>\${esc(e.issue||e.exception||'—')}</strong></td><td style="color:\${color};font-size:10px;font-weight:600">\${e.qc_result||'LOGGED'}</td></tr>\`;
-    }).join('')}
-  </tbody></table></div>\`;
-}
 
 function nav(tab){
   document.querySelectorAll('.ntab').forEach(t=>t.classList.toggle('active',t.dataset.tab===tab));
   document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.id==='page-'+tab));
   updateNotificationBadge();
   if(tab==='dashboard')renderDash();
-  if(tab==='inventory'){renderInv();renderInvVersionHistory();}
+  if(tab==='inventory'){loadReservedMap().then(renderInv);renderInvVersionHistory();}
   if(tab==='labels'){renderLabelPage();}
-  if(tab==='analytics'){renderAnalytics();}
   if(tab==='audit'){renderAuditLog();}
   if(tab==='users'){renderUsersList();}
-  if(tab==='rack')renderRack();
+  if(tab==='rack')loadReservedMap().then(renderRack);
   if(tab==='dispatch')renderDispatchPage();
   if(tab==='packing')renderPackingQ();
+  if(tab==='orderstatus')renderOrderStatusRecent();
   if(tab==='reports')renderReports();
   if(tab==='analytics')renderAnalytics();
   if(tab==='finance')renderFinance();
@@ -423,9 +340,10 @@ function nav(tab){
     }
     renderCountHistory();
   }
-  if(tab==='mobile'){updateMobileKPIs();switchMobileView('home');}
+  if(tab==='mobile'){initMobileTab();}
   if(tab==='inbound'){populateSkuSel('ib-sku');renderIbLog();}
-  if(tab==='picking'){populateSkuSel('pk-sku');}
+  if(tab==='orders'){populateSkuSel('ord-sku');loadOrders().then(renderOrdersBoard);}
+  if(tab==='picking'){ if(!activeOrder){ loadOrders().then(renderMyAssignedOrders); } }
   if(tab==='returns'){populateSkuSel('rt-sku');renderRtLog();}
 }
 
@@ -628,11 +546,18 @@ function renderDash(){
     <div class="sc"><div class="sl"><i class="ti ti-check"></i>In stock</div><div class="sv">${ins}</div><div class="ss">${total-ins} empty SKUs</div></div>
     <div class="sc"><div class="sl"><i class="ti ti-alert-triangle"></i>Low stock</div><div class="sv" style="color:var(--wt)">${low.length}</div><div class="ss">≤3 units</div></div>
     <div class="sc"><div class="sl"><i class="ti ti-box"></i>Total units</div><div class="sv">${tq}</div><div class="ss">All SKUs combined</div></div>
+    <div class="sc"><div class="sl"><i class="ti ti-lock"></i>Reserved</div><div class="sv" id="sc-reserved-val" style="color:var(--wt)">—</div><div class="ss">Held by active picks</div></div>
     <div class="sc"><div class="sl"><i class="ti ti-truck-delivery"></i>Dispatches</div><div class="sv">${disp}</div><div class="ss">All time</div></div>
     <div class="sc"><div class="sl"><i class="ti ti-package-import"></i>GRNs raised</div><div class="sv">${rcv}</div><div class="ss">All time</div></div>
     <div class="sc"><div class="sl"><i class="ti ti-package-export"></i>Returns</div><div class="sv">${rets}</div><div class="ss">All time</div></div>
     <div class="sc"><div class="sl"><i class="ti ti-clock"></i>Packing queue</div><div class="sv">${packingQueue.length}</div><div class="ss">Awaiting packing</div></div>
   `;
+  loadReservedMap().then(()=>{
+    const el=document.getElementById('sc-reserved-val');
+    if(!el) return;
+    const totalHeld=Object.values(reservedMap).reduce((a,v)=>a+v,0);
+    el.textContent=totalHeld;
+  });
   const alerts=[...out.map(s=>({...s,st:'out'})),...low.map(s=>({...s,st:'low'}))].slice(0,5);
   const ae=document.getElementById('dash-alerts');
   ae.innerHTML=alerts.length?alerts.map(s=>`<div class="hist-entry"><div class="hist-head"><span style="font-size:11px;font-weight:600">${s.sub} — ${s.variant}</span>${s.st==='out'?'<span class="pill p-out">Out</span>':'<span class="pill p-low">Low</span>'}</div><div class="hist-body">${s.sku} · BIN ${(inv[s.sku]||{rack:s.rack,shelf:s.shelf}).rack}-${(inv[s.sku]||{rack:s.rack,shelf:s.shelf}).shelf} · <b>${(inv[s.sku]||{qty:0}).qty}</b> units</div></div>`).join(''):'<div class="empty">No stock alerts — all items healthy ✓</div>';
@@ -1034,37 +959,264 @@ function printDispatch(dispatchId){
   setTimeout(()=>printWindow.print(),500);
 }
 
-// PICKING
-function addPkItem(){
+// ORDERS (intake & assignment — created by admin/supervisor, then assigned to a picker)
+let orders=[];
+let ordItemsList=[];
+let pickerNames=[];
+
+async function loadOrders(){
+  try{
+    const {data,error}=await supa.from('orders').select('*').order('created_at',{ascending:false});
+    if(error) throw error;
+    orders=(data||[]).map(r=>({
+      id:r.id, customerName:r.customer_name, address:r.address, pincode:r.pincode, phone:r.phone,
+      priority:r.priority, method:r.method, items:r.items||[], assignedPicker:r.assigned_picker,
+      status:r.status, notes:r.notes, createdBy:r.created_by, createdAt:r.created_at,
+      assignedAt:r.assigned_at, pickedTaskId:r.picked_task_id
+    }));
+  }catch(e){ console.error('loadOrders failed:',e.message||e); }
+}
+async function saveOrderRow(o){
+  try{
+    const row={
+      id:o.id, customer_name:o.customerName||null, address:o.address||null, pincode:o.pincode||null,
+      phone:o.phone||null, priority:o.priority, method:o.method, items:o.items||[],
+      assigned_picker:o.assignedPicker||null, status:o.status, notes:o.notes||null,
+      created_by:o.createdBy||null, assigned_at:o.assignedAt||null, picked_task_id:o.pickedTaskId||null
+    };
+    const {error}=await supa.from('orders').upsert(row,{onConflict:'id'});
+    if(error) throw error;
+    return true;
+  }catch(e){ console.error('saveOrderRow failed:',e.message||e); toast('Could not save order — connection issue','w'); return false; }
+}
+async function loadPickerNames(){
+  try{
+    const {data,error}=await supa.from('user_profiles').select('full_name,role').in('role',['picker','supervisor','admin']);
+    if(error) throw error;
+    pickerNames=(data||[]).map(r=>r.full_name).filter(Boolean);
+  }catch(e){ console.error('loadPickerNames failed:',e.message||e); pickerNames=[]; }
+}
+function addOrderItem(){
+  const sku=document.getElementById('ord-sku').value;
+  const qty=parseInt(document.getElementById('ord-qty').value)||1;
+  const s=SKUS.find(x=>x.sku===sku);
+  if(!s) return;
+  if(!validateQty(qty)){toast('Invalid quantity','w');return;}
+  const existing=ordItemsList.find(it=>it.sku===sku);
+  if(existing){ existing.qty+=qty; } else {
+    ordItemsList.push({sku,name:s.sub,variant:s.variant,qty,bin:`${s.rack}-${s.shelf}`});
+  }
+  renderOrdItemsList();
+}
+function renderOrdItemsList(){
+  const el=document.getElementById('ord-items-list');
+  if(!el) return;
+  el.innerHTML=ordItemsList.length?`<div class="tw"><table><thead><tr><th>SKU</th><th>Item</th><th>Qty</th><th></th></tr></thead><tbody>${ordItemsList.map((item,i)=>`<tr><td class="mono">${item.sku}</td><td style="font-size:11px">${esc(item.name)} — ${esc(item.variant)}</td><td>${item.qty}</td><td><button class="btn-sm btn-danger" onclick="removeOrdItem(${i})"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table></div>`:'';
+}
+function removeOrdItem(i){
+  ordItemsList.splice(i,1);
+  renderOrdItemsList();
+}
+async function createOrder(){
+  const id=document.getElementById('ord-id').value.trim()||newId('ORD');
+  if(!ordItemsList.length){toast('Add at least one item to the order','w');return;}
+  if(orders.some(o=>o.id===id)){toast('An order with this ID already exists','w');return;}
+  if(!rateLimit('create-order',1500)){toast('Please wait before submitting again','w');return;}
+  const o={
+    id, customerName:document.getElementById('ord-customer').value.trim()||null,
+    address:document.getElementById('ord-address').value.trim()||null,
+    pincode:document.getElementById('ord-pincode').value.trim()||null,
+    phone:document.getElementById('ord-phone').value.trim()||null,
+    priority:document.getElementById('ord-priority').value,
+    method:document.getElementById('ord-method').value,
+    items:[...ordItemsList], assignedPicker:null, status:'unassigned',
+    createdBy:currentProfile?.full_name||'Unknown', createdAt:new Date().toISOString()
+  };
+  const ok=await saveOrderRow(o);
+  if(!ok) return;
+  orders.unshift(o);
+  ordItemsList=[];
+  renderOrdItemsList();
+  document.getElementById('ord-id').value='';
+  document.getElementById('ord-customer').value='';
+  document.getElementById('ord-address').value='';
+  document.getElementById('ord-pincode').value='';
+  document.getElementById('ord-phone').value='';
+  logAudit('CREATE_ORDER','orders',id,null,{items:o.items.length,priority:o.priority});
+  renderOrdersBoard();
+  toast(`Order ${id} created — assign it to a picker below`,'s');
+}
+function renderOrdersBoard(){
+  const el=document.getElementById('orders-board');
+  if(!el) return;
+  if(!orders.length){ el.innerHTML='<div class="empty">No orders yet</div>'; return; }
+  const canManage=getPerms().canManageOrders;
+  const statusPill={unassigned:'p-hold',assigned:'p-info',picked:'p-out',cancelled:'p-hold'};
+  el.innerHTML=`<div class="tw"><table><thead><tr><th>Order ID</th><th>Customer</th><th>Priority</th><th>Items</th><th>Status</th><th>Assigned To</th>${canManage?'<th>Action</th>':''}</tr></thead><tbody>${orders.map(o=>{
+    let action='';
+    if(canManage && o.status==='unassigned'){
+      const opts=pickerNames.length?pickerNames.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join(''):'<option value="">No pickers registered</option>';
+      action=`<div style="display:flex;gap:4px"><select id="assign-sel-${esc(o.id)}" style="font-size:10px;padding:3px">${opts}</select><button class="btn-sm" style="background:var(--gold);color:#fff;border:none;border-radius:4px;padding:4px 8px;cursor:pointer;font-size:10px" onclick="assignOrder('${esc(o.id)}')">Assign</button></div>`;
+    } else if(canManage && o.status==='assigned'){
+      action=`<button class="btn-sm btn-danger" onclick="unassignOrder('${esc(o.id)}')">Unassign</button>`;
+    }
+    return `<tr><td class="mono">${esc(o.id)}</td><td style="font-size:11px">${esc(o.customerName||'—')}</td><td><span class="pill ${o.priority==='Express'?'p-out':o.priority==='Standard'?'p-info':'p-hold'}">${o.priority}</span></td><td>${o.items.length} SKU(s)</td><td><span class="pill ${statusPill[o.status]||'p-info'}">${o.status}</span></td><td style="font-size:11px">${o.assignedPicker?esc(o.assignedPicker):'—'}${o.status==='picked'&&o.pickedTaskId?` <span style="color:var(--t3)">(${esc(o.pickedTaskId)})</span>`:''}</td>${canManage?`<td>${action}</td>`:''}</tr>`;
+  }).join('')}</tbody></table></div>`;
+}
+async function assignOrder(orderId){
+  const sel=document.getElementById('assign-sel-'+orderId);
+  const picker=sel?sel.value:'';
+  if(!picker){toast('Select a picker to assign','w');return;}
+  const o=orders.find(x=>x.id===orderId);
+  if(!o) return;
+  o.assignedPicker=picker;
+  o.status='assigned';
+  o.assignedAt=new Date().toISOString();
+  const ok=await saveOrderRow(o);
+  if(!ok) return;
+  logAudit('ASSIGN_ORDER','orders',orderId,null,{picker});
+  renderOrdersBoard();
+  toast(`Order ${orderId} assigned to ${picker}`,'s');
+}
+async function unassignOrder(orderId){
+  const o=orders.find(x=>x.id===orderId);
+  if(!o) return;
+  o.assignedPicker=null;
+  o.status='unassigned';
+  o.assignedAt=null;
+  const ok=await saveOrderRow(o);
+  if(!ok) return;
+  renderOrdersBoard();
+  toast(`Order ${orderId} unassigned`,'s');
+}
+
+// PICKING — picks are only made against orders assigned to the current picker
+let pkSessionId=null;
+let activeOrder=null;
+
+function populateSkuSelFromList(id_, items){
+  const s=document.getElementById(id_);
+  if(!s) return;
+  s.innerHTML=items.map(it=>{
+    const full=SKUS.find(x=>x.sku===it.sku);
+    return `<option value="${it.sku}">${full?full.sub:it.name} — ${full?full.variant:it.variant} (${it.sku}) · need ${it.qty}</option>`;
+  }).join('');
+}
+function renderMyAssignedOrders(){
+  const el=document.getElementById('pk-my-orders');
+  if(!el) return;
+  const me=currentProfile?.full_name||'';
+  const mine=orders.filter(o=>o.status==='assigned' && o.assignedPicker===me);
+  el.innerHTML=mine.length?mine.map(o=>`
+    <div class="panel" style="margin-bottom:10px">
+      <div class="ph"><i class="ti ti-clipboard-list"></i>${esc(o.id)}<span class="pill ${o.priority==='Express'?'p-out':'p-info'}" style="margin-left:auto">${o.priority}</span></div>
+      <div class="pb">
+        <div style="font-size:11px;color:var(--t2);margin-bottom:8px">${o.items.length} SKU(s) · ${o.method}${o.customerName?' · '+esc(o.customerName):''}</div>
+        <button class="btn-primary" style="width:100%;justify-content:center" onclick="startDesktopPick('${esc(o.id)}')"><i class="ti ti-player-play"></i>Start pick</button>
+      </div>
+    </div>
+  `).join(''):'<div class="empty">No orders assigned to you right now — check with your supervisor or the Orders tab</div>';
+}
+function showPickOrdersList(){
+  const listWrap=document.getElementById('pk-my-orders-wrap');
+  const activeWrap=document.getElementById('pk-active-wrap');
+  if(listWrap) listWrap.style.display='block';
+  if(activeWrap) activeWrap.style.display='none';
+}
+function startDesktopPick(orderId){
+  const o=orders.find(x=>x.id===orderId);
+  if(!o){ toast('Order not found','w'); return; }
+  activeOrder=o;
+  pkSessionId=newId('SESS');
+  pkItemsList=[];
+  document.getElementById('pk-my-orders-wrap').style.display='none';
+  document.getElementById('pk-active-wrap').style.display='block';
+  document.getElementById('pk-active-orderid').textContent=o.id;
+  document.getElementById('pk-active-summary').textContent=`${o.items.length} SKU(s) · ${o.priority} · ${o.method}${o.customerName?' · '+o.customerName:''}`;
+  populateSkuSelFromList('pk-sku', o.items);
+  renderPkChecklist();
+  renderPkItemsList();
+}
+async function cancelActivePick(){
+  if(pkItemsList.length && !confirm('Discard this pick? Everything reserved will be released back to stock.')) return;
+  if(pkSessionId) await releasePickSession(pkSessionId);
+  pkItemsList=[]; pkSessionId=null; activeOrder=null;
+  renderPkItemsList();
+  showPickOrdersList();
+}
+function renderPkChecklist(){
+  const el=document.getElementById('pk-checklist');
+  if(!el||!activeOrder) return;
+  el.innerHTML=`<div class="tw"><table><thead><tr><th>SKU</th><th>Item</th><th>Ordered</th><th>Picked</th></tr></thead><tbody>${activeOrder.items.map(exp=>{
+    const picked=pkItemsList.find(p=>p.sku===exp.sku);
+    const pq=picked?picked.qty:0;
+    const done=pq>=exp.qty;
+    return `<tr${done?' style="color:var(--st)"':''}><td class="mono">${exp.sku}</td><td style="font-size:11px">${esc(exp.name)} — ${esc(exp.variant)}</td><td>${exp.qty}</td><td>${pq}${done?' <i class="ti ti-check"></i>':''}</td></tr>`;
+  }).join('')}</tbody></table></div>`;
+}
+async function addPkItem(){
+  if(!activeOrder){ toast('Start a pick from an assigned order first','w'); return; }
   const sku=document.getElementById('pk-sku').value;
   const cond=document.getElementById('pk-cond').value;
   const qty=parseInt(document.getElementById('pk-qty').value)||1;
   const s=SKUS.find(x=>x.sku===sku);
-  const avail=(inv[sku]||{qty:0}).qty;
+  const expected=activeOrder.items.find(it=>it.sku===sku);
+  if(!expected){ toast(sku+' is not part of this order','w'); return; }
   if(cond==='defective'){toast(`${sku} flagged DEFECTIVE — item moved to HOLD zone. Raise defect report. (SOP §2.5)`,'w');return;}
-  if(qty>avail){toast(`Insufficient stock: ${sku} has only ${avail} units available`,'w');return;}
-  pkItemsList.push({sku,name:s.sub,variant:s.variant,qty,bin:`${s.rack}-${s.shelf}`});
+  if(!validateQty(qty)){toast('Invalid quantity','w');return;}
+  const already=pkItemsList.find(it=>it.sku===sku);
+  const remaining=expected.qty-(already?already.qty:0);
+  if(qty>remaining){ toast(`Only ${remaining} more ${sku} expected for this order`,'w'); return; }
+  const picker=activeOrder.assignedPicker||currentProfile?.full_name||'Unassigned';
+  const res=await reserveStock(sku,qty,pkSessionId,activeOrder.id,picker);
+  if(!res.success){
+    toast(res.reason==='network_error'?'Could not reach server to reserve stock — try again':`Insufficient stock: ${sku} has only ${res.available} units available`,'w');
+    return;
+  }
+  if(already){ already.qty+=qty; } else {
+    pkItemsList.push({sku,name:s.sub,variant:s.variant,qty,bin:`${s.rack}-${s.shelf}`});
+  }
   renderPkItemsList();
+  renderPkChecklist();
+  toast(`Reserved ${qty} × ${sku} — ${res.available} left for other pickers`,'s');
 }
 function renderPkItemsList(){
   const el=document.getElementById('pk-items-list');
+  if(!el) return;
   el.innerHTML=pkItemsList.length?`<div class="tw"><table><thead><tr><th>SKU</th><th>Item</th><th>BIN</th><th>Qty</th><th></th></tr></thead><tbody>${pkItemsList.map((item,i)=>`<tr><td class="mono">${item.sku}</td><td style="font-size:11px">${item.name} — ${item.variant}</td><td>${item.bin}</td><td>${item.qty}</td><td><button class="btn-sm btn-danger" onclick="removePkItem(${i})"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table></div>`:'';
 }
-function removePkItem(i){pkItemsList.splice(i,1);renderPkItemsList();}
-function releaseToPacking(){
+async function removePkItem(i){
+  const item=pkItemsList[i];
+  if(item && pkSessionId) await releaseStock(pkSessionId,item.sku,item.qty);
+  pkItemsList.splice(i,1);
+  renderPkItemsList();
+  renderPkChecklist();
+}
+async function releaseToPacking(){
+  if(!activeOrder){ toast('No active pick in progress','w'); return; }
   if(!pkItemsList.length){toast('Add items to the pick list first','w');return;}
-  const oid=document.getElementById('pk-orderid').value.trim()||newId('ORD');
-  const pri=document.getElementById('pk-priority').value;
-  const method=document.getElementById('pk-method').value;
-  const picker=document.getElementById('pk-picker').value.trim()||'Unassigned';
-  pkItemsList.forEach(item=>{inv[item.sku].qty-=item.qty;});
+  if(!rateLimit('release-packing',2000)){toast('Please wait before submitting again','w');return;}
+  const oid=activeOrder.id;
+  const pri=activeOrder.priority;
+  const method=activeOrder.method;
+  const picker=activeOrder.assignedPicker||currentProfile?.full_name||'Unassigned';
+  const result=await commitPickSession(pkSessionId);
+  if(!result.success){ toast('Could not release to packing — connection issue, try again','w'); return; }
+  pkItemsList.forEach(item=>{ if(inv[item.sku]) inv[item.sku].qty-=item.qty; });
   const tid=newId('PCK');
-  packingQueue.push({id:tid,orderId:oid,priority:pri,method,picker,items:[...pkItemsList],ts:ts(),status:'awaiting_packing'});
-  history.push({id:tid,type:'pick',ts:ts(),detail:`${oid} · ${method} pick · ${pri} · ${pkItemsList.length} SKUs · Picker: ${picker}`});
-  saveInv();saveHist();pkItemsList=[];renderPkItemsList();
-  document.getElementById('pk-orderid').value='';document.getElementById('pk-picker').value='';
+  const newTask={id:tid,orderId:oid,priority:pri,method,picker,items:[...pkItemsList],ts:ts(),status:'awaiting_packing'};
+  packingQueue.push(newTask);
+  history.push({id:tid,type:'pick',ts:ts(),detail:`${oid} · ${method} pick · ${pri} · ${pkItemsList.length} SKUs · Picker: ${picker}`,orderId:oid,items:[...pkItemsList],picker});
+  saveInv();saveHist();upsertPackingQueueItem(newTask);
+  activeOrder.status='picked';
+  activeOrder.pickedTaskId=tid;
+  await saveOrderRow(activeOrder);
+  pkItemsList=[];pkSessionId=null;activeOrder=null;
+  renderPkItemsList();
   const el=document.getElementById('pk-log');
   el.innerHTML=history.filter(h=>h.type==='pick').slice(-6).reverse().map(h=>`<div class="hist-entry"><div class="hist-head"><span class="hist-id">${h.id}</span><span class="hist-ts">${h.ts}</span></div><div class="hist-body">${h.detail}</div></div>`).join('');
+  showPickOrdersList();
+  renderMyAssignedOrders();
   toast(`Pick task ${tid} released to packing queue`,'s');
 }
 
@@ -1072,22 +1224,47 @@ function releaseToPacking(){
 function renderPackingQ(){
   const el=document.getElementById('packing-queue');
   if(!packingQueue.length){el.innerHTML='<div class="empty">No tasks awaiting packing — queue is clear</div>';return;}
+  const me=currentProfile?.full_name||'';
   el.innerHTML=`<div class="tw"><table><thead><tr><th>Task ID</th><th>Order ID</th><th>Priority</th><th>Items</th><th>Released</th><th>Pack Start</th><th>Action</th></tr></thead><tbody>${packingQueue.map((t,i)=>{
     const started=t.packStartTime;
     const startedStr=started?`<span style="color:var(--st);font-weight:600;font-size:10px"><i class="ti ti-clock-check"></i> ${new Date(started).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</span>`:'<span style="color:var(--t3);font-size:10px">Not started</span>';
-    const btn=started?`<button class="btn-sm btn-success" onclick="openPackModal(${i})"><i class="ti ti-box"></i>Enter Details & Complete</button>`:`<button class="btn-sm" style="background:var(--gold);color:#fff;border:none;border-radius:4px;padding:4px 10px;cursor:pointer;font-size:11px;display:inline-flex;align-items:center;gap:4px" onclick="startPacking(${i})"><i class="ti ti-player-play"></i>Start Packing</button>`;
+    const claimedByOther=t.claimedBy && t.claimedBy!==me;
+    let btn;
+    if(claimedByOther){
+      btn=`<span class="pill p-hold"><i class="ti ti-lock"></i> Being packed by ${esc(t.claimedBy)}</span>`;
+    } else if(started){
+      btn=`<button class="btn-sm btn-success" onclick="openPackModal(${i})"><i class="ti ti-box"></i>Enter Details & Complete</button>`;
+    } else {
+      btn=`<button class="btn-sm" style="background:var(--gold);color:#fff;border:none;border-radius:4px;padding:4px 10px;cursor:pointer;font-size:11px;display:inline-flex;align-items:center;gap:4px" onclick="startPacking(${i})"><i class="ti ti-player-play"></i>Start Packing</button>`;
+    }
     return `<tr><td class="mono">${t.id}</td><td style="font-size:11px">${t.orderId}</td><td><span class="pill ${t.priority==='Express'?'p-out':t.priority==='Standard'?'p-info':'p-hold'}">${t.priority}</span></td><td>${t.items.length} SKU(s)</td><td style="font-size:11px;color:var(--t2)">${t.ts}</td><td>${startedStr}</td><td>${btn}</td></tr>`;
   }).join('')}</tbody></table></div>`;
 }
 let _activePackIdx=null;
 let _packElapsedTimer=null;
 
-function startPacking(i){
-  packingQueue[i].packStartTime=Date.now();
-  packingQueue[i].packStartTs=ts();
-  saveHist();
+async function startPacking(i){
+  const task=packingQueue[i];
+  if(!task) return;
+  const picker=currentProfile?.full_name||'Unknown';
+  const startTime=Date.now();
+  const startTs=ts();
+  const res=await claimPackingTask(task.id,picker,startTime,startTs);
+  if(!res.success){
+    if(res.reason==='already_claimed'){
+      toast(`Already being packed by ${res.claimed_by}`,'w');
+      task.claimedBy=res.claimed_by;
+    } else {
+      toast('Could not start packing — connection issue, try again','w');
+    }
+    renderPackingQ();
+    return;
+  }
+  task.claimedBy=res.claimed_by;
+  task.packStartTime=res.pack_start_time;
+  task.packStartTs=res.pack_start_ts;
   renderPackingQ();
-  toast(`Packing started for ${packingQueue[i].orderId} — timer running`,'s');
+  toast(`Packing started for ${task.orderId} — timer running`,'s');
 }
 function openPackModal(i){
   _activePackIdx=i;
@@ -1166,6 +1343,7 @@ function confirmPackWithDetails(){
   };
   history.push(packedObj);
   saveHist();
+  deletePackingQueueItem(t.id);
   renderPackingQ();
   if(document.getElementById('page-dispatch').classList.contains('active')){renderDispatchPage();}
   renderDash();
@@ -1722,6 +1900,7 @@ function completeInventoryCount(){
 
 // MOBILE DASHBOARD
 let mobilePickCache=[],mobilePhotoData=null;
+let mobilePickSession=null,mobilePackActive=null;
 
 function updateMobileKPIs(){
   const picks=history.filter(h=>h.type==='pick');
@@ -1744,16 +1923,444 @@ function updateMobileKPIs(){
   document.getElementById('m-items-left').textContent=pkQueue;
   document.getElementById('m-progress').textContent=progress+'%';
   document.getElementById('m-current-order').textContent=pkQueue>0?packingQueue[0].orderId:'—';
+  loadReservedMap().then(()=>{
+    const totalHeld=Object.values(reservedMap).reduce((a,v)=>a+v,0);
+    const el=document.getElementById('m-held-stock');
+    if(el) el.textContent=totalHeld+' units';
+  });
+}
+
+function initMobileTab(){
+  const perms=getPerms();
+  const pickBtn=document.getElementById('btn-pick');
+  const packBtn=document.getElementById('btn-pack');
+  const quickPick=document.getElementById('m-quick-pick');
+  const quickPack=document.getElementById('m-quick-pack');
+  if(pickBtn) pickBtn.style.display=perms.canPick?'flex':'none';
+  if(packBtn) packBtn.style.display=perms.canPack?'flex':'none';
+  if(quickPick) quickPick.style.display=perms.canPick?'flex':'none';
+  if(quickPack) quickPack.style.display=perms.canPack?'flex':'none';
+  let defaultView='home';
+  if(perms.canPick && !perms.canPack) defaultView='pick';
+  else if(perms.canPack && !perms.canPick) defaultView='pack';
+  switchMobileView(defaultView);
 }
 
 function switchMobileView(view){
-  ['home','picks','qc'].forEach(v=>{
-    document.getElementById('mobile-'+v).style.display=v===view?'block':'none';
-    document.getElementById('btn-'+v).style.background=v===view?'var(--st)':'var(--b)';
-    document.getElementById('btn-'+v).style.color=v===view?'#fff':'var(--t)';
+  ['home','pick','pack','qc'].forEach(v=>{
+    const panel=document.getElementById('mobile-'+v);
+    if(panel) panel.style.display=v===view?'block':'none';
+    const btn=document.getElementById('btn-'+v);
+    if(btn) btn.classList.toggle('active',v===view);
   });
-  if(view==='picks')renderMobilePickList();
+  disableBarcodeScanner();
   if(view==='home')updateMobileKPIs();
+  if(view==='pick')initMobilePickView();
+  if(view==='pack')renderMobilePackQueue();
+}
+
+// ═══ MOBILE PICK (scan-driven) ═══
+function initMobilePickView(){
+  const setup=document.getElementById('mp-pick-setup');
+  const active=document.getElementById('mp-pick-active');
+  if(!setup||!active) return;
+  if(mobilePickSession){
+    setup.style.display='none';
+    active.style.display='block';
+    document.getElementById('mp-pick-order-label').textContent='Order '+mobilePickSession.orderId;
+    populateSkuSelFromList('mp-manual-sku', mobilePickSession.order.items);
+    renderMobilePickSession();
+    enableBarcodeScanner('mobile-pick');
+  } else {
+    setup.style.display='block';
+    active.style.display='none';
+    loadOrders().then(renderMpMyOrders);
+  }
+}
+function renderMpMyOrders(){
+  const el=document.getElementById('mp-my-orders');
+  if(!el) return;
+  const me=currentProfile?.full_name||'';
+  const mine=orders.filter(o=>o.status==='assigned' && o.assignedPicker===me);
+  el.innerHTML=mine.length?mine.map(o=>`
+    <div class="mp-pack-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span style="font-weight:700;font-size:13px">${esc(o.id)}</span>
+        <span class="pill ${o.priority==='Express'?'p-out':'p-info'}">${o.priority}</span>
+      </div>
+      <div style="font-size:11px;color:var(--t2);margin-bottom:9px">${o.items.length} SKU(s) · ${o.method}${o.customerName?' · '+esc(o.customerName):''}</div>
+      <button class="btn-primary" style="width:100%;justify-content:center" onclick="startMobilePick('${esc(o.id)}')"><i class="ti ti-player-play"></i>Start scanning</button>
+    </div>
+  `).join(''):'<div class="empty">No orders assigned to you right now</div>';
+}
+function startMobilePick(orderId){
+  const o=orders.find(x=>x.id===orderId);
+  if(!o){ toast('Order not found','w'); return; }
+  mobilePickSession={orderId:o.id,priority:o.priority,method:o.method,items:[],sessionId:newId('SESS'),order:o};
+  initMobilePickView();
+  toast('Pick started for '+o.id+' — scan items now','s');
+}
+
+function mobileScanFeedback(ok){
+  try{ if(navigator.vibrate) navigator.vibrate(ok?40:[30,60,30]); }catch(e){}
+  try{
+    const ctx=new (window.AudioContext||window.webkitAudioContext)();
+    const o=ctx.createOscillator(), g=ctx.createGain();
+    o.frequency.value=ok?1400:320;
+    o.connect(g);g.connect(ctx.destination);
+    g.gain.setValueAtTime(0.15,ctx.currentTime);
+    o.start();
+    o.stop(ctx.currentTime+(ok?0.09:0.18));
+    setTimeout(()=>{try{ctx.close();}catch(e){}},300);
+  }catch(e){}
+}
+
+// Atomically holds stock server-side via reserve_stock_item() so two
+// pickers scanning the same low-stock item can't both succeed — the
+// second one gets told it's unavailable in real time.
+async function reserveStock(sku,qty,sessionId,orderId,picker){
+  try{
+    const {data,error}=await supa.rpc('reserve_stock_item',{p_sku:sku,p_qty:qty,p_session_id:sessionId,p_order_id:orderId||null,p_picker:picker||null});
+    if(error) throw error;
+    return data;
+  }catch(e){
+    console.error('reserveStock failed:',e.message||e);
+    return {success:false,reason:'network_error',available:(inv[sku]||{qty:0}).qty};
+  }
+}
+async function releaseStock(sessionId,sku,qty){
+  try{
+    const {data,error}=await supa.rpc('release_reservation',{p_session_id:sessionId,p_sku:sku,p_qty:qty??null});
+    if(error) throw error;
+    return data;
+  }catch(e){ console.error('releaseStock failed:',e.message||e); return {success:false}; }
+}
+async function commitPickSession(sessionId){
+  try{
+    const {data,error}=await supa.rpc('commit_pick_session',{p_session_id:sessionId});
+    if(error) throw error;
+    return data;
+  }catch(e){ console.error('commitPickSession failed:',e.message||e); return {success:false}; }
+}
+async function releasePickSession(sessionId){
+  try{
+    const {data,error}=await supa.rpc('release_pick_session',{p_session_id:sessionId});
+    if(error) throw error;
+    return data;
+  }catch(e){ console.error('releasePickSession failed:',e.message||e); return {success:false}; }
+}
+
+async function mobilePickAddScan(sku){
+  if(!mobilePickSession) return;
+  const expected=mobilePickSession.order.items.find(it=>it.sku===sku.sku);
+  if(!expected){
+    mobileScanFeedback(false);
+    toast(sku.sku+' is not part of this order','w');
+    return;
+  }
+  const already=mobilePickSession.items.find(i=>i.sku===sku.sku);
+  if(already && already.qty>=expected.qty){
+    mobileScanFeedback(false);
+    toast(sku.sku+' already fully picked for this order','w');
+    return;
+  }
+  const picker=currentProfile?.full_name||'Mobile picker';
+  const res=await reserveStock(sku.sku,1,mobilePickSession.sessionId,mobilePickSession.orderId,picker);
+  if(!res.success){
+    mobileScanFeedback(false);
+    if(res.reason==='network_error'){
+      toast('Could not reach server to reserve stock — check connection and try again','w');
+    } else {
+      toast(`${sku.sku}: no stock available to reserve (${res.available} left)`,'w');
+    }
+    return;
+  }
+  const existing=mobilePickSession.items.find(i=>i.sku===sku.sku);
+  if(existing){ existing.qty+=1; existing.avail=res.available; } else {
+    mobilePickSession.items.push({sku:sku.sku,name:sku.sub,variant:sku.variant,qty:1,bin:`${sku.rack}-${sku.shelf}`,avail:res.available});
+  }
+  renderMobilePickSession();
+  mobileScanFeedback(true);
+  toast('Reserved '+sku.sub+' — '+sku.variant,'s');
+}
+
+function mobilePickManualAdd(){
+  const skuCode=document.getElementById('mp-manual-sku').value;
+  const sku=SKUS.find(s=>s.sku===skuCode);
+  if(!sku) return;
+  mobilePickAddScan(sku);
+}
+
+async function adjustMobilePickQty(sku,delta){
+  if(!mobilePickSession) return;
+  const item=mobilePickSession.items.find(i=>i.sku===sku);
+  if(!item) return;
+  if(delta>0){
+    const skuObj=SKUS.find(s=>s.sku===sku);
+    const picker=currentProfile?.full_name||'Mobile picker';
+    const res=await reserveStock(sku,1,mobilePickSession.sessionId,mobilePickSession.orderId,picker);
+    if(!res.success){ toast(`No more ${sku} available to reserve`,'w'); return; }
+    item.qty+=1; item.avail=res.available;
+  } else {
+    const res=await releaseStock(mobilePickSession.sessionId,sku,1);
+    item.qty-=1;
+    if(res.success!==false) item.avail+=1;
+    if(item.qty<=0){ mobilePickSession.items=mobilePickSession.items.filter(i=>i.sku!==sku); }
+  }
+  renderMobilePickSession();
+}
+
+function renderMobilePickSession(){
+  const el=document.getElementById('mp-pick-list');
+  if(!el||!mobilePickSession) return;
+  const items=mobilePickSession.items;
+  el.innerHTML=items.length?items.map(it=>{
+    return `<div class="scan-row matched">
+      <div class="scan-row-icon"><i class="ti ti-check"></i></div>
+      <div class="scan-row-body">
+        <div class="scan-row-sku">${it.sku}</div>
+        <div class="scan-row-meta">${esc(it.name)} — ${esc(it.variant)} · BIN ${it.bin} · ${it.avail} more available</div>
+      </div>
+      <div class="scan-row-qty">
+        <button class="qb" onclick="adjustMobilePickQty('${it.sku}',-1)">−</button>
+        <span class="qv">${it.qty}</span>
+        <button class="qb" onclick="adjustMobilePickQty('${it.sku}',1)">+</button>
+      </div>
+    </div>`;
+  }).join(''):'<div class="empty">Scan an item to begin — it\'s reserved for you the instant it scans</div>';
+}
+
+async function cancelMobilePick(){
+  if(!mobilePickSession) return;
+  if(mobilePickSession.items.length && !confirm('Discard this pick? Everything reserved will be released back to stock.')) return;
+  await releasePickSession(mobilePickSession.sessionId);
+  mobilePickSession=null;
+  disableBarcodeScanner();
+  initMobilePickView();
+  renderMpMyOrders();
+}
+
+async function completeMobilePick(){
+  if(!mobilePickSession || !mobilePickSession.items.length){ toast('Scan at least one item first','w'); return; }
+  if(!rateLimit('mobile-pick',2000)){ toast('Please wait before submitting again','w'); return; }
+  const result=await commitPickSession(mobilePickSession.sessionId);
+  if(!result.success){ toast('Could not complete pick — connection issue, try again','w'); return; }
+  mobilePickSession.items.forEach(it=>{ if(inv[it.sku]) inv[it.sku].qty-=it.qty; });
+  const tid=newId('PCK');
+  const picker=currentProfile?.full_name||'Mobile picker';
+  const newTask={id:tid,orderId:mobilePickSession.orderId,priority:mobilePickSession.priority,method:mobilePickSession.method,picker,items:[...mobilePickSession.items],ts:ts(),status:'awaiting_packing'};
+  packingQueue.push(newTask);
+  history.push({id:tid,type:'pick',ts:ts(),detail:`${mobilePickSession.orderId} · ${mobilePickSession.method} pick · ${mobilePickSession.priority} · ${mobilePickSession.items.length} SKUs · Picker: ${picker} (mobile scan)`,orderId:mobilePickSession.orderId,items:[...mobilePickSession.items],picker});
+  saveInv();saveHist();upsertPackingQueueItem(newTask);
+  const o=mobilePickSession.order;
+  o.status='picked';
+  o.pickedTaskId=tid;
+  await saveOrderRow(o);
+  logAudit('MOBILE_PICK_COMPLETE','packing_queue',tid,null,{orderId:mobilePickSession.orderId,items:mobilePickSession.items.length,picker});
+  toast(`Pick complete — ${mobilePickSession.orderId} sent to packing`,'s');
+  mobilePickSession=null;
+  disableBarcodeScanner();
+  initMobilePickView();
+  updateMobileKPIs();
+}
+
+// ═══ MOBILE PACK (scan-verified) ═══
+function renderMobilePackQueue(){
+  const el=document.getElementById('mp-pack-queue');
+  const activeWrap=document.getElementById('mp-pack-active');
+  const queueWrap=document.getElementById('mp-pack-queue-wrap');
+  if(!activeWrap||!queueWrap) return;
+  if(mobilePackActive){
+    queueWrap.style.display='none';
+    activeWrap.style.display='block';
+    if(mobilePackActive.stage==='details'){
+      document.getElementById('mp-pack-checklist-wrap').style.display='none';
+      document.getElementById('mp-pack-details-wrap').style.display='block';
+      disableBarcodeScanner();
+    } else {
+      document.getElementById('mp-pack-checklist-wrap').style.display='block';
+      document.getElementById('mp-pack-details-wrap').style.display='none';
+      renderMobilePackChecklist();
+      enableBarcodeScanner('mobile-pack');
+    }
+    return;
+  }
+  queueWrap.style.display='block';
+  activeWrap.style.display='none';
+  if(!el) return;
+  const me=currentProfile?.full_name||'';
+  el.innerHTML=packingQueue.length?packingQueue.map((t,i)=>{
+    const claimedByOther=t.claimedBy && t.claimedBy!==me;
+    const actionBtn=claimedByOther
+      ? `<div style="width:100%;text-align:center;padding:9px;color:var(--dt);font-size:12px;font-weight:600"><i class="ti ti-lock"></i> Being packed by ${esc(t.claimedBy)}</div>`
+      : `<button class="btn-primary" style="width:100%;justify-content:center" onclick="startMobilePack(${i})"><i class="ti ti-player-play"></i>Start packing</button>`;
+    return `
+    <div class="mp-pack-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span style="font-weight:700;font-size:13px">${t.orderId}</span>
+        <span class="pill ${t.priority==='Express'?'p-out':'p-info'}">${t.priority}</span>
+      </div>
+      <div style="font-size:11px;color:var(--t2);margin-bottom:9px">${t.items.length} SKU(s) · ${t.ts}${t.picker?' · Picked by '+esc(t.picker):''}</div>
+      ${actionBtn}
+    </div>
+  `;
+  }).join(''):'<div class="empty">No tasks awaiting packing</div>';
+}
+
+async function startMobilePack(i){
+  const task=packingQueue[i];
+  if(!task) return;
+  if(!task.packStartTime){
+    const picker=currentProfile?.full_name||'Unknown';
+    const startTime=Date.now();
+    const startTs=ts();
+    const res=await claimPackingTask(task.id,picker,startTime,startTs);
+    if(!res.success){
+      if(res.reason==='already_claimed'){
+        toast(`Already being packed by ${res.claimed_by}`,'w');
+        task.claimedBy=res.claimed_by;
+      } else {
+        toast('Could not start packing — connection issue, try again','w');
+      }
+      renderMobilePackQueue();
+      return;
+    }
+    task.claimedBy=res.claimed_by;
+    task.packStartTime=res.pack_start_time;
+    task.packStartTs=res.pack_start_ts;
+  } else if(task.claimedBy && task.claimedBy!==(currentProfile?.full_name||'')){
+    toast(`Already being packed by ${task.claimedBy}`,'w');
+    renderMobilePackQueue();
+    return;
+  }
+  mobilePackActive={
+    taskIdx:i,
+    task,
+    stage:'checklist',
+    checklist:task.items.map(it=>({sku:it.sku,name:it.name,variant:it.variant,bin:it.bin,expectedQty:it.qty,scannedQty:0}))
+  };
+  document.getElementById('mp-pack-order-label').textContent='Order '+task.orderId;
+  document.getElementById('mp-pack-summary').textContent=`${task.items.length} SKU(s) · ${task.priority} · ${task.method}`;
+  renderMobilePackQueue();
+}
+
+function mobilePackScan(sku){
+  if(!mobilePackActive) return;
+  const item=mobilePackActive.checklist.find(i=>i.sku===sku.sku);
+  if(!item){
+    mobileScanFeedback(false);
+    toast(sku.sku+' is not part of this order','w');
+    return;
+  }
+  if(item.scannedQty>=item.expectedQty){
+    mobileScanFeedback(false);
+    toast(sku.sku+' already fully verified','w');
+    return;
+  }
+  item.scannedQty+=1;
+  mobileScanFeedback(true);
+  renderMobilePackChecklist();
+}
+
+function renderMobilePackChecklist(){
+  const el=document.getElementById('mp-pack-checklist');
+  if(!el||!mobilePackActive) return;
+  const list=mobilePackActive.checklist;
+  el.innerHTML=list.map(it=>{
+    const done=it.scannedQty>=it.expectedQty;
+    return `<div class="scan-row ${done?'matched':''}">
+      <div class="scan-row-icon"><i class="ti ${done?'ti-check':'ti-barcode'}"></i></div>
+      <div class="scan-row-body">
+        <div class="scan-row-sku">${it.sku}</div>
+        <div class="scan-row-meta">${esc(it.name)} — ${esc(it.variant)} · BIN ${it.bin}</div>
+      </div>
+      <div class="scan-row-qty">${it.scannedQty}/${it.expectedQty}</div>
+    </div>`;
+  }).join('');
+  const allDone=list.every(it=>it.scannedQty>=it.expectedQty);
+  const btn=document.getElementById('mp-pack-continue-btn');
+  if(btn) btn.disabled=!allDone;
+}
+
+function cancelMobilePack(){
+  mobilePackActive=null;
+  disableBarcodeScanner();
+  renderMobilePackQueue();
+}
+
+function proceedToMobilePackDetails(){
+  if(!mobilePackActive) return;
+  mobilePackActive.stage='details';
+  document.getElementById('mp-pack-checklist-wrap').style.display='none';
+  document.getElementById('mp-pack-details-wrap').style.display='block';
+  disableBarcodeScanner();
+  ['mp-length','mp-width','mp-height','mp-actual-weight','mp-notes'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
+  document.getElementById('mp-vol-result').style.display='none';
+}
+
+function backToMobilePackChecklist(){
+  if(!mobilePackActive) return;
+  mobilePackActive.stage='checklist';
+  document.getElementById('mp-pack-checklist-wrap').style.display='block';
+  document.getElementById('mp-pack-details-wrap').style.display='none';
+  renderMobilePackChecklist();
+  enableBarcodeScanner('mobile-pack');
+}
+
+function calcMobileVolWeight(){
+  const L=parseFloat(document.getElementById('mp-length').value)||0;
+  const W=parseFloat(document.getElementById('mp-width').value)||0;
+  const H=parseFloat(document.getElementById('mp-height').value)||0;
+  const actual=parseFloat(document.getElementById('mp-actual-weight').value)||0;
+  const res=document.getElementById('mp-vol-result');
+  if(!L||!W||!H||!actual){res.style.display='none';return;}
+  const vol=parseFloat(((L*W*H)/5000).toFixed(2));
+  const chargeable=Math.max(actual,vol);
+  document.getElementById('mp-show-chargeable').textContent=chargeable.toFixed(2);
+  res.style.display='block';
+}
+
+function completeMobilePack(){
+  if(!mobilePackActive) return;
+  const t=mobilePackActive.task;
+  const L=parseFloat(document.getElementById('mp-length').value)||0;
+  const W=parseFloat(document.getElementById('mp-width').value)||0;
+  const H=parseFloat(document.getElementById('mp-height').value)||0;
+  const actual=parseFloat(document.getElementById('mp-actual-weight').value)||0;
+  const notes=document.getElementById('mp-notes').value.trim();
+  if(!L||!W||!H){toast('Enter box dimensions (L × W × H)','w');return;}
+  if(!validateDimension(L)||!validateDimension(W)||!validateDimension(H)){toast('Invalid dimensions — max 999cm','w');return;}
+  if(!actual){toast('Enter actual weight','w');return;}
+  if(!validateWeight(actual)){toast('Invalid weight — must be between 0.01 and 999 kg','w');return;}
+  if(!rateLimit('mobile-pack',2000)){toast('Please wait before submitting again','w');return;}
+  const vol=parseFloat(((L*W*H)/5000).toFixed(2));
+  const chargeable=Math.max(actual,vol);
+  const endTime=Date.now();
+  const endTs=ts();
+  const durationSecs=t.packStartTime?Math.floor((endTime-t.packStartTime)/1000):null;
+  const durationStr=durationSecs!==null?`${Math.floor(durationSecs/60)}m ${durationSecs%60}s`:'N/A';
+  const idx=packingQueue.findIndex(p=>p.id===t.id);
+  if(idx>-1) packingQueue.splice(idx,1);
+  const pkid=newId('PKD');
+  history.push({
+    id:pkid,type:'packed',ts:endTs,
+    detail:`${t.orderId} · ${t.items.length} SKUs packed — ready for dispatch (mobile, scan-verified)`,
+    orderId:t.orderId,items:t.items,
+    packStartTs:t.packStartTs,packStartTime:t.packStartTime,
+    packEndTs:endTs,packEndTime:endTime,
+    packDuration:durationStr,packDurationSecs:durationSecs,
+    boxL:L,boxW:W,boxH:H,
+    actualWeight:actual,volWeight:vol,chargeableWeight:chargeable,
+    packNotes:notes
+  });
+  saveHist();
+  deletePackingQueueItem(t.id);
+  logAudit('MOBILE_PACK_COMPLETE','packing_queue',t.id,null,{orderId:t.orderId,chargeable});
+  toast(`Order ${t.orderId} packed in ${durationStr} · ${chargeable}kg chargeable`,'s');
+  mobilePackActive=null;
+  disableBarcodeScanner();
+  renderMobilePackQueue();
+  updateMobileKPIs();
 }
 
 function renderMobilePickList(){
@@ -2478,6 +3085,15 @@ async function renderInvVersionHistory(){
   </tr>`).join('')}
   </tbody></table></div>`;
 }
+let reservedMap={};
+async function loadReservedMap(){
+  try{
+    const {data,error}=await supa.rpc('get_active_reservations');
+    if(error) throw error;
+    reservedMap={};
+    (data||[]).forEach(r=>{ reservedMap[r.sku]=r.reserved_qty; });
+  }catch(e){ console.warn('loadReservedMap failed:',e.message||e); }
+}
 function renderInv(){
   const q=(document.getElementById('inv-q').value||'').toLowerCase();
   const cat=document.getElementById('inv-cat').value;
@@ -2491,8 +3107,9 @@ function renderInv(){
   });
   document.getElementById('inv-tbody').innerHTML=rows.map(s=>{
     const i2=inv[s.sku]||{qty:0,rack:s.rack,shelf:s.shelf};
+    const held=reservedMap[s.sku]||0;
     return`<tr><td class="mono">${s.sku}</td><td><span class="pill p-info">${s.cat}</span></td><td style="font-weight:600;font-size:12px">${s.sub}</td><td style="color:var(--t2);font-size:11px">${s.variant}</td><td style="font-size:11px;font-weight:500">${i2.rack}-${i2.shelf}</td>
-    <td><div class="qc"><button class="qb" onclick="adjQ('${s.sku}',-1)">−</button><span class="qv">${i2.qty}</span><button class="qb" onclick="adjQ('${s.sku}',1)">+</button></div></td>
+    <td><div class="qc"><button class="qb" onclick="adjQ('${s.sku}',-1)">−</button><span class="qv">${i2.qty}</span><button class="qb" onclick="adjQ('${s.sku}',1)">+</button></div>${held>0?`<div style="font-size:9.5px;color:var(--wt);margin-top:2px;font-weight:600">${held} held by pickers</div>`:''}</td>
     <td>${stPill(i2.qty)}</td>
     <td><button class="btn-sm" onclick="quickDisp('${s.sku}','${s.sub.replace(/'/g,"\\'").replace(/"/g,'&quot;')}','${s.variant.replace(/'/g,"\\'")}',${i2.qty})" ${i2.qty<=0?'disabled':''}><i class="ti ti-send"></i></button></td></tr>`;
   }).join('');
@@ -2520,7 +3137,106 @@ function renderRack(){
 function buildRack(data,elId){
   const keys=Object.keys(data).sort((a,b)=>+a-+b);
   const mid=Math.ceil(keys.length/2);
-  document.getElementById(elId).innerHTML=[keys.slice(0,mid),keys.slice(mid)].map((col,ci)=>`<div class="rack-card"><div class="rack-head"><span style="font-size:12px;font-weight:600">Bay ${ci+1}</span><span style="font-size:10px;color:var(--t2)">${col.length} shelves</span></div>${col.map(sh=>{const items=data[sh];const tot=items.reduce((a,i)=>a+i.qty,0);const mx=items.length*10;const pct=Math.min(100,Math.round(tot/mx*100));const bc=pct===0?'bar-out':pct<30?'bar-low':'bar-ok';const lbl=items[0].sub.replace(/ - .*/,'').replace(/- .*/,'').trim();return`<div class="rack-row"><span class="shelf-l">S${sh}</span><div><div style="font-size:11px;font-weight:600;margin-bottom:3px">${lbl}</div><div class="bar-bg"><div class="bar-f ${bc}" style="width:${pct}%"></div></div></div><span class="qty-r">${tot}u</span></div>`;}).join('')}</div>`).join('');
+  document.getElementById(elId).innerHTML=[keys.slice(0,mid),keys.slice(mid)].map((col,ci)=>`<div class="rack-card"><div class="rack-head"><span style="font-size:12px;font-weight:600">Bay ${ci+1}</span><span style="font-size:10px;color:var(--t2)">${col.length} shelves</span></div>${col.map(sh=>{const items=data[sh];const tot=items.reduce((a,i)=>a+i.qty,0);const held=items.reduce((a,i)=>a+(reservedMap[i.sku]||0),0);const mx=items.length*10;const pct=Math.min(100,Math.round(tot/mx*100));const bc=pct===0?'bar-out':pct<30?'bar-low':'bar-ok';const lbl=items[0].sub.replace(/ - .*/,'').replace(/- .*/,'').trim();return`<div class="rack-row"><span class="shelf-l">S${sh}</span><div><div style="font-size:11px;font-weight:600;margin-bottom:3px">${lbl}</div><div class="bar-bg"><div class="bar-f ${bc}" style="width:${pct}%"></div></div></div><span class="qty-r">${tot}u${held>0?`<div style="font-size:9px;color:var(--wt);font-weight:600">${held} held</div>`:''}</span></div>`;}).join('')}</div>`).join('');
+}
+
+// UNIFIED ORDER STATUS
+function renderOrderStatusRecent(){
+  const el=document.getElementById('os-recent');
+  if(!el)return;
+  const seen=new Set();
+  const recent=[];
+  for(let i=orders.length-1;i>=0 && recent.length<10;i--){
+    const oid=orders[i].id;
+    if(oid && !seen.has(oid)){ seen.add(oid); recent.push(oid); }
+  }
+  for(let i=history.length-1;i>=0 && recent.length<10;i--){
+    const oid=history[i].orderId;
+    if(oid && !seen.has(oid)){ seen.add(oid); recent.push(oid); }
+  }
+  if(!recent.length){ el.innerHTML=''; return; }
+  el.innerHTML=`<div style="font-size:10px;color:var(--t2);font-weight:600;margin-bottom:6px">RECENT ORDERS</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">${recent.map(oid=>
+      `<button onclick="document.getElementById('os-order-id').value='${esc(oid)}';lookupOrderStatus()" style="padding:5px 10px;background:var(--s2);border:0.5px solid var(--b);border-radius:14px;cursor:pointer;font-size:11px;color:var(--t);font-family:monospace">${esc(oid)}</button>`
+    ).join('')}</div>`;
+}
+function lookupOrderStatus(){
+  const oid=document.getElementById('os-order-id').value.trim();
+  const el=document.getElementById('os-result');
+  if(!oid){ el.innerHTML='<div class="empty">Enter an Order ID to track</div>'; return; }
+  const order=orders.find(o=>o.id.toLowerCase()===oid.toLowerCase());
+  const entries=history.filter(h=>h.orderId && h.orderId.toLowerCase()===oid.toLowerCase())
+    .sort((a,b)=>(a.ts||'').localeCompare(b.ts||''));
+  const queueTask=packingQueue.find(t=>t.orderId && t.orderId.toLowerCase()===oid.toLowerCase());
+  if(!entries.length && !queueTask && !order){
+    el.innerHTML=`<div class="empty">No records found for "${esc(oid)}" — check the Order ID and try again</div>`;
+    return;
+  }
+  const stageIcon={pick:'ti-scan',packed:'ti-box',dispatched:'ti-truck-delivery',exception:'ti-alert-triangle'};
+  const stageLabel={pick:'Picked',packed:'Packed',dispatched:'Dispatched',exception:'Exception / QC'};
+  const stageColor={pick:'var(--st)',packed:'var(--gold)',dispatched:'var(--navy)',exception:'var(--dt)'};
+  let rows='';
+  if(order){
+    rows+=`
+    <div style="display:flex;gap:12px;padding:12px 0;border-bottom:0.5px solid var(--b)">
+      <div style="width:32px;height:32px;border-radius:50%;background:var(--t3);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <i class="ti ti-clipboard-list"></i>
+      </div>
+      <div style="flex:1">
+        <div style="font-weight:700;font-size:12px">Order created</div>
+        <div style="font-size:11px;color:var(--t2);margin-top:2px">${order.items.length} SKU(s) · ${order.priority} · ${order.method}${order.customerName?' · '+esc(order.customerName):''}</div>
+        <div style="font-size:10px;color:var(--t3);margin-top:2px">${order.createdBy?'Created by '+esc(order.createdBy):''}</div>
+      </div>
+    </div>`;
+    if(order.assignedPicker){
+      rows+=`
+      <div style="display:flex;gap:12px;padding:12px 0;border-bottom:0.5px solid var(--b)">
+        <div style="width:32px;height:32px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <i class="ti ti-user-check"></i>
+        </div>
+        <div style="flex:1">
+          <div style="font-weight:700;font-size:12px">Assigned to picker</div>
+          <div style="font-size:11px;color:var(--t2);margin-top:2px">${esc(order.assignedPicker)}</div>
+        </div>
+      </div>`;
+    }
+  }
+  rows+=entries.map(h=>`
+    <div style="display:flex;gap:12px;padding:12px 0;border-bottom:0.5px solid var(--b)">
+      <div style="width:32px;height:32px;border-radius:50%;background:${stageColor[h.type]||'var(--t3)'};color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <i class="ti ${stageIcon[h.type]||'ti-circle'}"></i>
+      </div>
+      <div style="flex:1">
+        <div style="font-weight:700;font-size:12px">${stageLabel[h.type]||h.type}</div>
+        <div style="font-size:11px;color:var(--t2);margin-top:2px">${esc(h.detail||'')}</div>
+        <div style="font-size:10px;color:var(--t3);margin-top:2px">${h.ts||''}${h.picker?' · '+esc(h.picker):''}</div>
+      </div>
+    </div>`).join('');
+  if(queueTask && !entries.some(h=>h.type==='packed')){
+    const state=queueTask.claimedBy?`<div style="font-size:11px;color:var(--wt);font-weight:600"><i class="ti ti-lock"></i> Being packed by ${esc(queueTask.claimedBy)}</div>`:`<div style="font-size:11px;color:var(--t2)">Awaiting packing</div>`;
+    rows+=`
+    <div style="display:flex;gap:12px;padding:12px 0">
+      <div style="width:32px;height:32px;border-radius:50%;background:var(--s2);color:var(--t2);border:1.5px dashed var(--b);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <i class="ti ti-box"></i>
+      </div>
+      <div style="flex:1">
+        <div style="font-weight:700;font-size:12px;color:var(--t2)">In packing queue</div>
+        ${state}
+      </div>
+    </div>`;
+  } else if(order && order.status==='assigned' && !queueTask && !entries.some(h=>h.type==='pick')){
+    rows+=`
+    <div style="display:flex;gap:12px;padding:12px 0">
+      <div style="width:32px;height:32px;border-radius:50%;background:var(--s2);color:var(--t2);border:1.5px dashed var(--b);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <i class="ti ti-scan"></i>
+      </div>
+      <div style="flex:1">
+        <div style="font-weight:700;font-size:12px;color:var(--t2)">Awaiting pick</div>
+        <div style="font-size:11px;color:var(--t2)">Assigned to ${esc(order.assignedPicker)}, not yet started</div>
+      </div>
+    </div>`;
+  }
+  el.innerHTML=`<div class="panel"><div class="ph"><i class="ti ti-package"></i>Order ${esc(oid)}</div><div class="pb">${rows}</div></div>`;
 }
 
 // REPORTS
@@ -3320,11 +4036,11 @@ let currentProfile = null;
 
 const ROLE_COLORS = {admin:'#c62828',supervisor:'#B8860B',picker:'#1565c0',packer:'#2e7d32',viewer:'#6a1b9a'};
 const ROLE_PERMS = {
-  admin:    {canEdit:true,  canDispatch:true, canPack:true, canPick:true,  canReceive:true,  canManageUsers:true,  canAudit:true,  canReturn:true},
-  supervisor:{canEdit:true, canDispatch:true, canPack:true, canPick:true,  canReceive:true,  canManageUsers:false, canAudit:true,  canReturn:true},
-  picker:   {canEdit:false, canDispatch:false,canPack:true, canPick:true,  canReceive:false, canManageUsers:false, canAudit:false, canReturn:false},
-  packer:   {canEdit:false, canDispatch:true, canPack:true, canPick:false, canReceive:false, canManageUsers:false, canAudit:false, canReturn:false},
-  viewer:   {canEdit:false, canDispatch:false,canPack:false,canPick:false, canReceive:false, canManageUsers:false, canAudit:false, canReturn:false},
+  admin:    {canEdit:true,  canDispatch:true, canPack:true, canPick:true,  canReceive:true,  canManageUsers:true,  canAudit:true,  canReturn:true, canManageOrders:true},
+  supervisor:{canEdit:true, canDispatch:true, canPack:true, canPick:true,  canReceive:true,  canManageUsers:false, canAudit:true,  canReturn:true, canManageOrders:true},
+  picker:   {canEdit:false, canDispatch:false,canPack:true, canPick:true,  canReceive:false, canManageUsers:false, canAudit:false, canReturn:false, canManageOrders:false},
+  packer:   {canEdit:false, canDispatch:true, canPack:true, canPick:false, canReceive:false, canManageUsers:false, canAudit:false, canReturn:false, canManageOrders:false},
+  viewer:   {canEdit:false, canDispatch:false,canPack:false,canPick:false, canReceive:false, canManageUsers:false, canAudit:false, canReturn:false, canManageOrders:false},
 };
 
 function getPerms(){ return ROLE_PERMS[currentProfile?.role] || ROLE_PERMS.viewer; }
@@ -3386,6 +4102,9 @@ async function onAuthSuccess(){
 function applyRoleRestrictions(){
   const perms=getPerms();
   const role=currentProfile?.role;
+  const ordPanel=document.getElementById('order-create-panel');
+  if(ordPanel) ordPanel.style.display=perms.canManageOrders?'block':'none';
+  if(perms.canManageOrders) loadPickerNames();
   // Hide action buttons for viewer
   if(role==='viewer'){
     const style=document.createElement('style');
@@ -3417,17 +4136,32 @@ function applyRoleRestrictions(){
 }
 
 async function authLogout(){
-  await logAudit('LOGOUT','session',currentUser?.id,null,{email:currentProfile?.email});
-  await supa.auth.signOut();
-  currentUser=null; currentProfile=null;
-  document.getElementById('auth-screen').style.display='flex';
-  document.getElementById('user-menu').style.display='none';
-  document.getElementById('auth-password').value='';
-  document.getElementById('user-dropdown').classList.remove('open');
-  // Remove viewer restrictions if any
-  const vr=document.getElementById('viewer-restrictions');
-  if(vr) vr.remove();
-  toast('Signed out successfully','s');
+  try {
+    console.log('Logging out...');
+    // Sign out from Supabase
+    await supa.auth.signOut();
+    // Clear all storage
+    localStorage.clear();
+    sessionStorage.clear();
+    // Clear global variables
+    currentUser = null;
+    currentProfile = null;
+    // Hide app, show login
+    document.querySelector('.wrap').style.display = 'none';
+    document.getElementById('auth-screen').style.display = 'flex';
+    document.getElementById('user-menu').style.display = 'none';
+    // Close any open dropdowns
+    const dropdown = document.getElementById('user-dropdown');
+    if(dropdown) dropdown.style.display = 'none';
+    console.log('✓ Logged out successfully - login screen shown');
+  } catch(err){
+    console.error('Logout error:', err);
+    // Force logout even if error
+    localStorage.clear();
+    sessionStorage.clear();
+    document.querySelector('.wrap').style.display = 'none';
+    document.getElementById('auth-screen').style.display = 'flex';
+  }
 }
 
 async function authResetPassword(){
@@ -3442,12 +4176,15 @@ async function authResetPassword(){
 
 function showResetForm(){ document.getElementById('auth-login-form').style.display='none'; document.getElementById('auth-reset-form').style.display='block'; }
 function showLoginForm(){ document.getElementById('auth-reset-form').style.display='none'; document.getElementById('auth-login-form').style.display='block'; }
-function toggleUserMenu(){ document.getElementById('user-dropdown').classList.toggle('open'); }
-document.addEventListener('click',e=>{ if(!e.target.closest('.user-menu')) document.getElementById('user-dropdown')?.classList.remove('open'); });
+function toggleUserMenu(){
+  const dropdown = document.getElementById('user-dropdown');
+  if(!dropdown) return;
+  const isOpen = dropdown.style.display === 'block';
+  dropdown.style.display = isOpen ? 'none' : 'block';
+  console.log('Dropdown toggled:', dropdown.style.display);
+}
 
-// ═══════════════════════════════════════════
-// USER MANAGEMENT (Admin only)
-// ═══════════════════════════════════════════
+
 function showCreateUserForm(){ document.getElementById('create-user-form').style.display='block'; }
 function hideCreateUserForm(){ document.getElementById('create-user-form').style.display='none'; }
 
@@ -3459,7 +4196,8 @@ async function createUser(){
   const errEl=document.getElementById('create-user-err');
   if(!name||!email||!password){errEl.textContent='All fields required';return;}
   if(!validateEmail(email)){errEl.textContent='Invalid email';return;}
-  if(password.length<8){errEl.textContent='Password must be at least 8 characters';return;}
+  if(password.length<12){errEl.textContent='Password must be at least 12 characters';return;}
+  if(!/[A-Z]/.test(password)||!/[a-z]/.test(password)||!/[0-9]/.test(password)){errEl.textContent='Password must include upper case, lower case, and a number';return;}
   errEl.textContent='Creating...';
   try {
     // Create auth user via Supabase admin — requires service role key
@@ -3635,6 +4373,7 @@ function processBarcodeInput(barcode){
   // Find matching SKU
   const sku=SKUS.find(s=>s.sku===barcode||s.sku.toUpperCase()===barcode.toUpperCase());
   if(!sku){
+    if(_barcodeTarget==='mobile-pick'||_barcodeTarget==='mobile-pack'){ mobileScanFeedback(false); }
     toast('Unknown barcode: '+barcode,'w');
     return;
   }
@@ -3655,6 +4394,12 @@ function processBarcodeInput(barcode){
     const awbInput=document.getElementById('disp-awb');
     if(awbInput){ awbInput.value=barcode; }
     toast('AWB scanned: '+barcode,'s');
+  } else if(_barcodeTarget==='mobile-pick'){
+    // HT20 Pro handheld scan during a mobile picking session
+    mobilePickAddScan(sku);
+  } else if(_barcodeTarget==='mobile-pack'){
+    // HT20 Pro handheld scan during mobile pack verification
+    mobilePackScan(sku);
   }
   // Log the scan
   logAudit('BARCODE_SCAN','inventory',sku.sku,null,{sku:sku.sku,target:_barcodeTarget,barcode});
@@ -3674,6 +4419,7 @@ async function bootWMS(){
   await loadSKUsFromDB(); // load dynamic SKUs first
   await initInv();
   await loadHist();
+  await loadOrders();
   renderDash();
   renderInv();
   renderRack();

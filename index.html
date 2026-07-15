@@ -9,254 +9,294 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --gold:#B8860B;--gold-d:#8B6508;
-  --s:#ffffff;--s2:#f5f5f4;--s3:#eeede9;
-  --b:rgba(0,0,0,0.1);--b2:rgba(0,0,0,0.18);
-  --t:#1a1a18;--t2:#6b6b67;--t3:#a0a09a;
-  --ibg:#e6f1fb;--it:#185fa5;
-  --sbg:#eaf3de;--st:#3b6d11;
-  --wbg:#faeeda;--wt:#854f0b;
-  --dbg:#fcebeb;--dt:#a32d2d;
-  --r:8px;--rl:12px;
+  --gold:#C9962C;--gold-d:#A87A1F;--gold-l:#F4E6C3;
+  --navy:#1B2430;--navy2:#242F3D;--navy3:#141B24;--navy-t:#EDEFF2;--navy-t2:#8D96A3;--navy-b:rgba(255,255,255,.08);
+  --s:#ffffff;--s2:#F6F4EF;--s3:#EFEBE1;
+  --b:rgba(27,34,45,0.10);--b2:rgba(27,34,45,0.20);
+  --t:#1B2430;--t2:#5B6472;--t3:#9AA1AB;
+  --ibg:#E8F1FB;--it:#1D5DA3;
+  --sbg:#E9F6E3;--st:#2F7A34;
+  --wbg:#FCF0D9;--wt:#93600A;
+  --dbg:#FCEAEA;--dt:#B0392F;
+  --r:10px;--rl:14px;
+  --shadow-sm:0 1px 2px rgba(20,24,32,.05),0 1px 1px rgba(20,24,32,.04);
+  --shadow-md:0 6px 20px rgba(20,24,32,.09),0 2px 6px rgba(20,24,32,.05);
+  --shadow-lg:0 16px 48px rgba(20,24,32,.20);
+  --sidebar-w:236px;
 }
 @media(prefers-color-scheme:dark){
   :root{
-    --s:#1e1e1c;--s2:#2a2a28;--s3:#323230;
-    --b:rgba(255,255,255,0.1);--b2:rgba(255,255,255,0.18);
-    --t:#e8e8e4;--t2:#9a9a94;--t3:#606060;
-    --ibg:#0c447c22;--it:#85b7eb;
-    --sbg:#27500a22;--st:#97c459;
-    --wbg:#633806;--wt:#FAC775;
-    --dbg:#791f1f22;--dt:#f09595;
+    --s:#1C222C;--s2:#242B36;--s3:#12161C;
+    --b:rgba(255,255,255,0.09);--b2:rgba(255,255,255,0.17);
+    --t:#ECEDEF;--t2:#9BA3AE;--t3:#5C6470;
+    --ibg:#17324f;--it:#8FC1F5;
+    --sbg:#1a3420;--st:#8FD98F;
+    --wbg:#453210;--wt:#F0C674;
+    --dbg:#3f1c1c;--dt:#F0A19A;
+    --gold:#D9A94B;--gold-d:#C08F35;--gold-l:#3B2F17;
+    --navy:#12171F;--navy2:#1B222C;--navy3:#0B0F14;
+    --shadow-sm:0 1px 2px rgba(0,0,0,.3),0 1px 1px rgba(0,0,0,.2);
+    --shadow-md:0 6px 20px rgba(0,0,0,.4),0 2px 6px rgba(0,0,0,.25);
+    --shadow-lg:0 16px 48px rgba(0,0,0,.55);
   }
 }
+html{-webkit-font-smoothing:antialiased}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:var(--t);background:var(--s3);font-size:13px;min-height:100vh}
 h1.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+::selection{background:var(--gold-l);color:var(--t)}
 
-/* TOPBAR */
-.topbar{display:flex;align-items:stretch;border-bottom:0.5px solid var(--b);background:var(--s);position:sticky;top:0;z-index:100;box-shadow:0 1px 3px rgba(0,0,0,.06);overflow:hidden}
-.logo{display:flex;align-items:center;gap:8px;padding:10px 16px;border-right:0.5px solid var(--b);flex-shrink:0}
-.logo-gem{width:28px;height:28px;background:linear-gradient(135deg,#B8860B,#F5D98B);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:#5a3e00;flex-shrink:0}
-.logo-t{font-size:13px;font-weight:600}.logo-s{font-size:10px;color:var(--t2)}
-.navs{display:flex;flex:1;overflow-x:auto;overflow-y:hidden;-ms-overflow-style:none;scrollbar-width:thin;scrollbar-color:var(--b) transparent;gap:2px;position:relative}
-.navs::-webkit-scrollbar{height:4px}
-.navs::-webkit-scrollbar-track{background:transparent}
-.navs::-webkit-scrollbar-thumb{background:var(--b);border-radius:2px}
-.navs::-webkit-scrollbar-thumb:hover{background:var(--t3)}
-.ntab{padding:0 13px;font-size:11px;color:var(--t2);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;display:flex;align-items:center;gap:4px;height:100%;transition:color .15s;flex-shrink:0;user-select:none;position:relative}
-.notif-badge{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;background:var(--dt);color:#fff;border-radius:10px;font-size:10px;font-weight:600;margin-left:4px;animation:pulse 2s infinite}
-.ntab:hover{color:var(--t)}.ntab.active{color:var(--t);border-bottom-color:var(--gold)}
-.ntab i{font-size:14px}
-.tr{padding:0 14px;border-left:0.5px solid var(--b);display:flex;align-items:center;gap:6px;flex-shrink:0}
+/* ═══ APP SHELL / SIDEBAR ═══ */
+.app-shell{display:flex;min-height:100vh}
+.sidebar{width:var(--sidebar-w);flex-shrink:0;background:var(--navy);color:var(--navy-t);position:fixed;top:0;left:0;bottom:0;display:flex;flex-direction:column;z-index:300;transition:transform .25s ease;box-shadow:var(--shadow-lg)}
+.sidebar-brand{display:flex;align-items:center;gap:10px;padding:16px 16px;border-bottom:1px solid var(--navy-b);flex-shrink:0}
+.logo-gem{width:32px;height:32px;background:linear-gradient(135deg,var(--gold),#F0D28A);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#3d2a00;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,.25)}
+.logo-t{font-size:13.5px;font-weight:700;color:#fff;letter-spacing:.2px}
+.logo-s{font-size:9.5px;color:var(--navy-t2);margin-top:1px}
+.sidebar-close{display:none;margin-left:auto;background:none;border:none;color:var(--navy-t2);cursor:pointer;padding:4px;font-size:16px}
+.sidebar-nav{flex:1;overflow-y:auto;padding:10px 10px 6px;scrollbar-width:thin;scrollbar-color:var(--navy-b) transparent}
+.sidebar-nav::-webkit-scrollbar{width:5px}
+.sidebar-nav::-webkit-scrollbar-thumb{background:var(--navy-b);border-radius:3px}
+.nav-group{margin-bottom:4px}
+.nav-group-label{font-size:9.5px;font-weight:700;color:var(--navy-t2);text-transform:uppercase;letter-spacing:.7px;padding:12px 10px 5px}
+.ntab{padding:8px 10px;font-size:12px;color:#C7CDD6;cursor:pointer;border-radius:8px;white-space:nowrap;display:flex;align-items:center;gap:9px;transition:background .13s,color .13s;user-select:none;position:relative;margin-bottom:1px}
+.ntab i{font-size:16px;width:16px;text-align:center;flex-shrink:0;color:var(--navy-t2);transition:color .13s}
+.ntab span{overflow:hidden;text-overflow:ellipsis}
+.ntab .nav-sec{margin-left:auto;font-size:9px;color:var(--navy-t2);font-weight:600;flex-shrink:0}
+.ntab:hover{background:var(--navy2);color:#fff}
+.ntab:hover i{color:var(--gold)}
+.ntab.active{background:linear-gradient(90deg,var(--gold-l) 0%,rgba(201,150,44,.16) 100%);color:#fff;font-weight:600}
+.ntab.active i{color:var(--gold)}
+.ntab.active::before{content:'';position:absolute;left:-10px;top:3px;bottom:3px;width:3px;background:var(--gold);border-radius:0 3px 3px 0}
+.sidebar-footer{padding:10px;border-top:1px solid var(--navy-b);flex-shrink:0}
+.sidebar-more-btn{width:100%;background:none;border:1px solid var(--navy-b);color:var(--navy-t2);border-radius:8px;padding:8px 10px;font-size:11px;cursor:pointer;display:flex;align-items:center;gap:8px;justify-content:center}
+.sidebar-more-btn:hover{background:var(--navy2);color:#fff}
+.sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(10,13,17,.55);z-index:250;backdrop-filter:blur(1px)}
+.sidebar-overlay.show{display:block}
+
+/* ═══ MAIN / TOPBAR ═══ */
+.main{flex:1;min-width:0;margin-left:var(--sidebar-w);display:flex;flex-direction:column;min-height:100vh}
+.topbar{display:flex;align-items:center;gap:10px;border-bottom:0.5px solid var(--b);background:var(--s);position:sticky;top:0;z-index:100;box-shadow:0 1px 3px rgba(0,0,0,.05);padding:0 16px;height:52px;flex-shrink:0}
+.hamburger{display:none;background:none;border:none;color:var(--t2);font-size:19px;cursor:pointer;padding:4px}
+.topbar-title{font-size:14px;font-weight:700;color:var(--t)}
+.tr{padding:0 0 0 14px;border-left:0.5px solid var(--b);display:flex;align-items:center;gap:6px;flex-shrink:0;height:100%}
 .abadge{background:var(--dbg);color:var(--dt);font-size:10px;font-weight:600;padding:1px 6px;border-radius:8px;min-width:18px;text-align:center}
+.notif-badge{display:none;align-items:center;justify-content:center;min-width:18px;height:18px;background:var(--dt);color:#fff;border-radius:9px;font-size:9.5px;font-weight:700;margin-left:auto;animation:pulse 2s infinite;padding:0 4px}
 
 /* LAYOUT */
-.wrap{max-width:1200px;margin:0 auto}
-.page{display:none;padding:16px}.page.active{display:block}
+.wrap{max-width:1280px;margin:0 auto;width:100%}
+.page{display:none;padding:20px 22px 40px}.page.active{display:block}
 
 /* STAT CARDS */
-.sgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:14px}
-.sc{background:var(--s2);border-radius:var(--r);padding:12px 14px}
-.sl{font-size:11px;color:var(--t2);margin-bottom:3px;display:flex;align-items:center;gap:4px}
-.sl i{font-size:12px}.sv{font-size:22px;font-weight:600}.ss{font-size:10px;color:var(--t3);margin-top:2px}
+.sgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px}
+.sc{background:var(--s);border:0.5px solid var(--b);border-radius:var(--rl);padding:14px 15px;box-shadow:var(--shadow-sm);transition:box-shadow .15s,transform .15s}
+.sc:hover{box-shadow:var(--shadow-md);transform:translateY(-1px)}
+.sl{font-size:11px;color:var(--t2);margin-bottom:7px;display:flex;align-items:center;gap:6px;font-weight:600}
+.sl i{font-size:13px;width:22px;height:22px;border-radius:6px;background:var(--gold-l);color:var(--gold-d);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+.sv{font-size:24px;font-weight:700;letter-spacing:-.3px}.ss{font-size:10.5px;color:var(--t3);margin-top:3px}
 
 /* TOOLBAR */
-.tb{display:flex;gap:7px;margin-bottom:10px;align-items:center;flex-wrap:wrap}
+.tb{display:flex;gap:7px;margin-bottom:12px;align-items:center;flex-wrap:wrap}
 .sw{position:relative;flex:1;min-width:160px}
 .sw i{position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:14px;color:var(--t3)}
-input[type=text],input[type=number],select,textarea{background:var(--s);border:0.5px solid var(--b2);border-radius:var(--r);padding:7px 10px;font-size:12px;color:var(--t);font-family:inherit}
-input:focus,select:focus,textarea:focus{outline:none;border-color:var(--gold)}
+input[type=text],input[type=number],select,textarea{background:var(--s);border:0.5px solid var(--b2);border-radius:var(--r);padding:7px 10px;font-size:12px;color:var(--t);font-family:inherit;transition:border-color .13s,box-shadow .13s}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px var(--gold-l)}
 .sw input{padding-left:30px;width:100%}
 select{cursor:pointer}
-button{font-family:inherit;font-size:12px;border:0.5px solid var(--b2);border-radius:var(--r);padding:7px 11px;cursor:pointer;background:var(--s);color:var(--t);display:inline-flex;align-items:center;gap:4px;transition:background .12s}
+button{font-family:inherit;font-size:12px;border:0.5px solid var(--b2);border-radius:var(--r);padding:7px 12px;cursor:pointer;background:var(--s);color:var(--t);display:inline-flex;align-items:center;gap:5px;transition:background .12s,box-shadow .12s,transform .08s}
 button:hover{background:var(--s2)}
+button:active{transform:translateY(1px)}
 button:disabled{opacity:.4;cursor:not-allowed}
-.btn-primary{background:var(--gold);border-color:var(--gold);color:#fff;font-weight:600}
-.btn-primary:hover{background:var(--gold-d)}
+.btn-primary{background:var(--gold);border-color:var(--gold);color:#fff;font-weight:600;box-shadow:0 2px 8px rgba(201,150,44,.3)}
+.btn-primary:hover{background:var(--gold-d);box-shadow:0 3px 10px rgba(201,150,44,.4)}
 .btn-danger{background:var(--dbg);border-color:transparent;color:var(--dt)}
 .btn-success{background:var(--sbg);border-color:transparent;color:var(--st)}
-.btn-sm{padding:3px 8px;font-size:11px}
+.btn-sm{padding:4px 9px;font-size:11px}
 
 /* TABLE */
-.tw{border:0.5px solid var(--b);border-radius:var(--rl);overflow:hidden;overflow-x:auto}
+.tw{border:0.5px solid var(--b);border-radius:var(--rl);overflow:hidden;overflow-x:auto;background:var(--s);box-shadow:var(--shadow-sm)}
 table{width:100%;border-collapse:collapse;font-size:12px;min-width:480px}
-th{background:var(--s2);padding:8px 11px;text-align:left;font-weight:500;font-size:11px;color:var(--t2);border-bottom:0.5px solid var(--b);white-space:nowrap}
-td{padding:8px 11px;border-bottom:0.5px solid var(--b);color:var(--t);vertical-align:middle}
+th{background:var(--s2);padding:9px 12px;text-align:left;font-weight:600;font-size:10.5px;color:var(--t2);border-bottom:0.5px solid var(--b);white-space:nowrap;text-transform:uppercase;letter-spacing:.3px}
+td{padding:9px 12px;border-bottom:0.5px solid var(--b);color:var(--t);vertical-align:middle}
 tr:last-child td{border-bottom:none}
 tr:hover td{background:var(--s2)}
 .mono{font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;font-size:10px;color:var(--t2);background:var(--s2);padding:1px 5px;border-radius:3px}
 
 /* PILLS */
-.pill{font-size:10px;font-weight:600;padding:2px 7px;border-radius:8px;white-space:nowrap;display:inline-block}
+.pill{font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap;display:inline-block}
 .p-ok{background:var(--sbg);color:var(--st)}
 .p-low{background:var(--wbg);color:var(--wt)}
 .p-out{background:var(--dbg);color:var(--dt)}
 .p-info{background:var(--ibg);color:var(--it)}
-.p-hold{background:#EAF3DE;color:#27500A}
+.p-hold{background:var(--sbg);color:var(--st)}
 .p-pass{background:var(--sbg);color:var(--st)}
 .p-ga{background:var(--sbg);color:var(--st)}
 .p-gb{background:var(--wbg);color:var(--wt)}
 .p-gc{background:var(--dbg);color:var(--dt)}
 
 /* RACK */
-.rack-wrap{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
-.rack-card{border:0.5px solid var(--b);border-radius:var(--rl);overflow:hidden;background:var(--s)}
-.rack-head{background:var(--s2);padding:9px 13px;display:flex;justify-content:space-between;align-items:center;border-bottom:0.5px solid var(--b)}
-.rack-row{display:grid;grid-template-columns:26px 1fr 52px;gap:6px;align-items:center;padding:5px 11px;border-bottom:0.5px solid var(--b);font-size:11px}
+.rack-wrap{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+.rack-card{border:0.5px solid var(--b);border-radius:var(--rl);overflow:hidden;background:var(--s);box-shadow:var(--shadow-sm)}
+.rack-head{background:var(--s2);padding:10px 14px;display:flex;justify-content:space-between;align-items:center;border-bottom:0.5px solid var(--b);font-weight:600}
+.rack-row{display:grid;grid-template-columns:26px 1fr 52px;gap:6px;align-items:center;padding:6px 12px;border-bottom:0.5px solid var(--b);font-size:11px}
 .rack-row:last-child{border-bottom:none}
-.shelf-l{font-family:'SF Mono',Menlo,monospace;font-size:10px;font-weight:600;color:var(--t2)}
-.bar-bg{height:5px;background:var(--s3);border-radius:3px;overflow:hidden}
-.bar-f{height:100%;border-radius:3px}
-.bar-ok{background:#639922}.bar-low{background:#BA7517}.bar-out{background:#E24B4A}
+.rack-row:hover{background:var(--s2)}
+.shelf-l{font-family:'SF Mono',Menlo,monospace;font-size:10px;font-weight:700;color:var(--gold-d);background:var(--gold-l);border-radius:4px;padding:2px 0;text-align:center}
+.bar-bg{height:6px;background:var(--s3);border-radius:3px;overflow:hidden}
+.bar-f{height:100%;border-radius:3px;transition:width .3s}
+.bar-ok{background:#4C9A2A}.bar-low{background:#C6811A}.bar-out{background:#D6483F}
 .qty-r{text-align:right;color:var(--t2);font-size:10px}
 
 /* PANEL */
-.panel{border:0.5px solid var(--b);border-radius:var(--rl);overflow:hidden;margin-bottom:10px;background:var(--s)}
-.ph{background:var(--s2);padding:9px 13px;font-size:12px;font-weight:600;border-bottom:0.5px solid var(--b);display:flex;align-items:center;gap:6px}
-.ph i{font-size:14px;color:var(--t2)}
-.pb{padding:12px}
+.panel{border:0.5px solid var(--b);border-radius:var(--rl);overflow:hidden;margin-bottom:12px;background:var(--s);box-shadow:var(--shadow-sm)}
+.ph{background:var(--s2);padding:10px 14px;font-size:12px;font-weight:700;border-bottom:0.5px solid var(--b);display:flex;align-items:center;gap:7px}
+.ph i{font-size:14px;color:var(--gold-d)}
+.pb{padding:14px}
 .ph-badge{margin-left:auto;font-size:10px;padding:2px 7px;border-radius:8px;font-weight:600}
 
 /* FORM */
-.frow{margin-bottom:9px}
-.frow label{display:block;font-size:11px;color:var(--t2);margin-bottom:3px;font-weight:500}
+.frow{margin-bottom:10px}
+.frow label{display:block;font-size:11px;color:var(--t2);margin-bottom:4px;font-weight:600}
 .frow input,.frow select,.frow textarea{width:100%}
-.fg2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.fg2{display:grid;grid-template-columns:1fr 1fr;gap:9px}
 .fg4{display:grid;grid-template-columns:1fr 1fr 70px auto;gap:8px;align-items:end}
 
 /* QTY CTRL */
 .qc{display:flex;align-items:center;gap:5px}
-.qb{width:22px;height:22px;border-radius:4px;display:flex;align-items:center;justify-content:center;padding:0;font-size:14px;border:0.5px solid var(--b2)}
-.qv{min-width:26px;text-align:center;font-weight:600;font-size:12px}
+.qb{width:23px;height:23px;border-radius:5px;display:flex;align-items:center;justify-content:center;padding:0;font-size:14px;border:0.5px solid var(--b2)}
+.qv{min-width:26px;text-align:center;font-weight:700;font-size:12px}
 
 /* SOP SECTION */
-.sop-section{border:0.5px solid var(--b);border-radius:var(--rl);margin-bottom:10px;overflow:hidden;background:var(--s)}
-.sop-head{background:var(--s2);padding:10px 13px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;user-select:none}
+.sop-section{border:0.5px solid var(--b);border-radius:var(--rl);margin-bottom:10px;overflow:hidden;background:var(--s);box-shadow:var(--shadow-sm)}
+.sop-head{background:var(--s2);padding:11px 14px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;user-select:none}
 .sop-head:hover{background:var(--s3)}
-.sop-title{font-size:12px;font-weight:600;display:flex;align-items:center;gap:7px}
+.sop-title{font-size:12px;font-weight:700;display:flex;align-items:center;gap:7px}
 .sop-title i{font-size:14px;color:var(--gold)}
-.sop-body{padding:12px;display:none}
+.sop-body{padding:14px}
+.sop-body:not(.open){display:none}
 .sop-body.open{display:block}
 .sop-table{width:100%;border-collapse:collapse;font-size:11px;margin-top:8px}
 .sop-table th{background:var(--s3);padding:6px 8px;text-align:left;font-weight:600;color:var(--t2);border-bottom:0.5px solid var(--b)}
 .sop-table td{padding:6px 8px;border-bottom:0.5px solid var(--b);vertical-align:top;line-height:1.5}
 .sop-table tr:last-child td{border-bottom:none}
-.step-num{background:var(--ibg);color:var(--it);font-weight:600;padding:1px 6px;border-radius:3px;font-size:10px;margin-right:4px}
-.kpi-row{display:grid;grid-template-columns:2fr 1fr 1fr;gap:6px;margin-bottom:6px;font-size:11px;align-items:center;padding:5px 0;border-bottom:0.5px solid var(--b)}
+.step-num{background:var(--ibg);color:var(--it);font-weight:700;padding:1px 6px;border-radius:3px;font-size:10px;margin-right:4px}
+.kpi-row{display:grid;grid-template-columns:2fr 1fr 1fr;gap:6px;margin-bottom:6px;font-size:11px;align-items:center;padding:6px 0;border-bottom:0.5px solid var(--b)}
 .kpi-val{font-weight:700;color:var(--st)}
 .kpi-freq{color:var(--t3);font-size:10px}
-.exception-row{margin-bottom:7px;padding:8px 10px;background:var(--s2);border-radius:6px;font-size:11px;border-left:3px solid var(--wt)}
-.exc-title{font-weight:600;margin-bottom:3px}
+.exception-row{margin-bottom:7px;padding:9px 11px;background:var(--s2);border-radius:8px;font-size:11px;border-left:3px solid var(--wt)}
+.exc-title{font-weight:700;margin-bottom:3px}
 .exc-action{color:var(--t2);line-height:1.5}
 .chevron{font-size:12px;transition:transform .2s}
 .chevron.open{transform:rotate(180deg)}
 
 /* HISTORY / LOGS */
-.hist-entry{border:0.5px solid var(--b);border-radius:var(--r);padding:9px 12px;margin-bottom:7px;background:var(--s)}
+.hist-entry{border:0.5px solid var(--b);border-radius:var(--r);padding:10px 12px;margin-bottom:7px;background:var(--s);transition:box-shadow .12s}
+.hist-entry:hover{box-shadow:var(--shadow-sm)}
 .hist-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:3px}
-.hist-id{font-family:'SF Mono',Menlo,monospace;font-size:10px;font-weight:600}
+.hist-id{font-family:'SF Mono',Menlo,monospace;font-size:10px;font-weight:700}
 .hist-ts{font-size:10px;color:var(--t2)}
 .hist-body{font-size:11px;color:var(--t2);line-height:1.5}
 .ib-log .hist-entry{border-left:3px solid var(--st)}
 
 /* GRIDS */
-.ret-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.disp-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.cart-item{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:6px;padding:6px 0;border-bottom:0.5px solid var(--b);font-size:11px}
+.ret-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.disp-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.cart-item{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:6px;padding:7px 0;border-bottom:0.5px solid var(--b);font-size:11px}
 .cart-item:last-child{border-bottom:none}
-.escl-row{display:grid;grid-template-columns:1.5fr 1fr 1fr;gap:6px;margin-bottom:6px;font-size:11px;align-items:start;padding:5px 0;border-bottom:0.5px solid var(--b)}
+.escl-row{display:grid;grid-template-columns:1.5fr 1fr 1fr;gap:6px;margin-bottom:6px;font-size:11px;align-items:start;padding:6px 0;border-bottom:0.5px solid var(--b)}
 .escl-row:last-child{border-bottom:none}
-.escl-issue{font-weight:600}
+.escl-issue{font-weight:700}
 .escl-l1{color:var(--it)}.escl-l2{color:var(--wt)}
 
 /* MISC */
-.warn-box{background:var(--wbg);color:var(--wt);padding:8px 11px;border-radius:6px;font-size:11px;margin-bottom:10px;display:flex;align-items:center;gap:6px;line-height:1.5}
-.info-box{background:var(--ibg);color:var(--it);padding:8px 11px;border-radius:6px;font-size:11px;margin-bottom:10px;display:flex;align-items:center;gap:6px;line-height:1.5}
+.warn-box{background:var(--wbg);color:var(--wt);padding:9px 12px;border-radius:8px;font-size:11px;margin-bottom:10px;display:flex;align-items:center;gap:7px;line-height:1.5}
+.info-box{background:var(--ibg);color:var(--it);padding:9px 12px;border-radius:8px;font-size:11px;margin-bottom:10px;display:flex;align-items:center;gap:7px;line-height:1.5}
 .info-box i,.warn-box i{font-size:15px;flex-shrink:0}
-.empty{text-align:center;padding:24px;color:var(--t3);font-size:12px}
-.stitle{font-size:11px;font-weight:600;color:var(--t2);margin-bottom:8px;margin-top:2px;text-transform:uppercase;letter-spacing:.5px}
-.sep{height:0.5px;background:var(--b);margin:12px 0}
+.empty{text-align:center;padding:28px;color:var(--t3);font-size:12px}
+.stitle{font-size:11px;font-weight:700;color:var(--t2);margin-bottom:9px;margin-top:2px;text-transform:uppercase;letter-spacing:.5px}
+.sep{height:0.5px;background:var(--b);margin:14px 0}
 
 /* TOAST */
-#toast{position:fixed;bottom:20px;right:20px;background:var(--s);border:0.5px solid var(--b2);border-radius:var(--r);padding:10px 14px;font-size:12px;opacity:0;transform:translateY(8px);transition:all .25s;pointer-events:none;max-width:260px;z-index:9999;line-height:1.4;box-shadow:0 4px 12px rgba(0,0,0,.12)}
+#toast{position:fixed;bottom:20px;right:20px;background:var(--s);border:0.5px solid var(--b2);border-radius:var(--r);padding:11px 15px;font-size:12px;opacity:0;transform:translateY(8px);transition:all .25s;pointer-events:none;max-width:280px;z-index:9999;line-height:1.4;box-shadow:var(--shadow-lg)}
 #toast.show{opacity:1;transform:translateY(0)}
-#toast.s{border-color:#639922;color:var(--st)}
-#toast.w{border-color:#BA7517;color:var(--wt)}
+#toast.s{border-left:3px solid #4C9A2A;color:var(--st)}
+#toast.w{border-left:3px solid #C6811A;color:var(--wt)}
 
+/* LABEL PRINTER */
+.lbl-card{background:var(--s);border:1.5px solid var(--b);border-radius:10px;padding:11px;cursor:pointer;transition:all .15s;position:relative;box-shadow:var(--shadow-sm)}
+.lbl-card:hover{border-color:var(--gold);box-shadow:var(--shadow-md)}
+.lbl-card.selected{border-color:var(--gold);background:var(--ibg)}
+.lbl-card .lbl-check{position:absolute;top:8px;right:8px;width:18px;height:18px;border-radius:5px;border:1.5px solid var(--b);background:var(--s2);display:flex;align-items:center;justify-content:center}
+.lbl-card.selected .lbl-check{background:var(--gold);border-color:var(--gold);color:#fff}
+.lbl-preview{background:#fff;border-radius:6px;padding:9px 6px;margin-top:9px;text-align:center;font-family:monospace}
+
+/* AUTH SCREEN */
+#auth-screen{position:fixed;inset:0;background:radial-gradient(circle at 20% 15%,#2A3547 0%,var(--navy) 45%,var(--navy3) 100%);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px}
+.auth-card{background:var(--s);border-radius:18px;padding:34px;width:100%;max-width:400px;box-shadow:0 24px 64px rgba(0,0,0,.35)}
+.auth-logo{display:flex;align-items:center;gap:13px;margin-bottom:28px}
+.auth-gem{width:46px;height:46px;background:linear-gradient(135deg,var(--gold),var(--gold-d));border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;color:#fff;box-shadow:0 4px 12px rgba(201,150,44,.35)}
+.auth-title{font-size:19px;font-weight:700;color:var(--t)}
+.auth-sub{font-size:11px;color:var(--t2);margin-top:2px}
+.auth-field{margin-bottom:15px}
+.auth-field label{font-size:11px;font-weight:600;color:var(--t2);display:block;margin-bottom:5px}
+.auth-field input{width:100%;padding:11px 13px;border:1px solid var(--b);border-radius:9px;background:var(--s2);color:var(--t);font-size:13px;transition:border .2s,box-shadow .2s}
+.auth-field input:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px var(--gold-l)}
+.auth-btn{width:100%;padding:12px;background:var(--gold);color:#fff;border:none;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;margin-top:6px;transition:background .2s;box-shadow:0 4px 12px rgba(201,150,44,.3)}
+.auth-btn:hover{background:var(--gold-d)}
+.auth-btn:disabled{background:var(--b);cursor:not-allowed;color:var(--t3);box-shadow:none}
+.auth-err{color:var(--dt);font-size:11px;margin-top:8px;text-align:center;min-height:16px}
+
+/* USER MENU */
+.user-menu{position:relative}
+.user-menu-btn{display:flex;align-items:center;gap:6px;padding:5px 10px;background:var(--s2);border:0.5px solid var(--b);border-radius:8px;cursor:pointer;color:var(--t);font-size:11px;font-weight:600}
+.user-menu-btn:hover{background:var(--s3)}
+.user-dropdown{position:absolute;right:0;top:calc(100% + 8px);background:var(--s);border:0.5px solid var(--b);border-radius:10px;box-shadow:var(--shadow-lg);min-width:200px;z-index:200;display:none}
+.user-dropdown.open{display:block}
+.user-dropdown-item{padding:10px 14px;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:8px;color:var(--t);border-bottom:0.5px solid var(--b)}
+.user-dropdown-item:last-child{border-bottom:none}
+.user-dropdown-item:hover{background:var(--s2)}
+.auth-role-badge{border-radius:20px}
+
+/* MOBILE DASHBOARD */
+.mobile-view{min-height:70vh}
+#page-mobile{max-width:480px;margin:0 auto;background:transparent}
+
+/* RESPONSIVE */
+@media(max-width:900px){
+  .sidebar{transform:translateX(-100%)}
+  .sidebar.open{transform:translateX(0)}
+  .main{margin-left:0}
+  .hamburger{display:flex;align-items:center}
+  .sidebar-close{display:flex;align-items:center}
+}
 @media(max-width:600px){
   .rack-wrap,.ret-grid,.disp-grid,.fg2,.fg4{grid-template-columns:1fr}
   .sgrid{grid-template-columns:repeat(2,1fr)}
   .escl-row{grid-template-columns:1fr}
   .kpi-row{grid-template-columns:1fr 1fr}
+  .page{padding:14px 14px 32px}
+  .topbar-title{display:none}
 }
 
-/* LABEL PRINTER */
-.lbl-card{background:var(--s);border:1.5px solid var(--b);border-radius:8px;padding:10px;cursor:pointer;transition:all .15s;position:relative}
-.lbl-card:hover{border-color:var(--gold)}
-.lbl-card.selected{border-color:var(--gold);background:var(--ibg)}
-.lbl-card .lbl-check{position:absolute;top:7px;right:7px;width:18px;height:18px;border-radius:4px;border:1.5px solid var(--b);background:var(--s2);display:flex;align-items:center;justify-content:center}
-.lbl-card.selected .lbl-check{background:var(--gold);border-color:var(--gold);color:#fff}
-.lbl-preview{background:#fff;border-radius:4px;padding:8px 6px;margin-top:8px;text-align:center;font-family:monospace}
-/* AUTH SCREEN */
-#auth-screen{position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px}
-.auth-card{background:var(--s);border-radius:16px;padding:32px;width:100%;max-width:400px;box-shadow:0 8px 40px rgba(0,0,0,.15)}
-.auth-logo{display:flex;align-items:center;gap:12px;margin-bottom:28px}
-.auth-gem{width:44px;height:44px;background:linear-gradient(135deg,var(--gold),var(--gold-d));border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;color:#fff}
-.auth-title{font-size:18px;font-weight:700;color:var(--t)}
-.auth-sub{font-size:11px;color:var(--t2);margin-top:2px}
-.auth-field{margin-bottom:14px}
-.auth-field label{font-size:11px;font-weight:600;color:var(--t2);display:block;margin-bottom:5px}
-.auth-field input{width:100%;padding:10px 12px;border:1px solid var(--b);border-radius:8px;background:var(--s2);color:var(--t);font-size:13px;transition:border .2s}
-.auth-field input:focus{outline:none;border-color:var(--gold)}
-.auth-btn{width:100%;padding:12px;background:var(--gold);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;margin-top:6px;transition:background .2s}
-.auth-btn:hover{background:var(--gold-d)}
-.auth-btn:disabled{background:var(--b);cursor:not-allowed;color:var(--t3)}
-.auth-err{color:var(--dt);font-size:11px;margin-top:8px;text-align:center;min-height:16px}
-.user-menu{position:relative}
-.user-menu-btn{display:flex;align-items:center;gap:6px;padding:5px 10px;background:var(--s2);border:none;border-radius:6px;cursor:pointer;color:var(--t);font-size:11px;font-weight:600}
-.user-dropdown{position:absolute;right:0;top:calc(100% + 6px);background:var(--s);border:0.5px solid var(--b);border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,.15);min-width:200px;z-index:200;display:none}
-.user-dropdown.open{display:block}
-.user-dropdown-item{padding:10px 14px;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:8px;color:var(--t);border-bottom:0.5px solid var(--b)}
-.user-dropdown-item:last-child{border-bottom:none}
-.user-dropdown-item:hover{background:var(--s2)}
-/* MOBILE DASHBOARD */
-.mobile-view{min-height:70vh}
-#page-mobile{max-width:480px;margin:0 auto;background:#fff}
-
-/* MOBILE RESPONSIVE */
 @media (max-width:768px){
   body{font-size:12px}
-  .topbar{padding:8px;gap:4px}
-  .nav{gap:2px;padding:4px}
-  .ntab{padding:6px 8px;font-size:10px}
-  .page{padding:8px}
+  .page{padding:12px}
   .fg2{grid-template-columns:1fr}
-  .info-box{padding:8px;border-radius:4px;font-size:11px}
+  .info-box{padding:8px;border-radius:6px;font-size:11px}
   button{padding:8px 12px;font-size:11px}
-  input,select,textarea{font-size:12px;padding:6px}
+  input,select,textarea{font-size:12px;padding:7px}
   table{font-size:10px}
   .stitle{font-size:12px}
-  .panel{padding:8px}
-}
-
-@media (max-width:480px){
-  .topbar{flex-direction:column;padding:6px}
-  .nav{overflow-x:auto;gap:2px}
-  .ntab{padding:4px 6px;font-size:9px}
-  .page{padding:6px}
-  .fg2{gap:6px}
-  button{padding:6px 10px;font-size:10px}
-  .info-box{padding:6px;font-size:10px}
-  .modal{width:90%}
 }
 
 /* PRINT */
 @media print{
-  .topbar{position:relative}
+  .sidebar,.topbar,.sidebar-overlay{display:none!important}
+  .main{margin-left:0!important}
   #toast{display:none}
   .page{display:block!important;page-break-after:always}
 }
-@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,0,0,0.7)}70%{box-shadow:0 0 0 8px rgba(255,0,0,0)}100%{box-shadow:0 0 0 0 rgba(255,0,0,0)}}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(176,57,47,0.6)}70%{box-shadow:0 0 0 8px rgba(176,57,47,0)}100%{box-shadow:0 0 0 0 rgba(176,57,47,0)}}
+
 </style>
 </head>
 <body>
@@ -305,102 +345,126 @@ tr:hover td{background:var(--s2)}
   </div>
 </div>
 
-<div class="topbar">
-  <div class="logo">
+<div class="app-shell">
+<div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleSidebar()"></div>
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-brand">
     <div class="logo-gem">CL</div>
-    <div><div class="logo-t">CaratLane WMS</div><div class="logo-s">EPS Worldwide · EPS-WH-SOP-001 v1.0</div></div>
+    <div><div class="logo-t">CaratLane WMS</div><div class="logo-s">EPS Worldwide · SOP v1.0</div></div>
+    <button class="sidebar-close" onclick="toggleSidebar()"><i class="ti ti-x"></i></button>
   </div>
-  <div class="navs">
-    <div class="ntab active" data-tab="dashboard" onclick="nav('dashboard')"><i class="ti ti-layout-dashboard"></i>Dashboard</div>
-    <div class="ntab" data-tab="inbound" onclick="nav('inbound')"><i class="ti ti-package-import"></i>Inbound (§1)</div>
-    <div class="ntab" data-tab="picking" onclick="nav('picking')"><i class="ti ti-scan"></i>Picking (§2)</div>
-    <div class="ntab" data-tab="packing" onclick="nav('packing')"><i class="ti ti-box"></i>Packing (§3)</div>
-    <div class="ntab" data-tab="dispatch" onclick="nav('dispatch')"><i class="ti ti-truck-delivery"></i>Dispatch (§3)</div>
-    <div class="ntab" data-tab="returns" onclick="nav('returns')"><i class="ti ti-package-export"></i>Returns (§4)</div>
-    <div class="ntab" data-tab="inventory" onclick="nav('inventory')"><i class="ti ti-package"></i>Inventory</div>
-    <div class="ntab" data-tab="rack" onclick="nav('rack')"><i class="ti ti-layout-rows"></i>Rack View</div>
-    <div class="ntab" data-tab="labels" onclick="nav('labels')"><i class="ti ti-printer"></i>Label Printer</div>
-    <div class="ntab" data-tab="reports" onclick="nav('reports')"><i class="ti ti-chart-bar"></i>Reports</div>
-    <div class="ntab" data-tab="sop" onclick="nav('sop')"><i class="ti ti-file-text"></i>SOP</div>
-    <div class="ntab" data-tab="invcount" onclick="nav('invcount')"><i class="ti ti-list-check"></i>Inventory Count</div>
-    <div class="ntab" data-tab="mobile" onclick="nav('mobile')"><i class="ti ti-device-mobile"></i>Mobile Dashboard</div>
-    <div class="ntab" data-tab="audit" onclick="nav('audit')" id="tab-audit" style="display:none"><i class="ti ti-shield-check"></i>Audit Trail</div>
-    <div class="ntab" data-tab="users" onclick="nav('users')" id="tab-users" style="display:none"><i class="ti ti-users"></i>Users</div>
-    <button onclick="toggleMenu()" style="margin-left:auto;background:none;border:none;padding:0 15px;height:100%;cursor:pointer;color:var(--t2);font-size:11px;display:flex;align-items:center;gap:4px;transition:color 0.15s" onmouseover="this.style.color='var(--t)'" onmouseout="this.style.color='var(--t2)'">
-      <i class="ti ti-dots-vertical"></i>More
-    </button>
+  <nav class="sidebar-nav">
+    <div class="nav-group">
+      <div class="nav-group-label">Overview</div>
+      <div class="ntab active" data-tab="dashboard" onclick="nav('dashboard')"><i class="ti ti-layout-dashboard"></i><span>Dashboard</span></div>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label">Operations</div>
+      <div class="ntab" data-tab="inbound" onclick="nav('inbound')"><i class="ti ti-package-import"></i><span>Inbound</span><span class="nav-sec">§1</span><span class="notif-badge" id="notif-badge"></span></div>
+      <div class="ntab" data-tab="orders" onclick="nav('orders')"><i class="ti ti-clipboard-list"></i><span>Orders</span></div>
+      <div class="ntab" data-tab="picking" onclick="nav('picking')"><i class="ti ti-scan"></i><span>Picking</span><span class="nav-sec">§2</span></div>
+      <div class="ntab" data-tab="packing" onclick="nav('packing')"><i class="ti ti-box"></i><span>Packing</span><span class="nav-sec">§3</span></div>
+      <div class="ntab" data-tab="dispatch" onclick="nav('dispatch')"><i class="ti ti-truck-delivery"></i><span>Dispatch</span><span class="nav-sec">§3</span></div>
+      <div class="ntab" data-tab="returns" onclick="nav('returns')"><i class="ti ti-package-export"></i><span>Returns</span><span class="nav-sec">§4</span></div>
+      <div class="ntab" data-tab="mobile" onclick="nav('mobile')"><i class="ti ti-device-mobile"></i><span>Mobile Dashboard</span></div>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label">Inventory</div>
+      <div class="ntab" data-tab="inventory" onclick="nav('inventory')"><i class="ti ti-package"></i><span>Inventory</span></div>
+      <div class="ntab" data-tab="rack" onclick="nav('rack')"><i class="ti ti-layout-rows"></i><span>Rack View</span></div>
+      <div class="ntab" data-tab="invcount" onclick="nav('invcount')"><i class="ti ti-list-check"></i><span>Inventory Count</span></div>
+      <div class="ntab" data-tab="labels" onclick="nav('labels')"><i class="ti ti-printer"></i><span>Label Printer</span></div>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label">Insights</div>
+      <div class="ntab" data-tab="orderstatus" onclick="nav('orderstatus')"><i class="ti ti-timeline"></i><span>Order Status</span></div>
+      <div class="ntab" data-tab="reports" onclick="nav('reports')"><i class="ti ti-chart-bar"></i><span>Reports</span></div>
+      <div class="ntab" data-tab="analytics" onclick="nav('analytics')"><i class="ti ti-chart-line"></i><span>Analytics &amp; Compliance</span></div>
+      <div class="ntab" data-tab="finance" onclick="nav('finance')"><i class="ti ti-wallet"></i><span>Finance &amp; Capacity</span></div>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label">Reference &amp; Admin</div>
+      <div class="ntab" data-tab="sop" onclick="nav('sop')"><i class="ti ti-file-text"></i><span>SOP Reference</span></div>
+      <div class="ntab" data-tab="audit" onclick="nav('audit')" id="tab-audit" style="display:none"><i class="ti ti-shield-check"></i><span>Audit Trail</span></div>
+      <div class="ntab" data-tab="users" onclick="nav('users')" id="tab-users" style="display:none"><i class="ti ti-users"></i><span>Users</span></div>
+    </div>
+  </nav>
+  <div class="sidebar-footer">
+    <button class="sidebar-more-btn" onclick="toggleMenu()"><i class="ti ti-dots-vertical"></i>More</button>
   </div>
-  
-  <!-- Dropdown Menu -->
-  <div id="dropdown-menu" style="display:none;position:fixed;background:var(--s);border:0.5px solid var(--b);border-radius:8px;min-width:180px;z-index:2000;box-shadow:0 8px 24px rgba(0,0,0,0.2);top:60px;right:20px">
-    <div onclick="navAndClose('analytics')" style="padding:12px 16px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--t2);border-bottom:0.5px solid var(--b);white-space:nowrap;transition:all 0.2s" onmouseover="this.style.backgroundColor='var(--s2)';this.style.color='var(--t)'" onmouseout="this.style.backgroundColor='transparent';this.style.color='var(--t2)'">
-      <i class="ti ti-chart-line"></i>Analytics & Compliance
-    </div>
-    <div onclick="navAndClose('finance')" style="padding:12px 16px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--t2);border-bottom:0.5px solid var(--b);white-space:nowrap;transition:all 0.2s" onmouseover="this.style.backgroundColor='var(--s2)';this.style.color='var(--t)'" onmouseout="this.style.backgroundColor='transparent';this.style.color='var(--t2)'">
-      <i class="ti ti-wallet"></i>Finance & Capacity
-    </div>
-    <div onclick="showClearDataModal()" style="padding:12px 16px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--dt);border-top:0.5px solid var(--b);white-space:nowrap;transition:all 0.2s;font-weight:600" onmouseover="this.style.backgroundColor='var(--dbg)'" onmouseout="this.style.backgroundColor='transparent'">
-      <i class="ti ti-trash"></i>Clear All Data
-    </div>
-  </div>
+</aside>
 
-  <!-- CLEAR DATA CONFIRMATION MODAL -->
-  <div id="clear-modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:3000;align-items:center;justify-content:center;padding:20px">
-    <div style="background:var(--s);border-radius:14px;max-width:420px;width:100%;padding:24px;box-shadow:0 8px 40px rgba(0,0,0,.4)">
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
-        <div style="width:44px;height:44px;background:var(--dbg);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
-          <i class="ti ti-alert-triangle" style="font-size:22px;color:var(--dt)"></i>
-        </div>
-        <div>
-          <div style="font-weight:700;font-size:15px;color:var(--dt)">Clear All Data</div>
-          <div style="font-size:11px;color:var(--t2);margin-top:2px">This action cannot be undone</div>
-        </div>
+<!-- Dropdown Menu (More) -->
+<div id="dropdown-menu" style="display:none;position:fixed;background:var(--s);border:0.5px solid var(--b);border-radius:10px;min-width:200px;z-index:2000;box-shadow:var(--shadow-lg);bottom:16px;left:16px">
+  <div onclick="showClearDataModal();toggleMenu()" style="padding:12px 16px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--dt);white-space:nowrap;transition:all 0.2s;font-weight:600;border-radius:10px" onmouseover="this.style.backgroundColor='var(--dbg)'" onmouseout="this.style.backgroundColor='transparent'">
+    <i class="ti ti-trash"></i>Clear All Data
+  </div>
+</div>
+
+<!-- CLEAR DATA CONFIRMATION MODAL -->
+<div id="clear-modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:3000;align-items:center;justify-content:center;padding:20px">
+  <div style="background:var(--s);border-radius:14px;max-width:420px;width:100%;padding:24px;box-shadow:0 8px 40px rgba(0,0,0,.4)">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+      <div style="width:44px;height:44px;background:var(--dbg);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <i class="ti ti-alert-triangle" style="font-size:22px;color:var(--dt)"></i>
       </div>
-      <div style="background:var(--dbg);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:11px;color:var(--dt);line-height:1.8">
-        The following will be <strong>permanently deleted</strong>:<br>
-        • All GRN / inbound records<br>
-        • All pick, pack & dispatch history<br>
-        • All returns records<br>
-        • All inventory counts & audits<br>
-        • All packing queue items<br>
-        • Inventory quantities (reset to zero)
-      </div>
-      <div style="margin-bottom:16px">
-        <label for="clear-confirm-input" style="font-size:11px;color:var(--t2);display:block;margin-bottom:6px;font-weight:600">Type <strong style="color:var(--dt)">CLEAR</strong> to confirm:</label>
-        <input type="text" id="clear-confirm-input" placeholder="Type CLEAR here" style="width:100%;padding:10px;border:1.5px solid var(--b);border-radius:6px;background:var(--s2);color:var(--t);font-size:13px;font-weight:600;letter-spacing:2px" oninput="validateClearInput()">
-      </div>
-      <div style="display:flex;gap:8px">
-        <button onclick="closeClearModal()" style="flex:1;padding:10px;background:var(--s2);color:var(--t);border:0.5px solid var(--b);border-radius:6px;cursor:pointer;font-weight:600;font-size:12px">Cancel</button>
-        <button id="clear-confirm-btn" onclick="executeFullClear()" disabled style="flex:1;padding:10px;background:var(--b);color:var(--t3);border:none;border-radius:6px;cursor:not-allowed;font-weight:600;font-size:12px;transition:all .2s">
-          <i class="ti ti-trash"></i> Clear Everything
-        </button>
+      <div>
+        <div style="font-weight:700;font-size:15px;color:var(--dt)">Clear All Data</div>
+        <div style="font-size:11px;color:var(--t2);margin-top:2px">This action cannot be undone</div>
       </div>
     </div>
-  </div>
-  <div class="tr" style="gap:10px">
-    <div id="sync-status" style="display:flex;align-items:center;gap:4px;color:var(--t3)"><i class="ti ti-cloud" style="font-size:13px"></i><span style="font-size:10px">Connecting...</span></div>
-    <i class="ti ti-bell" style="font-size:16px;color:var(--t2)"></i>
-    <span class="abadge" id="alert-ct">0</span>
-    <div class="user-menu" id="user-menu" style="display:flex;align-items:center">
-      <button class="user-menu-btn" onclick="toggleUserMenu()" style="background:none;border:1px solid var(--b);border-radius:6px;padding:6px 10px;color:var(--t);font-size:11px;cursor:pointer;display:flex;align-items:center;gap:6px;font-weight:600">
-        <i class="ti ti-user-circle" style="font-size:15px"></i>
-        <span id="user-menu-name">User</span>
-        <span id="user-role-badge" class="auth-role-badge" style="background:var(--gold);color:#fff;font-size:9px;padding:2px 6px">—</span>
-        <i class="ti ti-chevron-down" style="font-size:11px"></i>
+    <div style="background:var(--dbg);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:11px;color:var(--dt);line-height:1.8">
+      The following will be <strong>permanently deleted</strong>:<br>
+      • All GRN / inbound records<br>
+      • All pick, pack &amp; dispatch history<br>
+      • All returns records<br>
+      • All inventory counts &amp; audits<br>
+      • All packing queue items<br>
+      • Inventory quantities (reset to zero)
+    </div>
+    <div style="margin-bottom:16px">
+      <label for="clear-confirm-input" style="font-size:11px;color:var(--t2);display:block;margin-bottom:6px;font-weight:600">Type <strong style="color:var(--dt)">CLEAR</strong> to confirm:</label>
+      <input type="text" id="clear-confirm-input" placeholder="Type CLEAR here" style="width:100%;padding:10px;border:1.5px solid var(--b);border-radius:6px;background:var(--s2);color:var(--t);font-size:13px;font-weight:600;letter-spacing:2px" oninput="validateClearInput()">
+    </div>
+    <div style="display:flex;gap:8px">
+      <button onclick="closeClearModal()" style="flex:1;padding:10px;background:var(--s2);color:var(--t);border:0.5px solid var(--b);border-radius:6px;cursor:pointer;font-weight:600;font-size:12px">Cancel</button>
+      <button id="clear-confirm-btn" onclick="executeFullClear()" disabled style="flex:1;padding:10px;background:var(--b);color:var(--t3);border:none;border-radius:6px;cursor:not-allowed;font-weight:600;font-size:12px;transition:all .2s">
+        <i class="ti ti-trash"></i> Clear Everything
       </button>
-      <div class="user-dropdown" id="user-dropdown" style="position:fixed;top:55px;right:20px;background:var(--s);border:1px solid var(--b);border-radius:8px;min-width:180px;z-index:10000;box-shadow:0 8px 24px rgba(0,0,0,0.3);display:none">
-        <div class="user-dropdown-item" style="pointer-events:none;opacity:.6" id="user-info-item">
-          <i class="ti ti-id-badge"></i><span id="user-email-display">—</span>
-        </div>
-        <div class="user-dropdown-item" onclick="nav('audit')"><i class="ti ti-shield-check"></i>Audit Trail</div>
-        <div class="user-dropdown-item" id="manage-users-item" onclick="nav('users')" style="display:none"><i class="ti ti-users"></i>Manage Users</div>
-        <div class="user-dropdown-item" onclick="authLogout()" style="color:var(--dt)"><i class="ti ti-logout"></i>Sign Out</div>
-      </div>
     </div>
   </div>
 </div>
 
+<div class="main">
+  <div class="topbar">
+    <button class="hamburger" onclick="toggleSidebar()"><i class="ti ti-menu-2"></i></button>
+    <div class="topbar-title" id="topbar-title">Dashboard</div>
+    <div class="tr" style="gap:10px;margin-left:auto">
+      <div id="sync-status" style="display:flex;align-items:center;gap:4px;color:var(--t3)"><i class="ti ti-cloud" style="font-size:13px"></i><span style="font-size:10px">Connecting...</span></div>
+      <i class="ti ti-bell" style="font-size:16px;color:var(--t2)"></i>
+      <span class="abadge" id="alert-ct">0</span>
+      <div class="user-menu" id="user-menu" style="display:flex;align-items:center">
+        <button class="user-menu-btn" onclick="toggleUserMenu()" style="background:none;border:1px solid var(--b);border-radius:6px;padding:6px 10px;color:var(--t);font-size:11px;cursor:pointer;display:flex;align-items:center;gap:6px;font-weight:600">
+          <i class="ti ti-user-circle" style="font-size:15px"></i>
+          <span id="user-menu-name">User</span>
+          <span id="user-role-badge" class="auth-role-badge" style="background:var(--gold);color:#fff;font-size:9px;padding:2px 6px">—</span>
+          <i class="ti ti-chevron-down" style="font-size:11px"></i>
+        </button>
+        <div class="user-dropdown" id="user-dropdown" style="position:fixed;top:55px;right:20px;background:var(--s);border:1px solid var(--b);border-radius:8px;min-width:180px;z-index:10000;box-shadow:0 8px 24px rgba(0,0,0,0.3);display:none">
+          <div class="user-dropdown-item" style="pointer-events:none;opacity:.6" id="user-info-item">
+            <i class="ti ti-id-badge"></i><span id="user-email-display">—</span>
+          </div>
+          <div class="user-dropdown-item" onclick="nav('audit')"><i class="ti ti-shield-check"></i>Audit Trail</div>
+          <div class="user-dropdown-item" id="manage-users-item" onclick="nav('users')" style="display:none"><i class="ti ti-users"></i>Manage Users</div>
+          <div class="user-dropdown-item" onclick="authLogout()" style="color:var(--dt)"><i class="ti ti-logout"></i>Sign Out</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
 <div class="wrap">
+
+
 
 <!-- ═══ DASHBOARD ═══ -->
 <div id="page-dashboard" class="page active">
@@ -498,6 +562,54 @@ tr:hover td{background:var(--s2)}
 </div>
 
 <!-- ═══ PICKING (SOP §2) ═══ -->
+<!-- ═══ ORDERS (intake & assignment) ═══ -->
+<div id="page-orders" class="page">
+  <div class="info-box"><i class="ti ti-info-circle"></i>Orders are created here first, then assigned to a picker. Pickers only see orders assigned to them in the Picking tab / mobile Pick view.</div>
+
+  <div id="order-create-panel" class="panel" style="margin-bottom:16px;display:none">
+    <div class="ph"><i class="ti ti-plus"></i>Create order</div>
+    <div class="pb">
+      <div class="fg2">
+        <div class="frow"><label for="ord-id">Order ID</label>
+          <div style="display:flex;gap:6px">
+            <input type="text" id="ord-id" placeholder="e.g. ORD-20260715-01" style="flex:1">
+            <button onclick="document.getElementById('ord-id').value=newId('ORD')" style="white-space:nowrap"><i class="ti ti-dice"></i>Auto</button>
+          </div>
+        </div>
+        <div class="frow"><label for="ord-customer">Customer name</label><input type="text" id="ord-customer" placeholder="Optional"></div>
+      </div>
+      <div class="fg2">
+        <div class="frow"><label for="ord-priority">Priority</label>
+          <select id="ord-priority"><option value="Express">Express</option><option value="Standard" selected>Standard</option><option value="Pre-order">Pre-order</option></select>
+        </div>
+        <div class="frow"><label for="ord-method">Picking method</label>
+          <select id="ord-method"><option value="Single">Single order pick</option><option value="Batch">Batch pick</option><option value="Zone">Zone pick</option></select>
+        </div>
+      </div>
+      <div class="fg2">
+        <div class="frow"><label for="ord-address">Address</label><input type="text" id="ord-address" placeholder="Optional"></div>
+        <div class="fg2" style="gap:8px">
+          <div class="frow"><label for="ord-pincode">Pincode</label><input type="text" id="ord-pincode" placeholder="Optional"></div>
+          <div class="frow"><label for="ord-phone">Phone</label><input type="text" id="ord-phone" placeholder="Optional"></div>
+        </div>
+      </div>
+      <div class="sep"></div>
+      <div class="stitle">Items in this order</div>
+      <div class="fg4" style="margin-bottom:8px">
+        <div><label for="ord-sku" style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">SKU</label><select id="ord-sku" style="width:100%;font-size:11px"></select></div>
+        <div><label for="ord-qty" style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">Qty</label><input type="number" id="ord-qty" value="1" min="1"></div>
+        <div></div>
+        <button onclick="addOrderItem()"><i class="ti ti-plus"></i>Add</button>
+      </div>
+      <div id="ord-items-list" style="margin-bottom:10px"></div>
+      <button class="btn-primary" style="width:100%;justify-content:center" onclick="createOrder()"><i class="ti ti-check"></i>Create order</button>
+    </div>
+  </div>
+
+  <div class="stitle">Order queue</div>
+  <div id="orders-board"></div>
+</div>
+
 <div id="page-picking" class="page">
   <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
     <button onclick="enableBarcodeScanner('picking')" style="padding:7px 12px;background:var(--s2);border:1px solid var(--b);border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;display:flex;align-items:center;gap:5px;color:var(--t)"><i class="ti ti-barcode" style="font-size:14px;color:var(--gold)"></i>Scan SKU Barcode</button>
@@ -505,40 +617,37 @@ tr:hover td{background:var(--s2)}
   </div>
   <div class="fg2">
     <div>
-      <div class="panel">
-        <div class="ph"><i class="ti ti-scan"></i>Generate pick task</div>
-        <div class="pb">
-          <div class="frow"><label for="pk-orderid">Order ID</label><input type="text" id="pk-orderid" placeholder="e.g. CL-ORD-20260601-0088"></div>
-          <div class="frow"><label for="pk-priority">Priority (SOP §2.4 Stage A, Step 3)</label>
-            <select id="pk-priority">
-              <option value="Express">Express (highest priority)</option>
-              <option value="Standard" selected>Standard</option>
-              <option value="Pre-order">Pre-order</option>
-            </select>
-          </div>
-          <div class="frow"><label for="pk-method">Picking method (SOP §2.2)</label>
-            <select id="pk-method">
-              <option value="Single">Single order pick — high value / complex</option>
-              <option value="Batch">Batch pick — high volume periods</option>
-              <option value="Zone">Zone pick — zone-wise consolidation</option>
-            </select>
-          </div>
-          <div class="frow"><label for="pk-picker">Assigned picker ID</label><input type="text" id="pk-picker" placeholder="e.g. EPS-P04"></div>
-          <div class="sep"></div>
-          <div class="stitle">Items to pick</div>
-          <div class="fg4" style="margin-bottom:8px">
-            <div><label for="pk-sku" style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">SKU</label><select id="pk-sku" style="width:100%;font-size:11px"></select></div>
-            <div><label for="pk-cond" style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">Condition check (§2.4 B-7)</label>
-              <select id="pk-cond">
-                <option value="ok">Good — pick confirmed</option>
-                <option value="defective">Defective — flag to HOLD</option>
-              </select>
+      <div id="pk-my-orders-wrap">
+        <div class="stitle">My assigned orders</div>
+        <div class="info-box" style="margin-bottom:10px"><i class="ti ti-info-circle"></i>Orders are created and assigned to you from the Orders tab. Pick from the list below.</div>
+        <div id="pk-my-orders"></div>
+      </div>
+      <div id="pk-active-wrap" style="display:none">
+        <div class="panel">
+          <div class="ph"><i class="ti ti-scan"></i>Picking: <span id="pk-active-orderid"></span></div>
+          <div class="pb">
+            <div style="font-size:11px;color:var(--t2);margin-bottom:10px" id="pk-active-summary"></div>
+            <div class="stitle" style="margin-top:0">Expected items</div>
+            <div id="pk-checklist" style="margin-bottom:10px"></div>
+            <div class="sep"></div>
+            <div class="stitle">Confirm items (SOP §2.4 B-7)</div>
+            <div class="fg4" style="margin-bottom:8px">
+              <div><label for="pk-sku" style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">SKU</label><select id="pk-sku" style="width:100%;font-size:11px"></select></div>
+              <div><label for="pk-cond" style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">Condition check</label>
+                <select id="pk-cond">
+                  <option value="ok">Good — pick confirmed</option>
+                  <option value="defective">Defective — flag to HOLD</option>
+                </select>
+              </div>
+              <div><label for="pk-qty" style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">Qty</label><input type="number" id="pk-qty" value="1" min="1"></div>
+              <button onclick="addPkItem()"><i class="ti ti-plus"></i>Add</button>
             </div>
-            <div><label for="pk-qty" style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">Qty</label><input type="number" id="pk-qty" value="1" min="1"></div>
-            <button onclick="addPkItem()"><i class="ti ti-plus"></i>Add</button>
+            <div id="pk-items-list" style="margin-bottom:8px"></div>
+            <div style="display:flex;gap:8px">
+              <button onclick="cancelActivePick()" style="color:var(--dt)"><i class="ti ti-x"></i>Cancel pick</button>
+              <button class="btn-primary" style="flex:1;justify-content:center" onclick="releaseToPacking()"><i class="ti ti-arrow-right"></i>Complete pick &amp; release to packing</button>
+            </div>
           </div>
-          <div id="pk-items-list" style="margin-bottom:8px"></div>
-          <button class="btn-primary" style="width:100%;justify-content:center" onclick="releaseToPacking()"><i class="ti ti-arrow-right"></i>Complete pick &amp; release to packing</button>
         </div>
       </div>
     </div>
@@ -804,6 +913,17 @@ tr:hover td{background:var(--s2)}
 
 </div>
 
+<!-- ═══ UNIFIED ORDER STATUS ═══ -->
+<div id="page-orderstatus" class="page">
+  <div class="info-box"><i class="ti ti-info-circle"></i>Trace a single order across pick, pack, dispatch and any QC exceptions logged against it.</div>
+  <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+    <input type="text" id="os-order-id" placeholder="Enter or scan Order ID (e.g., ORD-XXXX)" style="flex:1;min-width:220px;padding:9px 12px;border:0.5px solid var(--b);border-radius:6px;background:var(--s2);color:var(--t);font-size:12px" onkeydown="if(event.key==='Enter')lookupOrderStatus()">
+    <button onclick="lookupOrderStatus()" style="padding:9px 18px;background:var(--gold);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;display:flex;align-items:center;gap:6px"><i class="ti ti-search"></i>Track order</button>
+  </div>
+  <div id="os-recent" style="margin-bottom:16px"></div>
+  <div id="os-result"></div>
+</div>
+
 <!-- ═══ REPORTS & MIS (SOP §6) ═══ -->
 <div id="page-reports" class="page">
   <div class="info-box"><i class="ti ti-info-circle"></i>SOP §6.2 — Weekly MIS reports to CaratLane every Monday by 10:00 AM for the previous week: Inbound, Outbound, Returns, Inventory, Exception reports.</div>
@@ -907,95 +1027,168 @@ tr:hover td{background:var(--s2)}
 <!-- ═══ MOBILE DASHBOARD ═══ -->
 <div id="page-mobile" class="page" style="padding:8px">
   <div style="display:flex;gap:8px;margin-bottom:12px">
-    <button onclick="switchMobileView('home')" id="btn-home" style="flex:1;padding:10px;background:var(--st);color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:12px"><i class="ti ti-home"></i>Home</button>
-    <button onclick="switchMobileView('picks')" id="btn-picks" style="flex:1;padding:10px;background:var(--b);color:var(--t);border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:12px"><i class="ti ti-list"></i>My Picks</button>
-    <button onclick="switchMobileView('qc')" id="btn-qc" style="flex:1;padding:10px;background:var(--b);color:var(--t);border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:12px"><i class="ti ti-camera"></i>QC</button>
+    <button onclick="switchMobileView('home')" id="btn-home" class="mp-navbtn active"><i class="ti ti-home"></i>Home</button>
+    <button onclick="switchMobileView('pick')" id="btn-pick" class="mp-navbtn" style="display:none"><i class="ti ti-scan"></i>Pick</button>
+    <button onclick="switchMobileView('pack')" id="btn-pack" class="mp-navbtn" style="display:none"><i class="ti ti-box"></i>Pack</button>
+    <button onclick="switchMobileView('qc')" id="btn-qc" class="mp-navbtn"><i class="ti ti-camera"></i>QC</button>
   </div>
 
   <!-- HOME VIEW -->
   <div id="mobile-home" class="mobile-view">
     <!-- KPI Cards -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
-      <div style="background:var(--st);color:#fff;padding:12px;border-radius:6px;text-align:center">
+      <div style="background:var(--st);color:#fff;padding:12px;border-radius:9px">
         <div style="font-size:24px;font-weight:bold" id="m-kpi-picks">0</div>
         <div style="font-size:11px;margin-top:4px">Picks Today</div>
       </div>
-      <div style="background:var(--wt);color:#fff;padding:12px;border-radius:6px;text-align:center">
+      <div style="background:var(--wt);color:#fff;padding:12px;border-radius:9px">
         <div style="font-size:24px;font-weight:bold" id="m-kpi-accuracy">0%</div>
         <div style="font-size:11px;margin-top:4px">Accuracy</div>
       </div>
-      <div style="background:var(--gold);color:#fff;padding:12px;border-radius:6px;text-align:center">
+      <div style="background:var(--gold);color:#fff;padding:12px;border-radius:9px">
         <div style="font-size:24px;font-weight:bold" id="m-kpi-cycletime">0m</div>
         <div style="font-size:11px;margin-top:4px">Avg Cycle Time</div>
       </div>
-      <div style="background:#666;color:#fff;padding:12px;border-radius:6px;text-align:center">
+      <div style="background:var(--navy);color:#fff;padding:12px;border-radius:9px">
         <div style="font-size:24px;font-weight:bold" id="m-kpi-dispatch">0</div>
         <div style="font-size:11px;margin-top:4px">Dispatches</div>
       </div>
     </div>
 
     <!-- Active Tasks -->
-    <div style="background:var(--s2);padding:12px;border-radius:6px;margin-bottom:12px">
-      <div style="font-weight:600;margin-bottom:8px;font-size:13px">Active Tasks</div>
-      <div id="m-active-tasks" style="font-size:12px;line-height:2">
-        <div><span style="color:var(--t2)">Items to Pick:</span> <span id="m-items-left" style="font-weight:600">0</span></div>
-        <div><span style="color:var(--t2)">My Current Pick:</span> <span id="m-current-order" style="font-weight:600">—</span></div>
-        <div><span style="color:var(--t2)">Progress:</span> <span id="m-progress" style="font-weight:600">0%</span></div>
+    <div class="panel">
+      <div class="ph"><i class="ti ti-activity"></i>Active tasks</div>
+      <div class="pb" id="m-active-tasks" style="font-size:12px;line-height:2">
+        <div><span style="color:var(--t2)">Pending pick/pack:</span> <span id="m-items-left" style="font-weight:700">0</span></div>
+        <div><span style="color:var(--t2)">Next up:</span> <span id="m-current-order" style="font-weight:700">—</span></div>
+        <div><span style="color:var(--t2)">Progress:</span> <span id="m-progress" style="font-weight:700">0%</span></div>
+        <div><span style="color:var(--t2)">Stock held by pickers:</span> <span id="m-held-stock" style="font-weight:700;color:var(--wt)">0 units</span></div>
       </div>
     </div>
 
     <!-- Quick Actions -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-      <button onclick="switchMobileView('picks')" style="padding:12px;background:var(--st);color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:12px"><i class="ti ti-list"></i>Start Picking</button>
-      <button onclick="switchMobileView('qc')" style="padding:12px;background:var(--wt);color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:12px"><i class="ti ti-camera"></i>QC Check</button>
+    <div class="mp-btn-grid" style="margin-top:12px">
+      <button class="btn-primary" id="m-quick-pick" style="justify-content:center;padding:12px;display:none" onclick="switchMobileView('pick')"><i class="ti ti-scan"></i>Start picking</button>
+      <button class="btn-primary" id="m-quick-pack" style="justify-content:center;padding:12px;display:none" onclick="switchMobileView('pack')"><i class="ti ti-box"></i>Start packing</button>
+      <button style="justify-content:center;padding:12px" onclick="switchMobileView('qc')"><i class="ti ti-camera"></i>QC check</button>
+    </div>
+
+    <div class="mp-scanner-help">
+      <b>HT20 Pro scanner setup</b> — pair once: phone Bluetooth settings → HT20 Pro (keyboard/HID mode is the factory default, no app needed). Once paired, open Pick or Pack below and just pull the trigger — scans go straight in, no tapping required.
     </div>
 
     <!-- Offline Status -->
-    <div id="m-offline-badge" style="display:none;margin-top:12px;padding:8px;background:#ff6b6b;color:#fff;border-radius:4px;text-align:center;font-size:11px;font-weight:600">
-      📡 Working Offline - Data will sync when connected
+    <div id="m-offline-badge" style="display:none;margin-top:12px;padding:8px;background:var(--dbg);color:var(--dt);border-radius:8px;text-align:center;font-size:11px;font-weight:700">
+      <i class="ti ti-wifi-off"></i> Working offline — actions won't sync until you're back online
     </div>
   </div>
 
-  <!-- PICKS VIEW -->
-  <div id="mobile-picks" class="mobile-view" style="display:none">
-    <div style="margin-bottom:12px;padding:12px;background:var(--s2);border-radius:6px">
-      <input type="text" id="m-order-search" placeholder="Search Order ID or SKU..." oninput="filterMobilePickList()" style="width:100%;padding:8px;border:0.5px solid var(--b);border-radius:4px;font-size:12px">
+  <!-- PICK VIEW -->
+  <div id="mobile-pick" class="mobile-view" style="display:none">
+    <div id="mp-pick-setup">
+      <div class="stitle" style="margin-top:0">My assigned orders</div>
+      <div id="mp-my-orders"></div>
     </div>
 
-    <div id="m-pick-list" style="display:grid;gap:8px"></div>
+    <div id="mp-pick-active" style="display:none">
+      <div class="scan-target listening" id="mp-pick-scan-target">
+        <i class="ti ti-barcode"></i>
+        <div class="scan-title">Scan next item</div>
+        <div class="scan-sub" id="mp-pick-order-label">Order —</div>
+      </div>
+      <div id="mp-pick-list"></div>
+      <div style="margin-top:10px">
+        <label style="font-size:11px;color:var(--t2);font-weight:600;display:block;margin-bottom:5px">No scanner handy? Add manually</label>
+        <select id="mp-manual-sku" style="width:100%;margin-bottom:6px"></select>
+        <button style="width:100%;justify-content:center" onclick="mobilePickManualAdd()"><i class="ti ti-plus"></i>Add item</button>
+      </div>
+      <div class="mp-btn-grid" style="margin-top:14px">
+        <button onclick="cancelMobilePick()" style="justify-content:center;color:var(--dt)"><i class="ti ti-x"></i>Cancel pick</button>
+        <button class="btn-primary" style="justify-content:center" onclick="completeMobilePick()"><i class="ti ti-check"></i>Complete pick</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PACK VIEW -->
+  <div id="mobile-pack" class="mobile-view" style="display:none">
+    <div id="mp-pack-queue-wrap">
+      <div class="stitle">Packing queue</div>
+      <div id="mp-pack-queue"></div>
+    </div>
+
+    <div id="mp-pack-active" style="display:none">
+      <div class="panel" style="margin-bottom:12px">
+        <div class="ph"><i class="ti ti-package"></i><span id="mp-pack-order-label">Order —</span></div>
+        <div class="pb" style="font-size:11px;color:var(--t2)" id="mp-pack-summary"></div>
+      </div>
+
+      <div id="mp-pack-checklist-wrap">
+        <div class="scan-target listening" id="mp-pack-scan-target">
+          <i class="ti ti-barcode"></i>
+          <div class="scan-title">Scan each item to verify</div>
+          <div class="scan-sub">Matches the pick list before you box it</div>
+        </div>
+        <div id="mp-pack-checklist"></div>
+        <button class="btn-primary" id="mp-pack-continue-btn" style="width:100%;justify-content:center;margin-top:10px" onclick="proceedToMobilePackDetails()" disabled><i class="ti ti-arrow-right"></i>All items verified — continue</button>
+      </div>
+
+      <div id="mp-pack-details-wrap" style="display:none">
+        <div class="panel">
+          <div class="ph"><i class="ti ti-box"></i>Box details</div>
+          <div class="pb">
+            <div class="fg2">
+              <div class="frow"><label for="mp-length">Length (cm)</label><input type="number" id="mp-length" oninput="calcMobileVolWeight()"></div>
+              <div class="frow"><label for="mp-width">Width (cm)</label><input type="number" id="mp-width" oninput="calcMobileVolWeight()"></div>
+            </div>
+            <div class="fg2">
+              <div class="frow"><label for="mp-height">Height (cm)</label><input type="number" id="mp-height" oninput="calcMobileVolWeight()"></div>
+              <div class="frow"><label for="mp-actual-weight">Actual weight (kg)</label><input type="number" id="mp-actual-weight" oninput="calcMobileVolWeight()"></div>
+            </div>
+            <div id="mp-vol-result" style="display:none;background:var(--s2);border-radius:8px;padding:9px 11px;margin-bottom:9px;font-size:11px;color:var(--t2)">
+              Chargeable weight: <strong id="mp-show-chargeable" style="color:var(--t)"></strong> kg
+            </div>
+            <div class="frow"><label for="mp-notes">Notes (optional)</label><input type="text" id="mp-notes" placeholder="Any packing notes"></div>
+          </div>
+        </div>
+        <div class="mp-btn-grid" style="margin-top:10px">
+          <button onclick="backToMobilePackChecklist()" style="justify-content:center"><i class="ti ti-arrow-left"></i>Back</button>
+          <button class="btn-primary" style="justify-content:center" onclick="completeMobilePack()"><i class="ti ti-check"></i>Complete pack</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- QC VIEW -->
   <div id="mobile-qc" class="mobile-view" style="display:none">
-    <div style="background:var(--s2);padding:12px;border-radius:6px;margin-bottom:12px">
-      <label for="m-qc-sku" style="font-size:11px;color:var(--t2);display:block;margin-bottom:4px;font-weight:600">SKU Code</label>
-      <input type="text" id="m-qc-sku" placeholder="e.g., UNI-GS-M-34" style="width:100%;padding:8px;border:0.5px solid var(--b);border-radius:4px;font-size:12px;margin-bottom:8px">
-      
-      <label for="m-qc-result" style="font-size:11px;color:var(--t2);display:block;margin-bottom:4px;font-weight:600">QC Result</label>
-      <select id="m-qc-result" style="width:100%;padding:8px;border:0.5px solid var(--b);border-radius:4px;font-size:12px;margin-bottom:8px">
-        <option value="">Select QC Result</option>
-        <option value="PASS">✓ PASS</option>
-        <option value="HOLD">⚠ HOLD</option>
-        <option value="REJECT">✗ REJECT</option>
-      </select>
-      
-      <label for="m-qc-issue" style="font-size:11px;color:var(--t2);display:block;margin-bottom:4px;font-weight:600">Issue Category</label>
-      <select id="m-qc-issue" style="width:100%;padding:8px;border:0.5px solid var(--b);border-radius:4px;font-size:12px;margin-bottom:8px">
-        <option value="">None</option>
-        <option value="Damaged">🔴 Damaged</option>
-        <option value="Torn/Ripped">✂️ Torn/Ripped</option>
-        <option value="Stain">🩶 Stain</option>
-        <option value="Wrong Color">🎨 Wrong Color</option>
-        <option value="Wrong Size">📏 Wrong Size</option>
-        <option value="Missing Items">📦 Missing Items</option>
+    <div style="background:var(--s2);padding:12px;border-radius:9px;margin-bottom:12px">
+      <label for="m-qc-sku" style="font-size:11px;color:var(--t2);display:block;margin-bottom:4px;font-weight:600">SKU code</label>
+      <input type="text" id="m-qc-sku" placeholder="e.g., UNI-GS-M-34" style="width:100%;padding:8px;border:0.5px solid var(--b);border-radius:6px;font-size:12px;margin-bottom:8px">
+
+      <label for="m-qc-result" style="font-size:11px;color:var(--t2);display:block;margin-bottom:4px;font-weight:600">QC result</label>
+      <select id="m-qc-result" style="width:100%;padding:8px;border:0.5px solid var(--b);border-radius:6px;font-size:12px;margin-bottom:8px">
+        <option value="">Select QC result</option>
+        <option value="PASS">PASS</option>
+        <option value="HOLD">HOLD</option>
+        <option value="REJECT">REJECT</option>
       </select>
 
-      <label for="m-qc-photo" style="font-size:11px;color:var(--t2);display:block;margin-bottom:4px;font-weight:600">Capture Photo</label>
-      <input type="file" id="m-qc-photo" accept="image/*" capture="environment" style="width:100%;padding:8px;border:0.5px solid var(--b);border-radius:4px;font-size:11px;margin-bottom:8px">
-      
+      <label for="m-qc-issue" style="font-size:11px;color:var(--t2);display:block;margin-bottom:4px;font-weight:600">Issue category</label>
+      <select id="m-qc-issue" style="width:100%;padding:8px;border:0.5px solid var(--b);border-radius:6px;font-size:12px;margin-bottom:8px">
+        <option value="">None</option>
+        <option value="Damaged">Damaged</option>
+        <option value="Torn/Ripped">Torn/Ripped</option>
+        <option value="Stain">Stain</option>
+        <option value="Wrong Color">Wrong Color</option>
+        <option value="Wrong Size">Wrong Size</option>
+        <option value="Missing Items">Missing Items</option>
+      </select>
+
+      <label for="m-qc-photo" style="font-size:11px;color:var(--t2);display:block;margin-bottom:4px;font-weight:600">Capture photo</label>
+      <input type="file" id="m-qc-photo" accept="image/*" capture="environment" style="width:100%;padding:8px;border:0.5px solid var(--b);border-radius:6px;font-size:11px;margin-bottom:8px">
+
       <div id="m-photo-preview" style="margin-bottom:8px"></div>
-      
-      <button onclick="submitMobileQC()" style="width:100%;padding:10px;background:var(--st);color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:12px"><i class="ti ti-check"></i>Submit QC</button>
+
+      <button class="btn-primary" onclick="submitMobileQC()" style="width:100%;justify-content:center;padding:10px"><i class="ti ti-check"></i>Submit QC</button>
     </div>
   </div>
 </div>
@@ -1344,7 +1537,7 @@ tr:hover td{background:var(--s2)}
       </div>
       <div>
         <label for="new-user-password" style="font-size:10px;color:var(--t2);display:block;margin-bottom:3px;font-weight:600">Temporary Password</label>
-        <input type="password" id="new-user-password" placeholder="Min 8 characters" style="width:100%;padding:8px;border:0.5px solid var(--b);border-radius:6px;background:var(--s);color:var(--t);font-size:12px">
+        <input type="password" id="new-user-password" placeholder="Min 12 chars, upper+lower+number" style="width:100%;padding:8px;border:0.5px solid var(--b);border-radius:6px;background:var(--s);color:var(--t);font-size:12px">
       </div>
       <div>
         <label for="new-user-role" style="font-size:10px;color:var(--t2);display:block;margin-bottom:3px;font-weight:600">Role</label>
@@ -1367,6 +1560,27 @@ tr:hover td{background:var(--s2)}
 </div>
 
 </div><!-- end .wrap -->
+</div><!-- end .main -->
+</div><!-- end .app-shell -->
+
+<script>
+function toggleSidebar(){
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('sidebar-overlay').classList.toggle('show');
+}
+document.addEventListener('click',function(e){
+  const tabEl=e.target.closest('.ntab');
+  if(tabEl){
+    const label=tabEl.querySelector('span')?.textContent||tabEl.dataset.tab;
+    const titleEl=document.getElementById('topbar-title');
+    if(titleEl) titleEl.textContent=label;
+    if(window.innerWidth<=900){
+      document.getElementById('sidebar')?.classList.remove('open');
+      document.getElementById('sidebar-overlay')?.classList.remove('show');
+    }
+  }
+});
+</script>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script>
@@ -1629,14 +1843,14 @@ async function loadHist(){
         boxL:r.box_l, boxW:r.box_w, boxH:r.box_h,
         actualWeight:r.actual_weight, volWeight:r.vol_weight, chargeableWeight:r.chargeable_weight,
         packNotes:r.pack_notes, packedId:r.packed_id, category:r.category, grn:r.grn,
-        items:r.items||[]
+        items:r.items||[], photo:r.photo||null
       }));
       // Also load packing queue
       const {data:pq} = await supa.from('packing_queue').select('*').order('created_at',{ascending:true});
       if(pq) packingQueue = pq.map(r => ({
         id:r.id, orderId:r.order_id, priority:r.priority, method:r.method,
         picker:r.picker, items:r.items||[], ts:r.ts, status:r.status,
-        packStartTime:r.pack_start_time, packStartTs:r.pack_start_ts
+        packStartTime:r.pack_start_time, packStartTs:r.pack_start_ts, claimedBy:r.claimed_by||null
       }));
       setSyncStatus('ok');
     }
@@ -1665,18 +1879,11 @@ async function saveHist(){
       box_l:h.boxL||null, box_w:h.boxW||null, box_h:h.boxH||null,
       actual_weight:h.actualWeight||null, vol_weight:h.volWeight||null, chargeable_weight:h.chargeableWeight||null,
       pack_notes:h.packNotes||null, packed_id:h.packedId||null, category:h.category||null,
-      grn:h.grn||null, items:h.items||[]
+      grn:h.grn||null, items:h.items||[], photo:h.photo||null
     };
     // If type=dispatched, update existing record instead of insert
-    if(h.type==='dispatched'){
-      const {error} = await supa.from('history').upsert(row, {onConflict:'id'});
-      if(error) throw error;
-    } else {
-      const {error} = await supa.from('history').upsert(row, {onConflict:'id'});
-      if(error) throw error;
-    }
-    // Sync packing queue too
-    await syncPackingQueue();
+    const {error} = await supa.from('history').upsert(row, {onConflict:'id'});
+    if(error) throw error;
     setSyncStatus('ok');
     localStorage.setItem('cl_wms_hist2', JSON.stringify(history)); // local backup
   } catch(e) {
@@ -1685,19 +1892,39 @@ async function saveHist(){
     try{localStorage.setItem('cl_wms_hist2', JSON.stringify(history));}catch(e2){}
   }
 }
-async function syncPackingQueue(){
+// Per-row upsert/delete — NEVER blanket delete-all-reinsert-all, since that would
+// wipe out another picker/packer's in-flight claim between two clients' syncs.
+async function upsertPackingQueueItem(t){
   try {
-    // Delete all and re-insert current queue (queue is small)
-    await supa.from('packing_queue').delete().neq('id','__none__');
-    if(packingQueue.length > 0){
-      const rows = packingQueue.map(t => ({
-        id:t.id, order_id:t.orderId, priority:t.priority, method:t.method,
-        picker:t.picker, items:t.items||[], ts:t.ts, status:t.status||'awaiting_packing',
-        pack_start_time:t.packStartTime||null, pack_start_ts:t.packStartTs||null
-      }));
-      await supa.from('packing_queue').insert(rows);
-    }
-  } catch(e){ console.error('syncPackingQueue error:', JSON.stringify(e), e?.message); }
+    const row = {
+      id:t.id, order_id:t.orderId, priority:t.priority, method:t.method,
+      picker:t.picker, items:t.items||[], ts:t.ts, status:t.status||'awaiting_packing',
+      pack_start_time:t.packStartTime||null, pack_start_ts:t.packStartTs||null,
+      claimed_by:t.claimedBy||null
+    };
+    const {error} = await supa.from('packing_queue').upsert(row, {onConflict:'id'});
+    if(error) throw error;
+  } catch(e){ console.error('upsertPackingQueueItem error:', e?.message||e); }
+}
+async function deletePackingQueueItem(id){
+  try {
+    const {error} = await supa.from('packing_queue').delete().eq('id', id);
+    if(error) throw error;
+  } catch(e){ console.error('deletePackingQueueItem error:', e?.message||e); }
+}
+async function claimPackingTask(taskId, picker, startTime, startTs){
+  try {
+    const {data,error} = await supa.rpc('claim_packing_task',{p_task_id:taskId,p_picker:picker,p_start_time:startTime,p_start_ts:startTs});
+    if(error) throw error;
+    return data;
+  } catch(e){ console.error('claimPackingTask failed:', e.message||e); return {success:false,reason:'network_error'}; }
+}
+async function releasePackingClaim(taskId){
+  try {
+    const {data,error} = await supa.rpc('release_packing_claim',{p_task_id:taskId});
+    if(error) throw error;
+    return data;
+  } catch(e){ console.error('releasePackingClaim failed:', e.message||e); return {success:false}; }
 }
 // Real-time listener — refresh UI when another user makes changes
 let realtimeSyncSetup = false;
@@ -1727,13 +1954,14 @@ function nav(tab){
   document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.id==='page-'+tab));
   updateNotificationBadge();
   if(tab==='dashboard')renderDash();
-  if(tab==='inventory'){renderInv();renderInvVersionHistory();}
+  if(tab==='inventory'){loadReservedMap().then(renderInv);renderInvVersionHistory();}
   if(tab==='labels'){renderLabelPage();}
   if(tab==='audit'){renderAuditLog();}
   if(tab==='users'){renderUsersList();}
-  if(tab==='rack')renderRack();
+  if(tab==='rack')loadReservedMap().then(renderRack);
   if(tab==='dispatch')renderDispatchPage();
   if(tab==='packing')renderPackingQ();
+  if(tab==='orderstatus')renderOrderStatusRecent();
   if(tab==='reports')renderReports();
   if(tab==='analytics')renderAnalytics();
   if(tab==='finance')renderFinance();
@@ -1746,9 +1974,10 @@ function nav(tab){
     }
     renderCountHistory();
   }
-  if(tab==='mobile'){updateMobileKPIs();switchMobileView('home');}
+  if(tab==='mobile'){initMobileTab();}
   if(tab==='inbound'){populateSkuSel('ib-sku');renderIbLog();}
-  if(tab==='picking'){populateSkuSel('pk-sku');}
+  if(tab==='orders'){populateSkuSel('ord-sku');loadOrders().then(renderOrdersBoard);}
+  if(tab==='picking'){ if(!activeOrder){ loadOrders().then(renderMyAssignedOrders); } }
   if(tab==='returns'){populateSkuSel('rt-sku');renderRtLog();}
 }
 
@@ -1951,11 +2180,18 @@ function renderDash(){
     <div class="sc"><div class="sl"><i class="ti ti-check"></i>In stock</div><div class="sv">${ins}</div><div class="ss">${total-ins} empty SKUs</div></div>
     <div class="sc"><div class="sl"><i class="ti ti-alert-triangle"></i>Low stock</div><div class="sv" style="color:var(--wt)">${low.length}</div><div class="ss">≤3 units</div></div>
     <div class="sc"><div class="sl"><i class="ti ti-box"></i>Total units</div><div class="sv">${tq}</div><div class="ss">All SKUs combined</div></div>
+    <div class="sc"><div class="sl"><i class="ti ti-lock"></i>Reserved</div><div class="sv" id="sc-reserved-val" style="color:var(--wt)">—</div><div class="ss">Held by active picks</div></div>
     <div class="sc"><div class="sl"><i class="ti ti-truck-delivery"></i>Dispatches</div><div class="sv">${disp}</div><div class="ss">All time</div></div>
     <div class="sc"><div class="sl"><i class="ti ti-package-import"></i>GRNs raised</div><div class="sv">${rcv}</div><div class="ss">All time</div></div>
     <div class="sc"><div class="sl"><i class="ti ti-package-export"></i>Returns</div><div class="sv">${rets}</div><div class="ss">All time</div></div>
     <div class="sc"><div class="sl"><i class="ti ti-clock"></i>Packing queue</div><div class="sv">${packingQueue.length}</div><div class="ss">Awaiting packing</div></div>
   `;
+  loadReservedMap().then(()=>{
+    const el=document.getElementById('sc-reserved-val');
+    if(!el) return;
+    const totalHeld=Object.values(reservedMap).reduce((a,v)=>a+v,0);
+    el.textContent=totalHeld;
+  });
   const alerts=[...out.map(s=>({...s,st:'out'})),...low.map(s=>({...s,st:'low'}))].slice(0,5);
   const ae=document.getElementById('dash-alerts');
   ae.innerHTML=alerts.length?alerts.map(s=>`<div class="hist-entry"><div class="hist-head"><span style="font-size:11px;font-weight:600">${s.sub} — ${s.variant}</span>${s.st==='out'?'<span class="pill p-out">Out</span>':'<span class="pill p-low">Low</span>'}</div><div class="hist-body">${s.sku} · BIN ${(inv[s.sku]||{rack:s.rack,shelf:s.shelf}).rack}-${(inv[s.sku]||{rack:s.rack,shelf:s.shelf}).shelf} · <b>${(inv[s.sku]||{qty:0}).qty}</b> units</div></div>`).join(''):'<div class="empty">No stock alerts — all items healthy ✓</div>';
@@ -2357,37 +2593,264 @@ function printDispatch(dispatchId){
   setTimeout(()=>printWindow.print(),500);
 }
 
-// PICKING
-function addPkItem(){
+// ORDERS (intake & assignment — created by admin/supervisor, then assigned to a picker)
+let orders=[];
+let ordItemsList=[];
+let pickerNames=[];
+
+async function loadOrders(){
+  try{
+    const {data,error}=await supa.from('orders').select('*').order('created_at',{ascending:false});
+    if(error) throw error;
+    orders=(data||[]).map(r=>({
+      id:r.id, customerName:r.customer_name, address:r.address, pincode:r.pincode, phone:r.phone,
+      priority:r.priority, method:r.method, items:r.items||[], assignedPicker:r.assigned_picker,
+      status:r.status, notes:r.notes, createdBy:r.created_by, createdAt:r.created_at,
+      assignedAt:r.assigned_at, pickedTaskId:r.picked_task_id
+    }));
+  }catch(e){ console.error('loadOrders failed:',e.message||e); }
+}
+async function saveOrderRow(o){
+  try{
+    const row={
+      id:o.id, customer_name:o.customerName||null, address:o.address||null, pincode:o.pincode||null,
+      phone:o.phone||null, priority:o.priority, method:o.method, items:o.items||[],
+      assigned_picker:o.assignedPicker||null, status:o.status, notes:o.notes||null,
+      created_by:o.createdBy||null, assigned_at:o.assignedAt||null, picked_task_id:o.pickedTaskId||null
+    };
+    const {error}=await supa.from('orders').upsert(row,{onConflict:'id'});
+    if(error) throw error;
+    return true;
+  }catch(e){ console.error('saveOrderRow failed:',e.message||e); toast('Could not save order — connection issue','w'); return false; }
+}
+async function loadPickerNames(){
+  try{
+    const {data,error}=await supa.from('user_profiles').select('full_name,role').in('role',['picker','supervisor','admin']);
+    if(error) throw error;
+    pickerNames=(data||[]).map(r=>r.full_name).filter(Boolean);
+  }catch(e){ console.error('loadPickerNames failed:',e.message||e); pickerNames=[]; }
+}
+function addOrderItem(){
+  const sku=document.getElementById('ord-sku').value;
+  const qty=parseInt(document.getElementById('ord-qty').value)||1;
+  const s=SKUS.find(x=>x.sku===sku);
+  if(!s) return;
+  if(!validateQty(qty)){toast('Invalid quantity','w');return;}
+  const existing=ordItemsList.find(it=>it.sku===sku);
+  if(existing){ existing.qty+=qty; } else {
+    ordItemsList.push({sku,name:s.sub,variant:s.variant,qty,bin:`${s.rack}-${s.shelf}`});
+  }
+  renderOrdItemsList();
+}
+function renderOrdItemsList(){
+  const el=document.getElementById('ord-items-list');
+  if(!el) return;
+  el.innerHTML=ordItemsList.length?`<div class="tw"><table><thead><tr><th>SKU</th><th>Item</th><th>Qty</th><th></th></tr></thead><tbody>${ordItemsList.map((item,i)=>`<tr><td class="mono">${item.sku}</td><td style="font-size:11px">${esc(item.name)} — ${esc(item.variant)}</td><td>${item.qty}</td><td><button class="btn-sm btn-danger" onclick="removeOrdItem(${i})"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table></div>`:'';
+}
+function removeOrdItem(i){
+  ordItemsList.splice(i,1);
+  renderOrdItemsList();
+}
+async function createOrder(){
+  const id=document.getElementById('ord-id').value.trim()||newId('ORD');
+  if(!ordItemsList.length){toast('Add at least one item to the order','w');return;}
+  if(orders.some(o=>o.id===id)){toast('An order with this ID already exists','w');return;}
+  if(!rateLimit('create-order',1500)){toast('Please wait before submitting again','w');return;}
+  const o={
+    id, customerName:document.getElementById('ord-customer').value.trim()||null,
+    address:document.getElementById('ord-address').value.trim()||null,
+    pincode:document.getElementById('ord-pincode').value.trim()||null,
+    phone:document.getElementById('ord-phone').value.trim()||null,
+    priority:document.getElementById('ord-priority').value,
+    method:document.getElementById('ord-method').value,
+    items:[...ordItemsList], assignedPicker:null, status:'unassigned',
+    createdBy:currentProfile?.full_name||'Unknown', createdAt:new Date().toISOString()
+  };
+  const ok=await saveOrderRow(o);
+  if(!ok) return;
+  orders.unshift(o);
+  ordItemsList=[];
+  renderOrdItemsList();
+  document.getElementById('ord-id').value='';
+  document.getElementById('ord-customer').value='';
+  document.getElementById('ord-address').value='';
+  document.getElementById('ord-pincode').value='';
+  document.getElementById('ord-phone').value='';
+  logAudit('CREATE_ORDER','orders',id,null,{items:o.items.length,priority:o.priority});
+  renderOrdersBoard();
+  toast(`Order ${id} created — assign it to a picker below`,'s');
+}
+function renderOrdersBoard(){
+  const el=document.getElementById('orders-board');
+  if(!el) return;
+  if(!orders.length){ el.innerHTML='<div class="empty">No orders yet</div>'; return; }
+  const canManage=getPerms().canManageOrders;
+  const statusPill={unassigned:'p-hold',assigned:'p-info',picked:'p-out',cancelled:'p-hold'};
+  el.innerHTML=`<div class="tw"><table><thead><tr><th>Order ID</th><th>Customer</th><th>Priority</th><th>Items</th><th>Status</th><th>Assigned To</th>${canManage?'<th>Action</th>':''}</tr></thead><tbody>${orders.map(o=>{
+    let action='';
+    if(canManage && o.status==='unassigned'){
+      const opts=pickerNames.length?pickerNames.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join(''):'<option value="">No pickers registered</option>';
+      action=`<div style="display:flex;gap:4px"><select id="assign-sel-${esc(o.id)}" style="font-size:10px;padding:3px">${opts}</select><button class="btn-sm" style="background:var(--gold);color:#fff;border:none;border-radius:4px;padding:4px 8px;cursor:pointer;font-size:10px" onclick="assignOrder('${esc(o.id)}')">Assign</button></div>`;
+    } else if(canManage && o.status==='assigned'){
+      action=`<button class="btn-sm btn-danger" onclick="unassignOrder('${esc(o.id)}')">Unassign</button>`;
+    }
+    return `<tr><td class="mono">${esc(o.id)}</td><td style="font-size:11px">${esc(o.customerName||'—')}</td><td><span class="pill ${o.priority==='Express'?'p-out':o.priority==='Standard'?'p-info':'p-hold'}">${o.priority}</span></td><td>${o.items.length} SKU(s)</td><td><span class="pill ${statusPill[o.status]||'p-info'}">${o.status}</span></td><td style="font-size:11px">${o.assignedPicker?esc(o.assignedPicker):'—'}${o.status==='picked'&&o.pickedTaskId?` <span style="color:var(--t3)">(${esc(o.pickedTaskId)})</span>`:''}</td>${canManage?`<td>${action}</td>`:''}</tr>`;
+  }).join('')}</tbody></table></div>`;
+}
+async function assignOrder(orderId){
+  const sel=document.getElementById('assign-sel-'+orderId);
+  const picker=sel?sel.value:'';
+  if(!picker){toast('Select a picker to assign','w');return;}
+  const o=orders.find(x=>x.id===orderId);
+  if(!o) return;
+  o.assignedPicker=picker;
+  o.status='assigned';
+  o.assignedAt=new Date().toISOString();
+  const ok=await saveOrderRow(o);
+  if(!ok) return;
+  logAudit('ASSIGN_ORDER','orders',orderId,null,{picker});
+  renderOrdersBoard();
+  toast(`Order ${orderId} assigned to ${picker}`,'s');
+}
+async function unassignOrder(orderId){
+  const o=orders.find(x=>x.id===orderId);
+  if(!o) return;
+  o.assignedPicker=null;
+  o.status='unassigned';
+  o.assignedAt=null;
+  const ok=await saveOrderRow(o);
+  if(!ok) return;
+  renderOrdersBoard();
+  toast(`Order ${orderId} unassigned`,'s');
+}
+
+// PICKING — picks are only made against orders assigned to the current picker
+let pkSessionId=null;
+let activeOrder=null;
+
+function populateSkuSelFromList(id_, items){
+  const s=document.getElementById(id_);
+  if(!s) return;
+  s.innerHTML=items.map(it=>{
+    const full=SKUS.find(x=>x.sku===it.sku);
+    return `<option value="${it.sku}">${full?full.sub:it.name} — ${full?full.variant:it.variant} (${it.sku}) · need ${it.qty}</option>`;
+  }).join('');
+}
+function renderMyAssignedOrders(){
+  const el=document.getElementById('pk-my-orders');
+  if(!el) return;
+  const me=currentProfile?.full_name||'';
+  const mine=orders.filter(o=>o.status==='assigned' && o.assignedPicker===me);
+  el.innerHTML=mine.length?mine.map(o=>`
+    <div class="panel" style="margin-bottom:10px">
+      <div class="ph"><i class="ti ti-clipboard-list"></i>${esc(o.id)}<span class="pill ${o.priority==='Express'?'p-out':'p-info'}" style="margin-left:auto">${o.priority}</span></div>
+      <div class="pb">
+        <div style="font-size:11px;color:var(--t2);margin-bottom:8px">${o.items.length} SKU(s) · ${o.method}${o.customerName?' · '+esc(o.customerName):''}</div>
+        <button class="btn-primary" style="width:100%;justify-content:center" onclick="startDesktopPick('${esc(o.id)}')"><i class="ti ti-player-play"></i>Start pick</button>
+      </div>
+    </div>
+  `).join(''):'<div class="empty">No orders assigned to you right now — check with your supervisor or the Orders tab</div>';
+}
+function showPickOrdersList(){
+  const listWrap=document.getElementById('pk-my-orders-wrap');
+  const activeWrap=document.getElementById('pk-active-wrap');
+  if(listWrap) listWrap.style.display='block';
+  if(activeWrap) activeWrap.style.display='none';
+}
+function startDesktopPick(orderId){
+  const o=orders.find(x=>x.id===orderId);
+  if(!o){ toast('Order not found','w'); return; }
+  activeOrder=o;
+  pkSessionId=newId('SESS');
+  pkItemsList=[];
+  document.getElementById('pk-my-orders-wrap').style.display='none';
+  document.getElementById('pk-active-wrap').style.display='block';
+  document.getElementById('pk-active-orderid').textContent=o.id;
+  document.getElementById('pk-active-summary').textContent=`${o.items.length} SKU(s) · ${o.priority} · ${o.method}${o.customerName?' · '+o.customerName:''}`;
+  populateSkuSelFromList('pk-sku', o.items);
+  renderPkChecklist();
+  renderPkItemsList();
+}
+async function cancelActivePick(){
+  if(pkItemsList.length && !confirm('Discard this pick? Everything reserved will be released back to stock.')) return;
+  if(pkSessionId) await releasePickSession(pkSessionId);
+  pkItemsList=[]; pkSessionId=null; activeOrder=null;
+  renderPkItemsList();
+  showPickOrdersList();
+}
+function renderPkChecklist(){
+  const el=document.getElementById('pk-checklist');
+  if(!el||!activeOrder) return;
+  el.innerHTML=`<div class="tw"><table><thead><tr><th>SKU</th><th>Item</th><th>Ordered</th><th>Picked</th></tr></thead><tbody>${activeOrder.items.map(exp=>{
+    const picked=pkItemsList.find(p=>p.sku===exp.sku);
+    const pq=picked?picked.qty:0;
+    const done=pq>=exp.qty;
+    return `<tr${done?' style="color:var(--st)"':''}><td class="mono">${exp.sku}</td><td style="font-size:11px">${esc(exp.name)} — ${esc(exp.variant)}</td><td>${exp.qty}</td><td>${pq}${done?' <i class="ti ti-check"></i>':''}</td></tr>`;
+  }).join('')}</tbody></table></div>`;
+}
+async function addPkItem(){
+  if(!activeOrder){ toast('Start a pick from an assigned order first','w'); return; }
   const sku=document.getElementById('pk-sku').value;
   const cond=document.getElementById('pk-cond').value;
   const qty=parseInt(document.getElementById('pk-qty').value)||1;
   const s=SKUS.find(x=>x.sku===sku);
-  const avail=(inv[sku]||{qty:0}).qty;
+  const expected=activeOrder.items.find(it=>it.sku===sku);
+  if(!expected){ toast(sku+' is not part of this order','w'); return; }
   if(cond==='defective'){toast(`${sku} flagged DEFECTIVE — item moved to HOLD zone. Raise defect report. (SOP §2.5)`,'w');return;}
-  if(qty>avail){toast(`Insufficient stock: ${sku} has only ${avail} units available`,'w');return;}
-  pkItemsList.push({sku,name:s.sub,variant:s.variant,qty,bin:`${s.rack}-${s.shelf}`});
+  if(!validateQty(qty)){toast('Invalid quantity','w');return;}
+  const already=pkItemsList.find(it=>it.sku===sku);
+  const remaining=expected.qty-(already?already.qty:0);
+  if(qty>remaining){ toast(`Only ${remaining} more ${sku} expected for this order`,'w'); return; }
+  const picker=activeOrder.assignedPicker||currentProfile?.full_name||'Unassigned';
+  const res=await reserveStock(sku,qty,pkSessionId,activeOrder.id,picker);
+  if(!res.success){
+    toast(res.reason==='network_error'?'Could not reach server to reserve stock — try again':`Insufficient stock: ${sku} has only ${res.available} units available`,'w');
+    return;
+  }
+  if(already){ already.qty+=qty; } else {
+    pkItemsList.push({sku,name:s.sub,variant:s.variant,qty,bin:`${s.rack}-${s.shelf}`});
+  }
   renderPkItemsList();
+  renderPkChecklist();
+  toast(`Reserved ${qty} × ${sku} — ${res.available} left for other pickers`,'s');
 }
 function renderPkItemsList(){
   const el=document.getElementById('pk-items-list');
+  if(!el) return;
   el.innerHTML=pkItemsList.length?`<div class="tw"><table><thead><tr><th>SKU</th><th>Item</th><th>BIN</th><th>Qty</th><th></th></tr></thead><tbody>${pkItemsList.map((item,i)=>`<tr><td class="mono">${item.sku}</td><td style="font-size:11px">${item.name} — ${item.variant}</td><td>${item.bin}</td><td>${item.qty}</td><td><button class="btn-sm btn-danger" onclick="removePkItem(${i})"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table></div>`:'';
 }
-function removePkItem(i){pkItemsList.splice(i,1);renderPkItemsList();}
-function releaseToPacking(){
+async function removePkItem(i){
+  const item=pkItemsList[i];
+  if(item && pkSessionId) await releaseStock(pkSessionId,item.sku,item.qty);
+  pkItemsList.splice(i,1);
+  renderPkItemsList();
+  renderPkChecklist();
+}
+async function releaseToPacking(){
+  if(!activeOrder){ toast('No active pick in progress','w'); return; }
   if(!pkItemsList.length){toast('Add items to the pick list first','w');return;}
-  const oid=document.getElementById('pk-orderid').value.trim()||newId('ORD');
-  const pri=document.getElementById('pk-priority').value;
-  const method=document.getElementById('pk-method').value;
-  const picker=document.getElementById('pk-picker').value.trim()||'Unassigned';
-  pkItemsList.forEach(item=>{inv[item.sku].qty-=item.qty;});
+  if(!rateLimit('release-packing',2000)){toast('Please wait before submitting again','w');return;}
+  const oid=activeOrder.id;
+  const pri=activeOrder.priority;
+  const method=activeOrder.method;
+  const picker=activeOrder.assignedPicker||currentProfile?.full_name||'Unassigned';
+  const result=await commitPickSession(pkSessionId);
+  if(!result.success){ toast('Could not release to packing — connection issue, try again','w'); return; }
+  pkItemsList.forEach(item=>{ if(inv[item.sku]) inv[item.sku].qty-=item.qty; });
   const tid=newId('PCK');
-  packingQueue.push({id:tid,orderId:oid,priority:pri,method,picker,items:[...pkItemsList],ts:ts(),status:'awaiting_packing'});
-  history.push({id:tid,type:'pick',ts:ts(),detail:`${oid} · ${method} pick · ${pri} · ${pkItemsList.length} SKUs · Picker: ${picker}`});
-  saveInv();saveHist();pkItemsList=[];renderPkItemsList();
-  document.getElementById('pk-orderid').value='';document.getElementById('pk-picker').value='';
+  const newTask={id:tid,orderId:oid,priority:pri,method,picker,items:[...pkItemsList],ts:ts(),status:'awaiting_packing'};
+  packingQueue.push(newTask);
+  history.push({id:tid,type:'pick',ts:ts(),detail:`${oid} · ${method} pick · ${pri} · ${pkItemsList.length} SKUs · Picker: ${picker}`,orderId:oid,items:[...pkItemsList],picker});
+  saveInv();saveHist();upsertPackingQueueItem(newTask);
+  activeOrder.status='picked';
+  activeOrder.pickedTaskId=tid;
+  await saveOrderRow(activeOrder);
+  pkItemsList=[];pkSessionId=null;activeOrder=null;
+  renderPkItemsList();
   const el=document.getElementById('pk-log');
   el.innerHTML=history.filter(h=>h.type==='pick').slice(-6).reverse().map(h=>`<div class="hist-entry"><div class="hist-head"><span class="hist-id">${h.id}</span><span class="hist-ts">${h.ts}</span></div><div class="hist-body">${h.detail}</div></div>`).join('');
+  showPickOrdersList();
+  renderMyAssignedOrders();
   toast(`Pick task ${tid} released to packing queue`,'s');
 }
 
@@ -2395,22 +2858,47 @@ function releaseToPacking(){
 function renderPackingQ(){
   const el=document.getElementById('packing-queue');
   if(!packingQueue.length){el.innerHTML='<div class="empty">No tasks awaiting packing — queue is clear</div>';return;}
+  const me=currentProfile?.full_name||'';
   el.innerHTML=`<div class="tw"><table><thead><tr><th>Task ID</th><th>Order ID</th><th>Priority</th><th>Items</th><th>Released</th><th>Pack Start</th><th>Action</th></tr></thead><tbody>${packingQueue.map((t,i)=>{
     const started=t.packStartTime;
     const startedStr=started?`<span style="color:var(--st);font-weight:600;font-size:10px"><i class="ti ti-clock-check"></i> ${new Date(started).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</span>`:'<span style="color:var(--t3);font-size:10px">Not started</span>';
-    const btn=started?`<button class="btn-sm btn-success" onclick="openPackModal(${i})"><i class="ti ti-box"></i>Enter Details & Complete</button>`:`<button class="btn-sm" style="background:var(--gold);color:#fff;border:none;border-radius:4px;padding:4px 10px;cursor:pointer;font-size:11px;display:inline-flex;align-items:center;gap:4px" onclick="startPacking(${i})"><i class="ti ti-player-play"></i>Start Packing</button>`;
+    const claimedByOther=t.claimedBy && t.claimedBy!==me;
+    let btn;
+    if(claimedByOther){
+      btn=`<span class="pill p-hold"><i class="ti ti-lock"></i> Being packed by ${esc(t.claimedBy)}</span>`;
+    } else if(started){
+      btn=`<button class="btn-sm btn-success" onclick="openPackModal(${i})"><i class="ti ti-box"></i>Enter Details & Complete</button>`;
+    } else {
+      btn=`<button class="btn-sm" style="background:var(--gold);color:#fff;border:none;border-radius:4px;padding:4px 10px;cursor:pointer;font-size:11px;display:inline-flex;align-items:center;gap:4px" onclick="startPacking(${i})"><i class="ti ti-player-play"></i>Start Packing</button>`;
+    }
     return `<tr><td class="mono">${t.id}</td><td style="font-size:11px">${t.orderId}</td><td><span class="pill ${t.priority==='Express'?'p-out':t.priority==='Standard'?'p-info':'p-hold'}">${t.priority}</span></td><td>${t.items.length} SKU(s)</td><td style="font-size:11px;color:var(--t2)">${t.ts}</td><td>${startedStr}</td><td>${btn}</td></tr>`;
   }).join('')}</tbody></table></div>`;
 }
 let _activePackIdx=null;
 let _packElapsedTimer=null;
 
-function startPacking(i){
-  packingQueue[i].packStartTime=Date.now();
-  packingQueue[i].packStartTs=ts();
-  saveHist();
+async function startPacking(i){
+  const task=packingQueue[i];
+  if(!task) return;
+  const picker=currentProfile?.full_name||'Unknown';
+  const startTime=Date.now();
+  const startTs=ts();
+  const res=await claimPackingTask(task.id,picker,startTime,startTs);
+  if(!res.success){
+    if(res.reason==='already_claimed'){
+      toast(`Already being packed by ${res.claimed_by}`,'w');
+      task.claimedBy=res.claimed_by;
+    } else {
+      toast('Could not start packing — connection issue, try again','w');
+    }
+    renderPackingQ();
+    return;
+  }
+  task.claimedBy=res.claimed_by;
+  task.packStartTime=res.pack_start_time;
+  task.packStartTs=res.pack_start_ts;
   renderPackingQ();
-  toast(`Packing started for ${packingQueue[i].orderId} — timer running`,'s');
+  toast(`Packing started for ${task.orderId} — timer running`,'s');
 }
 function openPackModal(i){
   _activePackIdx=i;
@@ -2489,6 +2977,7 @@ function confirmPackWithDetails(){
   };
   history.push(packedObj);
   saveHist();
+  deletePackingQueueItem(t.id);
   renderPackingQ();
   if(document.getElementById('page-dispatch').classList.contains('active')){renderDispatchPage();}
   renderDash();
@@ -3045,6 +3534,7 @@ function completeInventoryCount(){
 
 // MOBILE DASHBOARD
 let mobilePickCache=[],mobilePhotoData=null;
+let mobilePickSession=null,mobilePackActive=null;
 
 function updateMobileKPIs(){
   const picks=history.filter(h=>h.type==='pick');
@@ -3067,16 +3557,444 @@ function updateMobileKPIs(){
   document.getElementById('m-items-left').textContent=pkQueue;
   document.getElementById('m-progress').textContent=progress+'%';
   document.getElementById('m-current-order').textContent=pkQueue>0?packingQueue[0].orderId:'—';
+  loadReservedMap().then(()=>{
+    const totalHeld=Object.values(reservedMap).reduce((a,v)=>a+v,0);
+    const el=document.getElementById('m-held-stock');
+    if(el) el.textContent=totalHeld+' units';
+  });
+}
+
+function initMobileTab(){
+  const perms=getPerms();
+  const pickBtn=document.getElementById('btn-pick');
+  const packBtn=document.getElementById('btn-pack');
+  const quickPick=document.getElementById('m-quick-pick');
+  const quickPack=document.getElementById('m-quick-pack');
+  if(pickBtn) pickBtn.style.display=perms.canPick?'flex':'none';
+  if(packBtn) packBtn.style.display=perms.canPack?'flex':'none';
+  if(quickPick) quickPick.style.display=perms.canPick?'flex':'none';
+  if(quickPack) quickPack.style.display=perms.canPack?'flex':'none';
+  let defaultView='home';
+  if(perms.canPick && !perms.canPack) defaultView='pick';
+  else if(perms.canPack && !perms.canPick) defaultView='pack';
+  switchMobileView(defaultView);
 }
 
 function switchMobileView(view){
-  ['home','picks','qc'].forEach(v=>{
-    document.getElementById('mobile-'+v).style.display=v===view?'block':'none';
-    document.getElementById('btn-'+v).style.background=v===view?'var(--st)':'var(--b)';
-    document.getElementById('btn-'+v).style.color=v===view?'#fff':'var(--t)';
+  ['home','pick','pack','qc'].forEach(v=>{
+    const panel=document.getElementById('mobile-'+v);
+    if(panel) panel.style.display=v===view?'block':'none';
+    const btn=document.getElementById('btn-'+v);
+    if(btn) btn.classList.toggle('active',v===view);
   });
-  if(view==='picks')renderMobilePickList();
+  disableBarcodeScanner();
   if(view==='home')updateMobileKPIs();
+  if(view==='pick')initMobilePickView();
+  if(view==='pack')renderMobilePackQueue();
+}
+
+// ═══ MOBILE PICK (scan-driven) ═══
+function initMobilePickView(){
+  const setup=document.getElementById('mp-pick-setup');
+  const active=document.getElementById('mp-pick-active');
+  if(!setup||!active) return;
+  if(mobilePickSession){
+    setup.style.display='none';
+    active.style.display='block';
+    document.getElementById('mp-pick-order-label').textContent='Order '+mobilePickSession.orderId;
+    populateSkuSelFromList('mp-manual-sku', mobilePickSession.order.items);
+    renderMobilePickSession();
+    enableBarcodeScanner('mobile-pick');
+  } else {
+    setup.style.display='block';
+    active.style.display='none';
+    loadOrders().then(renderMpMyOrders);
+  }
+}
+function renderMpMyOrders(){
+  const el=document.getElementById('mp-my-orders');
+  if(!el) return;
+  const me=currentProfile?.full_name||'';
+  const mine=orders.filter(o=>o.status==='assigned' && o.assignedPicker===me);
+  el.innerHTML=mine.length?mine.map(o=>`
+    <div class="mp-pack-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span style="font-weight:700;font-size:13px">${esc(o.id)}</span>
+        <span class="pill ${o.priority==='Express'?'p-out':'p-info'}">${o.priority}</span>
+      </div>
+      <div style="font-size:11px;color:var(--t2);margin-bottom:9px">${o.items.length} SKU(s) · ${o.method}${o.customerName?' · '+esc(o.customerName):''}</div>
+      <button class="btn-primary" style="width:100%;justify-content:center" onclick="startMobilePick('${esc(o.id)}')"><i class="ti ti-player-play"></i>Start scanning</button>
+    </div>
+  `).join(''):'<div class="empty">No orders assigned to you right now</div>';
+}
+function startMobilePick(orderId){
+  const o=orders.find(x=>x.id===orderId);
+  if(!o){ toast('Order not found','w'); return; }
+  mobilePickSession={orderId:o.id,priority:o.priority,method:o.method,items:[],sessionId:newId('SESS'),order:o};
+  initMobilePickView();
+  toast('Pick started for '+o.id+' — scan items now','s');
+}
+
+function mobileScanFeedback(ok){
+  try{ if(navigator.vibrate) navigator.vibrate(ok?40:[30,60,30]); }catch(e){}
+  try{
+    const ctx=new (window.AudioContext||window.webkitAudioContext)();
+    const o=ctx.createOscillator(), g=ctx.createGain();
+    o.frequency.value=ok?1400:320;
+    o.connect(g);g.connect(ctx.destination);
+    g.gain.setValueAtTime(0.15,ctx.currentTime);
+    o.start();
+    o.stop(ctx.currentTime+(ok?0.09:0.18));
+    setTimeout(()=>{try{ctx.close();}catch(e){}},300);
+  }catch(e){}
+}
+
+// Atomically holds stock server-side via reserve_stock_item() so two
+// pickers scanning the same low-stock item can't both succeed — the
+// second one gets told it's unavailable in real time.
+async function reserveStock(sku,qty,sessionId,orderId,picker){
+  try{
+    const {data,error}=await supa.rpc('reserve_stock_item',{p_sku:sku,p_qty:qty,p_session_id:sessionId,p_order_id:orderId||null,p_picker:picker||null});
+    if(error) throw error;
+    return data;
+  }catch(e){
+    console.error('reserveStock failed:',e.message||e);
+    return {success:false,reason:'network_error',available:(inv[sku]||{qty:0}).qty};
+  }
+}
+async function releaseStock(sessionId,sku,qty){
+  try{
+    const {data,error}=await supa.rpc('release_reservation',{p_session_id:sessionId,p_sku:sku,p_qty:qty??null});
+    if(error) throw error;
+    return data;
+  }catch(e){ console.error('releaseStock failed:',e.message||e); return {success:false}; }
+}
+async function commitPickSession(sessionId){
+  try{
+    const {data,error}=await supa.rpc('commit_pick_session',{p_session_id:sessionId});
+    if(error) throw error;
+    return data;
+  }catch(e){ console.error('commitPickSession failed:',e.message||e); return {success:false}; }
+}
+async function releasePickSession(sessionId){
+  try{
+    const {data,error}=await supa.rpc('release_pick_session',{p_session_id:sessionId});
+    if(error) throw error;
+    return data;
+  }catch(e){ console.error('releasePickSession failed:',e.message||e); return {success:false}; }
+}
+
+async function mobilePickAddScan(sku){
+  if(!mobilePickSession) return;
+  const expected=mobilePickSession.order.items.find(it=>it.sku===sku.sku);
+  if(!expected){
+    mobileScanFeedback(false);
+    toast(sku.sku+' is not part of this order','w');
+    return;
+  }
+  const already=mobilePickSession.items.find(i=>i.sku===sku.sku);
+  if(already && already.qty>=expected.qty){
+    mobileScanFeedback(false);
+    toast(sku.sku+' already fully picked for this order','w');
+    return;
+  }
+  const picker=currentProfile?.full_name||'Mobile picker';
+  const res=await reserveStock(sku.sku,1,mobilePickSession.sessionId,mobilePickSession.orderId,picker);
+  if(!res.success){
+    mobileScanFeedback(false);
+    if(res.reason==='network_error'){
+      toast('Could not reach server to reserve stock — check connection and try again','w');
+    } else {
+      toast(`${sku.sku}: no stock available to reserve (${res.available} left)`,'w');
+    }
+    return;
+  }
+  const existing=mobilePickSession.items.find(i=>i.sku===sku.sku);
+  if(existing){ existing.qty+=1; existing.avail=res.available; } else {
+    mobilePickSession.items.push({sku:sku.sku,name:sku.sub,variant:sku.variant,qty:1,bin:`${sku.rack}-${sku.shelf}`,avail:res.available});
+  }
+  renderMobilePickSession();
+  mobileScanFeedback(true);
+  toast('Reserved '+sku.sub+' — '+sku.variant,'s');
+}
+
+function mobilePickManualAdd(){
+  const skuCode=document.getElementById('mp-manual-sku').value;
+  const sku=SKUS.find(s=>s.sku===skuCode);
+  if(!sku) return;
+  mobilePickAddScan(sku);
+}
+
+async function adjustMobilePickQty(sku,delta){
+  if(!mobilePickSession) return;
+  const item=mobilePickSession.items.find(i=>i.sku===sku);
+  if(!item) return;
+  if(delta>0){
+    const skuObj=SKUS.find(s=>s.sku===sku);
+    const picker=currentProfile?.full_name||'Mobile picker';
+    const res=await reserveStock(sku,1,mobilePickSession.sessionId,mobilePickSession.orderId,picker);
+    if(!res.success){ toast(`No more ${sku} available to reserve`,'w'); return; }
+    item.qty+=1; item.avail=res.available;
+  } else {
+    const res=await releaseStock(mobilePickSession.sessionId,sku,1);
+    item.qty-=1;
+    if(res.success!==false) item.avail+=1;
+    if(item.qty<=0){ mobilePickSession.items=mobilePickSession.items.filter(i=>i.sku!==sku); }
+  }
+  renderMobilePickSession();
+}
+
+function renderMobilePickSession(){
+  const el=document.getElementById('mp-pick-list');
+  if(!el||!mobilePickSession) return;
+  const items=mobilePickSession.items;
+  el.innerHTML=items.length?items.map(it=>{
+    return `<div class="scan-row matched">
+      <div class="scan-row-icon"><i class="ti ti-check"></i></div>
+      <div class="scan-row-body">
+        <div class="scan-row-sku">${it.sku}</div>
+        <div class="scan-row-meta">${esc(it.name)} — ${esc(it.variant)} · BIN ${it.bin} · ${it.avail} more available</div>
+      </div>
+      <div class="scan-row-qty">
+        <button class="qb" onclick="adjustMobilePickQty('${it.sku}',-1)">−</button>
+        <span class="qv">${it.qty}</span>
+        <button class="qb" onclick="adjustMobilePickQty('${it.sku}',1)">+</button>
+      </div>
+    </div>`;
+  }).join(''):'<div class="empty">Scan an item to begin — it\'s reserved for you the instant it scans</div>';
+}
+
+async function cancelMobilePick(){
+  if(!mobilePickSession) return;
+  if(mobilePickSession.items.length && !confirm('Discard this pick? Everything reserved will be released back to stock.')) return;
+  await releasePickSession(mobilePickSession.sessionId);
+  mobilePickSession=null;
+  disableBarcodeScanner();
+  initMobilePickView();
+  renderMpMyOrders();
+}
+
+async function completeMobilePick(){
+  if(!mobilePickSession || !mobilePickSession.items.length){ toast('Scan at least one item first','w'); return; }
+  if(!rateLimit('mobile-pick',2000)){ toast('Please wait before submitting again','w'); return; }
+  const result=await commitPickSession(mobilePickSession.sessionId);
+  if(!result.success){ toast('Could not complete pick — connection issue, try again','w'); return; }
+  mobilePickSession.items.forEach(it=>{ if(inv[it.sku]) inv[it.sku].qty-=it.qty; });
+  const tid=newId('PCK');
+  const picker=currentProfile?.full_name||'Mobile picker';
+  const newTask={id:tid,orderId:mobilePickSession.orderId,priority:mobilePickSession.priority,method:mobilePickSession.method,picker,items:[...mobilePickSession.items],ts:ts(),status:'awaiting_packing'};
+  packingQueue.push(newTask);
+  history.push({id:tid,type:'pick',ts:ts(),detail:`${mobilePickSession.orderId} · ${mobilePickSession.method} pick · ${mobilePickSession.priority} · ${mobilePickSession.items.length} SKUs · Picker: ${picker} (mobile scan)`,orderId:mobilePickSession.orderId,items:[...mobilePickSession.items],picker});
+  saveInv();saveHist();upsertPackingQueueItem(newTask);
+  const o=mobilePickSession.order;
+  o.status='picked';
+  o.pickedTaskId=tid;
+  await saveOrderRow(o);
+  logAudit('MOBILE_PICK_COMPLETE','packing_queue',tid,null,{orderId:mobilePickSession.orderId,items:mobilePickSession.items.length,picker});
+  toast(`Pick complete — ${mobilePickSession.orderId} sent to packing`,'s');
+  mobilePickSession=null;
+  disableBarcodeScanner();
+  initMobilePickView();
+  updateMobileKPIs();
+}
+
+// ═══ MOBILE PACK (scan-verified) ═══
+function renderMobilePackQueue(){
+  const el=document.getElementById('mp-pack-queue');
+  const activeWrap=document.getElementById('mp-pack-active');
+  const queueWrap=document.getElementById('mp-pack-queue-wrap');
+  if(!activeWrap||!queueWrap) return;
+  if(mobilePackActive){
+    queueWrap.style.display='none';
+    activeWrap.style.display='block';
+    if(mobilePackActive.stage==='details'){
+      document.getElementById('mp-pack-checklist-wrap').style.display='none';
+      document.getElementById('mp-pack-details-wrap').style.display='block';
+      disableBarcodeScanner();
+    } else {
+      document.getElementById('mp-pack-checklist-wrap').style.display='block';
+      document.getElementById('mp-pack-details-wrap').style.display='none';
+      renderMobilePackChecklist();
+      enableBarcodeScanner('mobile-pack');
+    }
+    return;
+  }
+  queueWrap.style.display='block';
+  activeWrap.style.display='none';
+  if(!el) return;
+  const me=currentProfile?.full_name||'';
+  el.innerHTML=packingQueue.length?packingQueue.map((t,i)=>{
+    const claimedByOther=t.claimedBy && t.claimedBy!==me;
+    const actionBtn=claimedByOther
+      ? `<div style="width:100%;text-align:center;padding:9px;color:var(--dt);font-size:12px;font-weight:600"><i class="ti ti-lock"></i> Being packed by ${esc(t.claimedBy)}</div>`
+      : `<button class="btn-primary" style="width:100%;justify-content:center" onclick="startMobilePack(${i})"><i class="ti ti-player-play"></i>Start packing</button>`;
+    return `
+    <div class="mp-pack-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span style="font-weight:700;font-size:13px">${t.orderId}</span>
+        <span class="pill ${t.priority==='Express'?'p-out':'p-info'}">${t.priority}</span>
+      </div>
+      <div style="font-size:11px;color:var(--t2);margin-bottom:9px">${t.items.length} SKU(s) · ${t.ts}${t.picker?' · Picked by '+esc(t.picker):''}</div>
+      ${actionBtn}
+    </div>
+  `;
+  }).join(''):'<div class="empty">No tasks awaiting packing</div>';
+}
+
+async function startMobilePack(i){
+  const task=packingQueue[i];
+  if(!task) return;
+  if(!task.packStartTime){
+    const picker=currentProfile?.full_name||'Unknown';
+    const startTime=Date.now();
+    const startTs=ts();
+    const res=await claimPackingTask(task.id,picker,startTime,startTs);
+    if(!res.success){
+      if(res.reason==='already_claimed'){
+        toast(`Already being packed by ${res.claimed_by}`,'w');
+        task.claimedBy=res.claimed_by;
+      } else {
+        toast('Could not start packing — connection issue, try again','w');
+      }
+      renderMobilePackQueue();
+      return;
+    }
+    task.claimedBy=res.claimed_by;
+    task.packStartTime=res.pack_start_time;
+    task.packStartTs=res.pack_start_ts;
+  } else if(task.claimedBy && task.claimedBy!==(currentProfile?.full_name||'')){
+    toast(`Already being packed by ${task.claimedBy}`,'w');
+    renderMobilePackQueue();
+    return;
+  }
+  mobilePackActive={
+    taskIdx:i,
+    task,
+    stage:'checklist',
+    checklist:task.items.map(it=>({sku:it.sku,name:it.name,variant:it.variant,bin:it.bin,expectedQty:it.qty,scannedQty:0}))
+  };
+  document.getElementById('mp-pack-order-label').textContent='Order '+task.orderId;
+  document.getElementById('mp-pack-summary').textContent=`${task.items.length} SKU(s) · ${task.priority} · ${task.method}`;
+  renderMobilePackQueue();
+}
+
+function mobilePackScan(sku){
+  if(!mobilePackActive) return;
+  const item=mobilePackActive.checklist.find(i=>i.sku===sku.sku);
+  if(!item){
+    mobileScanFeedback(false);
+    toast(sku.sku+' is not part of this order','w');
+    return;
+  }
+  if(item.scannedQty>=item.expectedQty){
+    mobileScanFeedback(false);
+    toast(sku.sku+' already fully verified','w');
+    return;
+  }
+  item.scannedQty+=1;
+  mobileScanFeedback(true);
+  renderMobilePackChecklist();
+}
+
+function renderMobilePackChecklist(){
+  const el=document.getElementById('mp-pack-checklist');
+  if(!el||!mobilePackActive) return;
+  const list=mobilePackActive.checklist;
+  el.innerHTML=list.map(it=>{
+    const done=it.scannedQty>=it.expectedQty;
+    return `<div class="scan-row ${done?'matched':''}">
+      <div class="scan-row-icon"><i class="ti ${done?'ti-check':'ti-barcode'}"></i></div>
+      <div class="scan-row-body">
+        <div class="scan-row-sku">${it.sku}</div>
+        <div class="scan-row-meta">${esc(it.name)} — ${esc(it.variant)} · BIN ${it.bin}</div>
+      </div>
+      <div class="scan-row-qty">${it.scannedQty}/${it.expectedQty}</div>
+    </div>`;
+  }).join('');
+  const allDone=list.every(it=>it.scannedQty>=it.expectedQty);
+  const btn=document.getElementById('mp-pack-continue-btn');
+  if(btn) btn.disabled=!allDone;
+}
+
+function cancelMobilePack(){
+  mobilePackActive=null;
+  disableBarcodeScanner();
+  renderMobilePackQueue();
+}
+
+function proceedToMobilePackDetails(){
+  if(!mobilePackActive) return;
+  mobilePackActive.stage='details';
+  document.getElementById('mp-pack-checklist-wrap').style.display='none';
+  document.getElementById('mp-pack-details-wrap').style.display='block';
+  disableBarcodeScanner();
+  ['mp-length','mp-width','mp-height','mp-actual-weight','mp-notes'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
+  document.getElementById('mp-vol-result').style.display='none';
+}
+
+function backToMobilePackChecklist(){
+  if(!mobilePackActive) return;
+  mobilePackActive.stage='checklist';
+  document.getElementById('mp-pack-checklist-wrap').style.display='block';
+  document.getElementById('mp-pack-details-wrap').style.display='none';
+  renderMobilePackChecklist();
+  enableBarcodeScanner('mobile-pack');
+}
+
+function calcMobileVolWeight(){
+  const L=parseFloat(document.getElementById('mp-length').value)||0;
+  const W=parseFloat(document.getElementById('mp-width').value)||0;
+  const H=parseFloat(document.getElementById('mp-height').value)||0;
+  const actual=parseFloat(document.getElementById('mp-actual-weight').value)||0;
+  const res=document.getElementById('mp-vol-result');
+  if(!L||!W||!H||!actual){res.style.display='none';return;}
+  const vol=parseFloat(((L*W*H)/5000).toFixed(2));
+  const chargeable=Math.max(actual,vol);
+  document.getElementById('mp-show-chargeable').textContent=chargeable.toFixed(2);
+  res.style.display='block';
+}
+
+function completeMobilePack(){
+  if(!mobilePackActive) return;
+  const t=mobilePackActive.task;
+  const L=parseFloat(document.getElementById('mp-length').value)||0;
+  const W=parseFloat(document.getElementById('mp-width').value)||0;
+  const H=parseFloat(document.getElementById('mp-height').value)||0;
+  const actual=parseFloat(document.getElementById('mp-actual-weight').value)||0;
+  const notes=document.getElementById('mp-notes').value.trim();
+  if(!L||!W||!H){toast('Enter box dimensions (L × W × H)','w');return;}
+  if(!validateDimension(L)||!validateDimension(W)||!validateDimension(H)){toast('Invalid dimensions — max 999cm','w');return;}
+  if(!actual){toast('Enter actual weight','w');return;}
+  if(!validateWeight(actual)){toast('Invalid weight — must be between 0.01 and 999 kg','w');return;}
+  if(!rateLimit('mobile-pack',2000)){toast('Please wait before submitting again','w');return;}
+  const vol=parseFloat(((L*W*H)/5000).toFixed(2));
+  const chargeable=Math.max(actual,vol);
+  const endTime=Date.now();
+  const endTs=ts();
+  const durationSecs=t.packStartTime?Math.floor((endTime-t.packStartTime)/1000):null;
+  const durationStr=durationSecs!==null?`${Math.floor(durationSecs/60)}m ${durationSecs%60}s`:'N/A';
+  const idx=packingQueue.findIndex(p=>p.id===t.id);
+  if(idx>-1) packingQueue.splice(idx,1);
+  const pkid=newId('PKD');
+  history.push({
+    id:pkid,type:'packed',ts:endTs,
+    detail:`${t.orderId} · ${t.items.length} SKUs packed — ready for dispatch (mobile, scan-verified)`,
+    orderId:t.orderId,items:t.items,
+    packStartTs:t.packStartTs,packStartTime:t.packStartTime,
+    packEndTs:endTs,packEndTime:endTime,
+    packDuration:durationStr,packDurationSecs:durationSecs,
+    boxL:L,boxW:W,boxH:H,
+    actualWeight:actual,volWeight:vol,chargeableWeight:chargeable,
+    packNotes:notes
+  });
+  saveHist();
+  deletePackingQueueItem(t.id);
+  logAudit('MOBILE_PACK_COMPLETE','packing_queue',t.id,null,{orderId:t.orderId,chargeable});
+  toast(`Order ${t.orderId} packed in ${durationStr} · ${chargeable}kg chargeable`,'s');
+  mobilePackActive=null;
+  disableBarcodeScanner();
+  renderMobilePackQueue();
+  updateMobileKPIs();
 }
 
 function renderMobilePickList(){
@@ -3801,6 +4719,15 @@ async function renderInvVersionHistory(){
   </tr>`).join('')}
   </tbody></table></div>`;
 }
+let reservedMap={};
+async function loadReservedMap(){
+  try{
+    const {data,error}=await supa.rpc('get_active_reservations');
+    if(error) throw error;
+    reservedMap={};
+    (data||[]).forEach(r=>{ reservedMap[r.sku]=r.reserved_qty; });
+  }catch(e){ console.warn('loadReservedMap failed:',e.message||e); }
+}
 function renderInv(){
   const q=(document.getElementById('inv-q').value||'').toLowerCase();
   const cat=document.getElementById('inv-cat').value;
@@ -3814,8 +4741,9 @@ function renderInv(){
   });
   document.getElementById('inv-tbody').innerHTML=rows.map(s=>{
     const i2=inv[s.sku]||{qty:0,rack:s.rack,shelf:s.shelf};
+    const held=reservedMap[s.sku]||0;
     return`<tr><td class="mono">${s.sku}</td><td><span class="pill p-info">${s.cat}</span></td><td style="font-weight:600;font-size:12px">${s.sub}</td><td style="color:var(--t2);font-size:11px">${s.variant}</td><td style="font-size:11px;font-weight:500">${i2.rack}-${i2.shelf}</td>
-    <td><div class="qc"><button class="qb" onclick="adjQ('${s.sku}',-1)">−</button><span class="qv">${i2.qty}</span><button class="qb" onclick="adjQ('${s.sku}',1)">+</button></div></td>
+    <td><div class="qc"><button class="qb" onclick="adjQ('${s.sku}',-1)">−</button><span class="qv">${i2.qty}</span><button class="qb" onclick="adjQ('${s.sku}',1)">+</button></div>${held>0?`<div style="font-size:9.5px;color:var(--wt);margin-top:2px;font-weight:600">${held} held by pickers</div>`:''}</td>
     <td>${stPill(i2.qty)}</td>
     <td><button class="btn-sm" onclick="quickDisp('${s.sku}','${s.sub.replace(/'/g,"\\'").replace(/"/g,'&quot;')}','${s.variant.replace(/'/g,"\\'")}',${i2.qty})" ${i2.qty<=0?'disabled':''}><i class="ti ti-send"></i></button></td></tr>`;
   }).join('');
@@ -3843,7 +4771,106 @@ function renderRack(){
 function buildRack(data,elId){
   const keys=Object.keys(data).sort((a,b)=>+a-+b);
   const mid=Math.ceil(keys.length/2);
-  document.getElementById(elId).innerHTML=[keys.slice(0,mid),keys.slice(mid)].map((col,ci)=>`<div class="rack-card"><div class="rack-head"><span style="font-size:12px;font-weight:600">Bay ${ci+1}</span><span style="font-size:10px;color:var(--t2)">${col.length} shelves</span></div>${col.map(sh=>{const items=data[sh];const tot=items.reduce((a,i)=>a+i.qty,0);const mx=items.length*10;const pct=Math.min(100,Math.round(tot/mx*100));const bc=pct===0?'bar-out':pct<30?'bar-low':'bar-ok';const lbl=items[0].sub.replace(/ - .*/,'').replace(/- .*/,'').trim();return`<div class="rack-row"><span class="shelf-l">S${sh}</span><div><div style="font-size:11px;font-weight:600;margin-bottom:3px">${lbl}</div><div class="bar-bg"><div class="bar-f ${bc}" style="width:${pct}%"></div></div></div><span class="qty-r">${tot}u</span></div>`;}).join('')}</div>`).join('');
+  document.getElementById(elId).innerHTML=[keys.slice(0,mid),keys.slice(mid)].map((col,ci)=>`<div class="rack-card"><div class="rack-head"><span style="font-size:12px;font-weight:600">Bay ${ci+1}</span><span style="font-size:10px;color:var(--t2)">${col.length} shelves</span></div>${col.map(sh=>{const items=data[sh];const tot=items.reduce((a,i)=>a+i.qty,0);const held=items.reduce((a,i)=>a+(reservedMap[i.sku]||0),0);const mx=items.length*10;const pct=Math.min(100,Math.round(tot/mx*100));const bc=pct===0?'bar-out':pct<30?'bar-low':'bar-ok';const lbl=items[0].sub.replace(/ - .*/,'').replace(/- .*/,'').trim();return`<div class="rack-row"><span class="shelf-l">S${sh}</span><div><div style="font-size:11px;font-weight:600;margin-bottom:3px">${lbl}</div><div class="bar-bg"><div class="bar-f ${bc}" style="width:${pct}%"></div></div></div><span class="qty-r">${tot}u${held>0?`<div style="font-size:9px;color:var(--wt);font-weight:600">${held} held</div>`:''}</span></div>`;}).join('')}</div>`).join('');
+}
+
+// UNIFIED ORDER STATUS
+function renderOrderStatusRecent(){
+  const el=document.getElementById('os-recent');
+  if(!el)return;
+  const seen=new Set();
+  const recent=[];
+  for(let i=orders.length-1;i>=0 && recent.length<10;i--){
+    const oid=orders[i].id;
+    if(oid && !seen.has(oid)){ seen.add(oid); recent.push(oid); }
+  }
+  for(let i=history.length-1;i>=0 && recent.length<10;i--){
+    const oid=history[i].orderId;
+    if(oid && !seen.has(oid)){ seen.add(oid); recent.push(oid); }
+  }
+  if(!recent.length){ el.innerHTML=''; return; }
+  el.innerHTML=`<div style="font-size:10px;color:var(--t2);font-weight:600;margin-bottom:6px">RECENT ORDERS</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">${recent.map(oid=>
+      `<button onclick="document.getElementById('os-order-id').value='${esc(oid)}';lookupOrderStatus()" style="padding:5px 10px;background:var(--s2);border:0.5px solid var(--b);border-radius:14px;cursor:pointer;font-size:11px;color:var(--t);font-family:monospace">${esc(oid)}</button>`
+    ).join('')}</div>`;
+}
+function lookupOrderStatus(){
+  const oid=document.getElementById('os-order-id').value.trim();
+  const el=document.getElementById('os-result');
+  if(!oid){ el.innerHTML='<div class="empty">Enter an Order ID to track</div>'; return; }
+  const order=orders.find(o=>o.id.toLowerCase()===oid.toLowerCase());
+  const entries=history.filter(h=>h.orderId && h.orderId.toLowerCase()===oid.toLowerCase())
+    .sort((a,b)=>(a.ts||'').localeCompare(b.ts||''));
+  const queueTask=packingQueue.find(t=>t.orderId && t.orderId.toLowerCase()===oid.toLowerCase());
+  if(!entries.length && !queueTask && !order){
+    el.innerHTML=`<div class="empty">No records found for "${esc(oid)}" — check the Order ID and try again</div>`;
+    return;
+  }
+  const stageIcon={pick:'ti-scan',packed:'ti-box',dispatched:'ti-truck-delivery',exception:'ti-alert-triangle'};
+  const stageLabel={pick:'Picked',packed:'Packed',dispatched:'Dispatched',exception:'Exception / QC'};
+  const stageColor={pick:'var(--st)',packed:'var(--gold)',dispatched:'var(--navy)',exception:'var(--dt)'};
+  let rows='';
+  if(order){
+    rows+=`
+    <div style="display:flex;gap:12px;padding:12px 0;border-bottom:0.5px solid var(--b)">
+      <div style="width:32px;height:32px;border-radius:50%;background:var(--t3);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <i class="ti ti-clipboard-list"></i>
+      </div>
+      <div style="flex:1">
+        <div style="font-weight:700;font-size:12px">Order created</div>
+        <div style="font-size:11px;color:var(--t2);margin-top:2px">${order.items.length} SKU(s) · ${order.priority} · ${order.method}${order.customerName?' · '+esc(order.customerName):''}</div>
+        <div style="font-size:10px;color:var(--t3);margin-top:2px">${order.createdBy?'Created by '+esc(order.createdBy):''}</div>
+      </div>
+    </div>`;
+    if(order.assignedPicker){
+      rows+=`
+      <div style="display:flex;gap:12px;padding:12px 0;border-bottom:0.5px solid var(--b)">
+        <div style="width:32px;height:32px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <i class="ti ti-user-check"></i>
+        </div>
+        <div style="flex:1">
+          <div style="font-weight:700;font-size:12px">Assigned to picker</div>
+          <div style="font-size:11px;color:var(--t2);margin-top:2px">${esc(order.assignedPicker)}</div>
+        </div>
+      </div>`;
+    }
+  }
+  rows+=entries.map(h=>`
+    <div style="display:flex;gap:12px;padding:12px 0;border-bottom:0.5px solid var(--b)">
+      <div style="width:32px;height:32px;border-radius:50%;background:${stageColor[h.type]||'var(--t3)'};color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <i class="ti ${stageIcon[h.type]||'ti-circle'}"></i>
+      </div>
+      <div style="flex:1">
+        <div style="font-weight:700;font-size:12px">${stageLabel[h.type]||h.type}</div>
+        <div style="font-size:11px;color:var(--t2);margin-top:2px">${esc(h.detail||'')}</div>
+        <div style="font-size:10px;color:var(--t3);margin-top:2px">${h.ts||''}${h.picker?' · '+esc(h.picker):''}</div>
+      </div>
+    </div>`).join('');
+  if(queueTask && !entries.some(h=>h.type==='packed')){
+    const state=queueTask.claimedBy?`<div style="font-size:11px;color:var(--wt);font-weight:600"><i class="ti ti-lock"></i> Being packed by ${esc(queueTask.claimedBy)}</div>`:`<div style="font-size:11px;color:var(--t2)">Awaiting packing</div>`;
+    rows+=`
+    <div style="display:flex;gap:12px;padding:12px 0">
+      <div style="width:32px;height:32px;border-radius:50%;background:var(--s2);color:var(--t2);border:1.5px dashed var(--b);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <i class="ti ti-box"></i>
+      </div>
+      <div style="flex:1">
+        <div style="font-weight:700;font-size:12px;color:var(--t2)">In packing queue</div>
+        ${state}
+      </div>
+    </div>`;
+  } else if(order && order.status==='assigned' && !queueTask && !entries.some(h=>h.type==='pick')){
+    rows+=`
+    <div style="display:flex;gap:12px;padding:12px 0">
+      <div style="width:32px;height:32px;border-radius:50%;background:var(--s2);color:var(--t2);border:1.5px dashed var(--b);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <i class="ti ti-scan"></i>
+      </div>
+      <div style="flex:1">
+        <div style="font-weight:700;font-size:12px;color:var(--t2)">Awaiting pick</div>
+        <div style="font-size:11px;color:var(--t2)">Assigned to ${esc(order.assignedPicker)}, not yet started</div>
+      </div>
+    </div>`;
+  }
+  el.innerHTML=`<div class="panel"><div class="ph"><i class="ti ti-package"></i>Order ${esc(oid)}</div><div class="pb">${rows}</div></div>`;
 }
 
 // REPORTS
@@ -4643,11 +5670,11 @@ let currentProfile = null;
 
 const ROLE_COLORS = {admin:'#c62828',supervisor:'#B8860B',picker:'#1565c0',packer:'#2e7d32',viewer:'#6a1b9a'};
 const ROLE_PERMS = {
-  admin:    {canEdit:true,  canDispatch:true, canPack:true, canPick:true,  canReceive:true,  canManageUsers:true,  canAudit:true,  canReturn:true},
-  supervisor:{canEdit:true, canDispatch:true, canPack:true, canPick:true,  canReceive:true,  canManageUsers:false, canAudit:true,  canReturn:true},
-  picker:   {canEdit:false, canDispatch:false,canPack:true, canPick:true,  canReceive:false, canManageUsers:false, canAudit:false, canReturn:false},
-  packer:   {canEdit:false, canDispatch:true, canPack:true, canPick:false, canReceive:false, canManageUsers:false, canAudit:false, canReturn:false},
-  viewer:   {canEdit:false, canDispatch:false,canPack:false,canPick:false, canReceive:false, canManageUsers:false, canAudit:false, canReturn:false},
+  admin:    {canEdit:true,  canDispatch:true, canPack:true, canPick:true,  canReceive:true,  canManageUsers:true,  canAudit:true,  canReturn:true, canManageOrders:true},
+  supervisor:{canEdit:true, canDispatch:true, canPack:true, canPick:true,  canReceive:true,  canManageUsers:false, canAudit:true,  canReturn:true, canManageOrders:true},
+  picker:   {canEdit:false, canDispatch:false,canPack:true, canPick:true,  canReceive:false, canManageUsers:false, canAudit:false, canReturn:false, canManageOrders:false},
+  packer:   {canEdit:false, canDispatch:true, canPack:true, canPick:false, canReceive:false, canManageUsers:false, canAudit:false, canReturn:false, canManageOrders:false},
+  viewer:   {canEdit:false, canDispatch:false,canPack:false,canPick:false, canReceive:false, canManageUsers:false, canAudit:false, canReturn:false, canManageOrders:false},
 };
 
 function getPerms(){ return ROLE_PERMS[currentProfile?.role] || ROLE_PERMS.viewer; }
@@ -4709,6 +5736,9 @@ async function onAuthSuccess(){
 function applyRoleRestrictions(){
   const perms=getPerms();
   const role=currentProfile?.role;
+  const ordPanel=document.getElementById('order-create-panel');
+  if(ordPanel) ordPanel.style.display=perms.canManageOrders?'block':'none';
+  if(perms.canManageOrders) loadPickerNames();
   // Hide action buttons for viewer
   if(role==='viewer'){
     const style=document.createElement('style');
@@ -4800,7 +5830,8 @@ async function createUser(){
   const errEl=document.getElementById('create-user-err');
   if(!name||!email||!password){errEl.textContent='All fields required';return;}
   if(!validateEmail(email)){errEl.textContent='Invalid email';return;}
-  if(password.length<8){errEl.textContent='Password must be at least 8 characters';return;}
+  if(password.length<12){errEl.textContent='Password must be at least 12 characters';return;}
+  if(!/[A-Z]/.test(password)||!/[a-z]/.test(password)||!/[0-9]/.test(password)){errEl.textContent='Password must include upper case, lower case, and a number';return;}
   errEl.textContent='Creating...';
   try {
     // Create auth user via Supabase admin — requires service role key
@@ -4976,6 +6007,7 @@ function processBarcodeInput(barcode){
   // Find matching SKU
   const sku=SKUS.find(s=>s.sku===barcode||s.sku.toUpperCase()===barcode.toUpperCase());
   if(!sku){
+    if(_barcodeTarget==='mobile-pick'||_barcodeTarget==='mobile-pack'){ mobileScanFeedback(false); }
     toast('Unknown barcode: '+barcode,'w');
     return;
   }
@@ -4996,6 +6028,12 @@ function processBarcodeInput(barcode){
     const awbInput=document.getElementById('disp-awb');
     if(awbInput){ awbInput.value=barcode; }
     toast('AWB scanned: '+barcode,'s');
+  } else if(_barcodeTarget==='mobile-pick'){
+    // HT20 Pro handheld scan during a mobile picking session
+    mobilePickAddScan(sku);
+  } else if(_barcodeTarget==='mobile-pack'){
+    // HT20 Pro handheld scan during mobile pack verification
+    mobilePackScan(sku);
   }
   // Log the scan
   logAudit('BARCODE_SCAN','inventory',sku.sku,null,{sku:sku.sku,target:_barcodeTarget,barcode});
@@ -5015,6 +6053,7 @@ async function bootWMS(){
   await loadSKUsFromDB(); // load dynamic SKUs first
   await initInv();
   await loadHist();
+  await loadOrders();
   renderDash();
   renderInv();
   renderRack();
