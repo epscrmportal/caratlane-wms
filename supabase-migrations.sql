@@ -288,12 +288,16 @@ begin
   end if;
 end $$;
 
+
 -- ═══════════════════════════════════════════════════════════════
--- End of migrations. After running these, your schema matches what
--- caratlane-wms/index.html expects: inventory, history, packing_queue,
--- orders, stock_reservations, user_profiles, audit_log, skus,
--- inventory_counts, inventory_snapshots — plus the RPC functions
--- above. RLS on every table is "allow all" for anon+authenticated,
--- matching this app's existing security model (the anon key is
--- effectively a shared app password, not a public API key).
+-- MIGRATION 4 — create_expected_shipments_table
+-- Inbound tally: log what's expected to arrive (ASN + SKU quantities)
+-- before the truck shows up. When a GRN is created against a matching
+-- ASN, the app reconciles expected vs actually-received quantities
+-- automatically and flags shortages/overages.
 -- ═══════════════════════════════════════════════════════════════
+
+create table if not exists expected_shipments (
+  id               text primary key,   -- ASN / PO reference
+  vendor           text,
+  carrier          t

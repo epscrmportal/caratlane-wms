@@ -489,11 +489,44 @@ tr:hover td{background:var(--s2)}
     <button onclick="enableBarcodeScanner('inbound')" style="padding:7px 12px;background:var(--s2);border:1px solid var(--b);border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;display:flex;align-items:center;gap:5px;color:var(--t)"><i class="ti ti-barcode" style="font-size:14px;color:var(--gold)"></i>Scan SKU Barcode</button>
     <div class="barcode-indicator" style="display:none;align-items:center;gap:5px;padding:4px 10px;background:var(--sbg);border-radius:6px;font-size:10px;color:var(--st);font-weight:600"><i class="ti ti-scan"></i>Scanner active — scan now<button onclick="disableBarcodeScanner()" style="background:none;border:none;cursor:pointer;color:var(--dt);font-size:12px;margin-left:4px">×</button></div>
   </div>
+
+  <!-- ═══ EXPECTED SHIPMENTS / INBOUND TALLY ═══ -->
+  <div id="exp-shipment-panel" class="panel" style="margin-bottom:16px;display:none">
+    <div class="ph"><i class="ti ti-clipboard-list"></i>Log an expected shipment</div>
+    <div class="pb">
+      <div class="fg2">
+        <div class="frow"><label for="exp-asn">ASN / PO reference</label><input type="text" id="exp-asn" placeholder="e.g. ASN-2026-0042"></div>
+        <div class="frow"><label for="exp-vendor">Vendor</label><input type="text" id="exp-vendor" placeholder="Optional"></div>
+      </div>
+      <div class="fg2">
+        <div class="frow"><label for="exp-carrier">Carrier</label><input type="text" id="exp-carrier" placeholder="Optional"></div>
+        <div class="frow"><label for="exp-date">Expected date</label><input type="date" id="exp-date"></div>
+      </div>
+      <div class="sep"></div>
+      <div class="stitle">Expected items</div>
+      <div class="fg4" style="margin-bottom:8px">
+        <div><label for="exp-sku" style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">SKU</label><select id="exp-sku" style="width:100%;font-size:11px"></select></div>
+        <div><label for="exp-qty" style="font-size:11px;color:var(--t2);display:block;margin-bottom:3px;font-weight:500">Expected qty</label><input type="number" id="exp-qty" value="1" min="1"></div>
+        <div></div>
+        <button onclick="addExpItem()"><i class="ti ti-plus"></i>Add</button>
+      </div>
+      <div id="exp-items-list" style="margin-bottom:10px"></div>
+      <button class="btn-primary" style="width:100%;justify-content:center" onclick="createExpectedShipment()"><i class="ti ti-check"></i>Log expected shipment</button>
+    </div>
+  </div>
+  <div class="stitle">Inbound tally — expected vs received</div>
+  <div id="exp-shipments-board" style="margin-bottom:20px"></div>
+
   <div class="fg2">
     <div>
       <div class="panel">
         <div class="ph"><i class="ti ti-package-import"></i>Stage A–D: Receive shipment &amp; create GRN</div>
         <div class="pb">
+          <div class="frow"><label for="ib-load-expected">Load from expected shipment (optional)</label>
+            <select id="ib-load-expected" onchange="loadExpectedIntoGRN()">
+              <option value="">— None, receive ad-hoc —</option>
+            </select>
+          </div>
           <div class="frow"><label for="ib-asn">ASN / PO Reference</label><input type="text" id="ib-asn" placeholder="e.g. ASN-2026-0042"></div>
           <div class="frow"><label for="ib-carrier">Carrier / Transporter</label><input type="text" id="ib-carrier" placeholder="e.g. Blue Dart / EPS Fleet"></div>
           <div class="fg2">
@@ -884,6 +917,10 @@ tr:hover td{background:var(--s2)}
     <div style="font-weight:700;font-size:13px;color:var(--t);display:flex;align-items:center;gap:6px">
       <i class="ti ti-printer" style="color:var(--gold)"></i> SKU Barcode Label Generator
     </div>
+    <div style="position:relative;min-width:200px">
+      <i class="ti ti-search" style="position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:12px;color:var(--t3)"></i>
+      <input type="text" id="lbl-search" placeholder="Search labels by SKU or name..." oninput="renderLabelPage()" style="width:100%;padding:6px 10px 6px 28px;border:0.5px solid var(--b);border-radius:6px;background:var(--s2);color:var(--t);font-size:11px">
+    </div>
     <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
       <select id="lbl-cat" onchange="renderLabelPage()" style="padding:6px 10px;border:0.5px solid var(--b);border-radius:6px;background:var(--s2);color:var(--t);font-size:11px">
         <option value="">All categories</option>
@@ -1096,6 +1133,8 @@ tr:hover td{background:var(--s2)}
         <div class="scan-title">Scan next item</div>
         <div class="scan-sub" id="mp-pick-order-label">Order —</div>
       </div>
+      <div class="stitle" style="margin-top:10px">Where to go</div>
+      <div id="mp-pick-checklist" style="margin-bottom:10px"></div>
       <div id="mp-pick-list"></div>
       <div style="margin-top:10px">
         <label style="font-size:11px;color:var(--t2);font-weight:600;display:block;margin-bottom:5px">No scanner handy? Add manually</label>
@@ -1975,7 +2014,7 @@ function nav(tab){
     renderCountHistory();
   }
   if(tab==='mobile'){initMobileTab();}
-  if(tab==='inbound'){populateSkuSel('ib-sku');renderIbLog();}
+  if(tab==='inbound'){populateSkuSel('ib-sku');populateSkuSel('exp-sku');renderIbLog();loadExpectedShipments().then(()=>{renderExpShipmentsBoard();populateExpectedSelect();});}
   if(tab==='orders'){populateSkuSel('ord-sku');loadOrders().then(renderOrdersBoard);}
   if(tab==='picking'){ if(!activeOrder){ loadOrders().then(renderMyAssignedOrders); } }
   if(tab==='returns'){populateSkuSel('rt-sku');renderRtLog();}
@@ -2208,6 +2247,181 @@ function filterSkuList(searchInputId,selectId){
   const filtered=SKUS.filter(s=>s.sku.toLowerCase().includes(q)||s.sub.toLowerCase().includes(q)||s.variant.toLowerCase().includes(q));
   sel.innerHTML=filtered.length?filtered.map(x=>`<option value="${x.sku}">${x.sub} (${x.sku}) — ${x.variant}</option>`).join(''):`<option disabled>No SKUs found</option>`;
 }
+// EXPECTED SHIPMENTS / INBOUND TALLY — log what's coming before it
+// arrives, then reconcile it against actual GRN receipts automatically.
+let expectedShipments=[];
+let expItemsList=[];
+
+async function loadExpectedShipments(){
+  try{
+    const {data,error}=await supa.from('expected_shipments').select('*').order('created_at',{ascending:false});
+    if(error) throw error;
+    expectedShipments=(data||[]).map(r=>({
+      id:r.id, vendor:r.vendor, carrier:r.carrier, expectedDate:r.expected_date,
+      items:r.items||[], status:r.status, notes:r.notes, createdBy:r.created_by,
+      createdAt:r.created_at, receivedAt:r.received_at, receivedSummary:r.received_summary||null
+    }));
+  }catch(e){ console.error('loadExpectedShipments failed:',e.message||e); }
+}
+async function saveExpectedShipmentRow(s){
+  try{
+    const row={
+      id:s.id, vendor:s.vendor||null, carrier:s.carrier||null, expected_date:s.expectedDate||null,
+      items:s.items||[], status:s.status, notes:s.notes||null, created_by:s.createdBy||null,
+      received_at:s.receivedAt||null, received_summary:s.receivedSummary||null
+    };
+    const {error}=await supa.from('expected_shipments').upsert(row,{onConflict:'id'});
+    if(error) throw error;
+    return true;
+  }catch(e){ console.error('saveExpectedShipmentRow failed:',e.message||e); toast('Could not save — connection issue','w'); return false; }
+}
+function addExpItem(){
+  const sku=document.getElementById('exp-sku').value;
+  const qty=parseInt(document.getElementById('exp-qty').value)||1;
+  const s=SKUS.find(x=>x.sku===sku);
+  if(!s) return;
+  if(!validateQty(qty)){toast('Invalid quantity','w');return;}
+  const existing=expItemsList.find(it=>it.sku===sku);
+  if(existing){ existing.qty+=qty; } else {
+    expItemsList.push({sku,name:s.sub,variant:s.variant,qty});
+  }
+  renderExpItemsList();
+}
+function renderExpItemsList(){
+  const el=document.getElementById('exp-items-list');
+  if(!el) return;
+  el.innerHTML=expItemsList.length?`<div class="tw"><table><thead><tr><th>SKU</th><th>Item</th><th>Expected Qty</th><th></th></tr></thead><tbody>${expItemsList.map((item,i)=>`<tr><td class="mono">${item.sku}</td><td style="font-size:11px">${esc(item.name)} — ${esc(item.variant)}</td><td>${item.qty}</td><td><button class="btn-sm btn-danger" onclick="removeExpItem(${i})"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table></div>`:'';
+}
+function removeExpItem(i){
+  expItemsList.splice(i,1);
+  renderExpItemsList();
+}
+async function createExpectedShipment(){
+  const id=document.getElementById('exp-asn').value.trim();
+  if(!id){toast('Enter an ASN / PO reference','w');return;}
+  if(!expItemsList.length){toast('Add at least one expected item','w');return;}
+  if(expectedShipments.some(s=>s.id.toLowerCase()===id.toLowerCase())){toast('A shipment with this ASN already exists','w');return;}
+  if(!rateLimit('create-expected-shipment',1500)){toast('Please wait before submitting again','w');return;}
+  const s={
+    id, vendor:document.getElementById('exp-vendor').value.trim()||null,
+    carrier:document.getElementById('exp-carrier').value.trim()||null,
+    expectedDate:document.getElementById('exp-date').value||null,
+    items:[...expItemsList], status:'expected',
+    createdBy:currentProfile?.full_name||'Unknown', createdAt:new Date().toISOString()
+  };
+  const ok=await saveExpectedShipmentRow(s);
+  if(!ok) return;
+  expectedShipments.unshift(s);
+  expItemsList=[];
+  renderExpItemsList();
+  document.getElementById('exp-asn').value='';
+  document.getElementById('exp-vendor').value='';
+  document.getElementById('exp-carrier').value='';
+  document.getElementById('exp-date').value='';
+  logAudit('CREATE_EXPECTED_SHIPMENT','expected_shipments',id,null,{items:s.items.length});
+  renderExpShipmentsBoard();
+  populateExpectedSelect();
+  toast(`Expected shipment ${id} logged — ${s.items.length} SKU(s)`,'s');
+}
+function populateExpectedSelect(){
+  const sel=document.getElementById('ib-load-expected');
+  if(!sel) return;
+  const open=expectedShipments.filter(s=>s.status==='expected'||s.status==='partial');
+  sel.innerHTML='<option value="">— None, receive ad-hoc —</option>'+
+    open.map(s=>`<option value="${esc(s.id)}">${esc(s.id)}${s.vendor?' — '+esc(s.vendor):''} (${s.items.length} SKU(s))</option>`).join('');
+}
+function loadExpectedIntoGRN(){
+  const id=document.getElementById('ib-load-expected').value;
+  if(!id) return;
+  const s=expectedShipments.find(x=>x.id===id);
+  if(!s) return;
+  document.getElementById('ib-asn').value=s.id;
+  ibItems=s.items.map(it=>{
+    const full=SKUS.find(x=>x.sku===it.sku);
+    return {sku:it.sku,name:it.name,variant:it.variant,qc:'PASS',issue:'',qty:it.qty,bin:full?`${full.rack}-${full.shelf}`:'',binOverridden:false};
+  });
+  renderIbItemsList();
+  toast(`Loaded ${s.items.length} expected item(s) from ${s.id} — adjust quantities/QC to match what actually arrived`,'s');
+}
+function reconcileAgainstExpected(asn, receivedItems){
+  const s=expectedShipments.find(x=>x.id.toLowerCase()===(asn||'').toLowerCase());
+  if(!s) return null;
+  const receivedBySku={};
+  receivedItems.forEach(it=>{ receivedBySku[it.sku]=(receivedBySku[it.sku]||0)+it.qty; });
+  const summary=s.items.map(exp=>{
+    const got=receivedBySku[exp.sku]||0;
+    delete receivedBySku[exp.sku];
+    return {sku:exp.sku, name:exp.name, expected:exp.qty, received:got, diff:got-exp.qty};
+  });
+  // Anything received that wasn't on the expected list at all
+  Object.keys(receivedBySku).forEach(sku=>{
+    const full=SKUS.find(x=>x.sku===sku);
+    summary.push({sku, name:full?full.sub:sku, expected:0, received:receivedBySku[sku], diff:receivedBySku[sku]});
+  });
+  const anyDiff=summary.some(r=>r.diff!==0);
+  const anyZero=summary.some(r=>r.expected>0 && r.received===0);
+  s.status=anyDiff?'discrepancy':'received';
+  s.receivedAt=new Date().toISOString();
+  s.receivedSummary=summary;
+  saveExpectedShipmentRow(s);
+  return {status:s.status, summary, anyZero};
+}
+function renderExpShipmentsBoard(){
+  const el=document.getElementById('exp-shipments-board');
+  if(!el) return;
+  if(!expectedShipments.length){ el.innerHTML='<div class="empty">No expected shipments logged yet</div>'; return; }
+  const statusPill={expected:'p-info',partial:'p-hold',received:'p-pass',discrepancy:'p-out'};
+  el.innerHTML=`<div class="tw"><table><thead><tr><th>ASN</th><th>Vendor</th><th>Expected</th><th>Status</th><th>Tally</th><th>Action</th></tr></thead><tbody>${expectedShipments.map(s=>{
+    let tally='<span style="color:var(--t3);font-size:10px">Not yet received</span>';
+    if(s.receivedSummary){
+      tally=s.receivedSummary.map(r=>{
+        const color=r.diff===0?'var(--st)':r.diff<0?'var(--dt)':'var(--wt)';
+        const label=r.diff===0?'match':r.diff<0?`short ${Math.abs(r.diff)}`:`over ${r.diff}`;
+        return `<div style="font-size:10px;color:${color}">${esc(r.sku)}: ${r.received}/${r.expected} (${label})</div>`;
+      }).join('');
+    }
+    return `<tr><td class="mono">${esc(s.id)}</td><td style="font-size:11px">${esc(s.vendor||'—')}</td><td>${s.items.length} SKU(s)</td><td><span class="pill ${statusPill[s.status]||'p-info'}">${s.status}</span></td><td>${tally}</td><td><button class="btn-sm" onclick="printTallySheet('${esc(s.id)}')"><i class="ti ti-printer"></i>Print</button></td></tr>`;
+  }).join('')}</tbody></table></div>`;
+}
+function printTallySheet(asnId){
+  const s=expectedShipments.find(x=>x.id===asnId);
+  if(!s){toast('Shipment not found','w');return;}
+  const printWindow=window.open('','TALLY_'+asnId,'width=900,height=1000');
+  if(!printWindow){toast('Please allow popups to print','w');return;}
+  printWindow.document.write(`
+    <!DOCTYPE html><html><head><title>Inbound Tally — ${asnId}</title>
+    <style>
+      body{font-family:Arial,sans-serif;margin:20px;color:#333}
+      .header{border-bottom:3px solid #000;padding-bottom:12px;margin-bottom:16px}
+      .company{font-size:18px;font-weight:bold}
+      .subtitle{font-size:11px;color:#666;margin-top:2px}
+      h2{margin:14px 0 4px}
+      table{width:100%;border-collapse:collapse;margin-top:10px}
+      th{background:#f0f0f0;padding:8px;text-align:left;border:1px solid #ccc;font-size:11px}
+      td{padding:10px 8px;border:1px solid #ccc;font-size:12px}
+      .tick{width:60px;text-align:center}
+      .sign{margin-top:40px;display:grid;grid-template-columns:1fr 1fr;gap:30px}
+      .sign div{border-top:1px solid #000;padding-top:6px;text-align:center;font-size:11px}
+    </style></head><body>
+    <div class="header">
+      <div class="company">CaratLane WMS — Inbound Tally Sheet</div>
+      <div class="subtitle">EPS Worldwide Integrated Logistics</div>
+    </div>
+    <div><strong>ASN / PO:</strong> ${esc(s.id)} &nbsp; <strong>Vendor:</strong> ${esc(s.vendor||'—')} &nbsp; <strong>Carrier:</strong> ${esc(s.carrier||'—')}</div>
+    <div><strong>Expected date:</strong> ${esc(s.expectedDate||'—')} &nbsp; <strong>Printed:</strong> ${new Date().toLocaleString('en-IN')}</div>
+    <table><thead><tr><th>SKU</th><th>Item</th><th>Expected Qty</th><th class="tick">Actual Qty</th><th class="tick">✓ Tick</th></tr></thead><tbody>
+      ${s.items.map(it=>`<tr><td>${esc(it.sku)}</td><td>${esc(it.name)} — ${esc(it.variant||'')}</td><td>${it.qty}</td><td class="tick"></td><td class="tick"></td></tr>`).join('')}
+    </tbody></table>
+    <div class="sign">
+      <div>Received by (name &amp; signature)</div>
+      <div>Verified by (supervisor)</div>
+    </div>
+    </body></html>
+  `);
+  printWindow.document.close();
+  printWindow.focus();
+  setTimeout(()=>printWindow.print(),300);
+}
 function addIbItem(){
   const sku=document.getElementById('ib-sku').value;
   const qc=document.getElementById('ib-qc').value;
@@ -2251,10 +2465,25 @@ function createGRN(){
   const hold=ibItems.filter(i=>i.qc==='HOLD').reduce((a,i)=>a+i.qty,0);
   const rej=ibItems.filter(i=>i.qc==='REJECT').reduce((a,i)=>a+i.qty,0);
   history.push({id:gid,type:'grn',ts:ts(),detail:`ASN: ${asn||'N/A'} · ${ibItems.length} SKUs · PASS:${pass} HOLD:${hold} REJ:${rej}`,items:[...ibItems],asn,carrier,vehicle,cartons});
-  saveInv();saveHist();ibItems=[];renderIbItemsList();renderIbLog();updateNotificationBadge();
+  saveInv();saveHist();
+  const recon=asn?reconcileAgainstExpected(asn, ibItems):null;
+  ibItems=[];renderIbItemsList();renderIbLog();updateNotificationBadge();
   document.getElementById('ib-issue').value='';
+  document.getElementById('ib-load-expected').value='';
   ['ib-asn','ib-carrier','ib-vehicle','ib-cartons'].forEach(id_=>document.getElementById(id_).value='');
-  toast(`GRN ${gid} created · ${pass} units added to inventory (FIFO)`, 's');
+  renderExpShipmentsBoard();
+  populateExpectedSelect();
+  if(recon){
+    if(recon.status==='discrepancy'){
+      const shorts=recon.summary.filter(r=>r.diff<0).map(r=>`${r.sku} short ${Math.abs(r.diff)}`);
+      const overs=recon.summary.filter(r=>r.diff>0).map(r=>`${r.sku} over ${r.diff}`);
+      toast(`GRN ${gid} created · Tally mismatch vs ${asn}: ${[...shorts,...overs].join(', ')}`,'w');
+    } else {
+      toast(`GRN ${gid} created · ${pass} units added to inventory · Tally matches ${asn} exactly`,'s');
+    }
+  } else {
+    toast(`GRN ${gid} created · ${pass} units added to inventory (FIFO)`, 's');
+  }
 }
 function renderIbLog(){
   const el=document.getElementById('ib-log');
@@ -2740,16 +2969,17 @@ function renderMyAssignedOrders(){
   const el=document.getElementById('pk-my-orders');
   if(!el) return;
   const me=currentProfile?.full_name||'';
-  const mine=orders.filter(o=>o.status==='assigned' && o.assignedPicker===me);
-  el.innerHTML=mine.length?mine.map(o=>`
+  const seeAll=getPerms().canManageOrders;
+  const visible=seeAll?orders.filter(o=>o.status==='assigned'):orders.filter(o=>o.status==='assigned' && o.assignedPicker===me);
+  el.innerHTML=visible.length?visible.map(o=>`
     <div class="panel" style="margin-bottom:10px">
       <div class="ph"><i class="ti ti-clipboard-list"></i>${esc(o.id)}<span class="pill ${o.priority==='Express'?'p-out':'p-info'}" style="margin-left:auto">${o.priority}</span></div>
       <div class="pb">
-        <div style="font-size:11px;color:var(--t2);margin-bottom:8px">${o.items.length} SKU(s) · ${o.method}${o.customerName?' · '+esc(o.customerName):''}</div>
+        <div style="font-size:11px;color:var(--t2);margin-bottom:8px">${o.items.length} SKU(s) · ${o.method}${o.customerName?' · '+esc(o.customerName):''}${seeAll?' · Assigned to '+esc(o.assignedPicker):''}</div>
         <button class="btn-primary" style="width:100%;justify-content:center" onclick="startDesktopPick('${esc(o.id)}')"><i class="ti ti-player-play"></i>Start pick</button>
       </div>
     </div>
-  `).join(''):'<div class="empty">No orders assigned to you right now — check with your supervisor or the Orders tab</div>';
+  `).join(''):`<div class="empty">${seeAll?'No orders currently assigned to anyone':'No orders assigned to you right now — check with your supervisor or the Orders tab'}</div>`;
 }
 function showPickOrdersList(){
   const listWrap=document.getElementById('pk-my-orders-wrap');
@@ -2778,14 +3008,19 @@ async function cancelActivePick(){
   renderPkItemsList();
   showPickOrdersList();
 }
+function fmtLoc(bin){
+  if(!bin) return '—';
+  const parts=String(bin).split('-');
+  return parts.length===2?`Rack ${parts[0]} · Shelf ${parts[1]}`:bin;
+}
 function renderPkChecklist(){
   const el=document.getElementById('pk-checklist');
   if(!el||!activeOrder) return;
-  el.innerHTML=`<div class="tw"><table><thead><tr><th>SKU</th><th>Item</th><th>Ordered</th><th>Picked</th></tr></thead><tbody>${activeOrder.items.map(exp=>{
+  el.innerHTML=`<div class="tw"><table><thead><tr><th>SKU</th><th>Item</th><th>Location</th><th>Ordered</th><th>Picked</th></tr></thead><tbody>${activeOrder.items.map(exp=>{
     const picked=pkItemsList.find(p=>p.sku===exp.sku);
     const pq=picked?picked.qty:0;
     const done=pq>=exp.qty;
-    return `<tr${done?' style="color:var(--st)"':''}><td class="mono">${exp.sku}</td><td style="font-size:11px">${esc(exp.name)} — ${esc(exp.variant)}</td><td>${exp.qty}</td><td>${pq}${done?' <i class="ti ti-check"></i>':''}</td></tr>`;
+    return `<tr${done?' style="color:var(--st)"':''}><td class="mono">${exp.sku}</td><td style="font-size:11px">${esc(exp.name)} — ${esc(exp.variant)}</td><td style="font-weight:700;font-size:11px;color:var(--gold)"><i class="ti ti-map-pin"></i> ${fmtLoc(exp.bin)}</td><td>${exp.qty}</td><td>${pq}${done?' <i class="ti ti-check"></i>':''}</td></tr>`;
   }).join('')}</tbody></table></div>`;
 }
 async function addPkItem(){
@@ -3604,6 +3839,7 @@ function initMobilePickView(){
     document.getElementById('mp-pick-order-label').textContent='Order '+mobilePickSession.orderId;
     populateSkuSelFromList('mp-manual-sku', mobilePickSession.order.items);
     renderMobilePickSession();
+    renderMpPickChecklist();
     enableBarcodeScanner('mobile-pick');
   } else {
     setup.style.display='block';
@@ -3615,17 +3851,18 @@ function renderMpMyOrders(){
   const el=document.getElementById('mp-my-orders');
   if(!el) return;
   const me=currentProfile?.full_name||'';
-  const mine=orders.filter(o=>o.status==='assigned' && o.assignedPicker===me);
-  el.innerHTML=mine.length?mine.map(o=>`
+  const seeAll=getPerms().canManageOrders;
+  const visible=seeAll?orders.filter(o=>o.status==='assigned'):orders.filter(o=>o.status==='assigned' && o.assignedPicker===me);
+  el.innerHTML=visible.length?visible.map(o=>`
     <div class="mp-pack-card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
         <span style="font-weight:700;font-size:13px">${esc(o.id)}</span>
         <span class="pill ${o.priority==='Express'?'p-out':'p-info'}">${o.priority}</span>
       </div>
-      <div style="font-size:11px;color:var(--t2);margin-bottom:9px">${o.items.length} SKU(s) · ${o.method}${o.customerName?' · '+esc(o.customerName):''}</div>
+      <div style="font-size:11px;color:var(--t2);margin-bottom:9px">${o.items.length} SKU(s) · ${o.method}${o.customerName?' · '+esc(o.customerName):''}${seeAll?' · Assigned to '+esc(o.assignedPicker):''}</div>
       <button class="btn-primary" style="width:100%;justify-content:center" onclick="startMobilePick('${esc(o.id)}')"><i class="ti ti-player-play"></i>Start scanning</button>
     </div>
-  `).join(''):'<div class="empty">No orders assigned to you right now</div>';
+  `).join(''):`<div class="empty">${seeAll?'No orders currently assigned to anyone':'No orders assigned to you right now'}</div>`;
 }
 function startMobilePick(orderId){
   const o=orders.find(x=>x.id===orderId);
@@ -3714,6 +3951,7 @@ async function mobilePickAddScan(sku){
     mobilePickSession.items.push({sku:sku.sku,name:sku.sub,variant:sku.variant,qty:1,bin:`${sku.rack}-${sku.shelf}`,avail:res.available});
   }
   renderMobilePickSession();
+  renderMpPickChecklist();
   mobileScanFeedback(true);
   toast('Reserved '+sku.sub+' — '+sku.variant,'s');
 }
@@ -3742,8 +3980,25 @@ async function adjustMobilePickQty(sku,delta){
     if(item.qty<=0){ mobilePickSession.items=mobilePickSession.items.filter(i=>i.sku!==sku); }
   }
   renderMobilePickSession();
+  renderMpPickChecklist();
 }
 
+function renderMpPickChecklist(){
+  const el=document.getElementById('mp-pick-checklist');
+  if(!el||!mobilePickSession) return;
+  el.innerHTML=`<div style="display:grid;gap:6px">${mobilePickSession.order.items.map(exp=>{
+    const picked=mobilePickSession.items.find(p=>p.sku===exp.sku);
+    const pq=picked?picked.qty:0;
+    const done=pq>=exp.qty;
+    return `<div style="display:flex;justify-content:space-between;align-items:center;background:var(--s2);padding:8px 10px;border-radius:6px;${done?'opacity:0.6':''}">
+      <div>
+        <div style="font-size:11px;font-weight:700">${exp.sku} — ${esc(exp.name)}</div>
+        <div style="font-size:11px;font-weight:700;color:var(--gold);margin-top:2px"><i class="ti ti-map-pin"></i> ${fmtLoc(exp.bin)}</div>
+      </div>
+      <div style="font-size:11px;font-weight:700;${done?'color:var(--st)':''}">${pq}/${exp.qty}${done?' <i class="ti ti-check"></i>':''}</div>
+    </div>`;
+  }).join('')}</div>`;
+}
 function renderMobilePickSession(){
   const el=document.getElementById('mp-pick-list');
   if(!el||!mobilePickSession) return;
@@ -5520,9 +5775,12 @@ function loadJsBarcode(cb){
 function renderLabelPage(){
   loadJsBarcode(()=>{
     const cat=document.getElementById('lbl-cat')?.value||'';
-    const skus=cat?SKUS.filter(s=>s.cat===cat):SKUS;
+    const q=(document.getElementById('lbl-search')?.value||'').trim().toLowerCase();
+    let skus=cat?SKUS.filter(s=>s.cat===cat):SKUS;
+    if(q) skus=skus.filter(s=>s.sku.toLowerCase().includes(q)||s.sub.toLowerCase().includes(q)||s.variant.toLowerCase().includes(q));
     const grid=document.getElementById('label-grid');
     if(!grid)return;
+    if(!skus.length){ grid.innerHTML='<div class="empty" style="grid-column:1/-1">No labels match your search</div>'; return; }
     grid.innerHTML=skus.map(s=>{
       const selected=_lblSelected.has(s.sku);
       const qty=(inv[s.sku]||{qty:0}).qty;
@@ -5730,15 +5988,40 @@ async function onAuthSuccess(){
   applyRoleRestrictions();
   // Boot WMS
   await bootWMS();
+  // Land the user on a tab they actually have access to
+  if(currentProfile.role==='picker') nav('picking');
+  else if(currentProfile.role==='packer') nav('packing');
   await logAudit('LOGIN','session',currentUser.id,null,{email:currentProfile.email,role:currentProfile.role});
 }
 
+// Per-role sidebar tab allowlist. `null` = no restriction (sees every tab).
+// "users" is governed separately by canManageUsers (set in onAuthSuccess).
+const ROLE_TABS = {
+  admin: null,
+  supervisor: ['dashboard','inbound','picking','packing','orders','dispatch','mobile','returns','inventory','orderstatus','reports','sop','audit'],
+  picker: ['picking','mobile'],
+  packer: ['packing','mobile'],
+  viewer: null
+};
+function applyTabVisibility(){
+  const role=currentProfile?.role;
+  const allowed=ROLE_TABS.hasOwnProperty(role)?ROLE_TABS[role]:null;
+  document.querySelectorAll('.ntab').forEach(t=>{
+    const tab=t.dataset.tab;
+    if(tab==='users') return; // handled separately by canManageUsers
+    if(allowed===null){ t.style.display=''; return; }
+    t.style.display=allowed.includes(tab)?'':'none';
+  });
+}
 function applyRoleRestrictions(){
   const perms=getPerms();
   const role=currentProfile?.role;
   const ordPanel=document.getElementById('order-create-panel');
   if(ordPanel) ordPanel.style.display=perms.canManageOrders?'block':'none';
   if(perms.canManageOrders) loadPickerNames();
+  const expPanel=document.getElementById('exp-shipment-panel');
+  if(expPanel) expPanel.style.display=perms.canReceive?'block':'none';
+  applyTabVisibility();
   // Hide action buttons for viewer
   if(role==='viewer'){
     const style=document.createElement('style');
@@ -5752,20 +6035,6 @@ function applyRoleRestrictions(){
     `;
     document.head.appendChild(style);
     toast('You are logged in as a Viewer — read-only access','w');
-  }
-  // Restrict pickers from dispatch/returns tabs
-  if(role==='picker'){
-    const dispTab=document.querySelector('[data-tab="dispatch"]');
-    const retTab=document.querySelector('[data-tab="returns"]');
-    if(dispTab) dispTab.style.display='none';
-    if(retTab) retTab.style.display='none';
-  }
-  // Restrict packers from inbound/picking tabs
-  if(role==='packer'){
-    const inbTab=document.querySelector('[data-tab="inbound"]');
-    const pkTab=document.querySelector('[data-tab="picking"]');
-    if(inbTab) inbTab.style.display='none';
-    if(pkTab) pkTab.style.display='none';
   }
 }
 
@@ -6054,6 +6323,7 @@ async function bootWMS(){
   await initInv();
   await loadHist();
   await loadOrders();
+  await loadExpectedShipments();
   renderDash();
   renderInv();
   renderRack();
