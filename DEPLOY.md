@@ -4,7 +4,7 @@
 
 - **`index.html`** — the entire app. This is the only file that actually gets deployed and loaded by the browser; all CSS and JS are inlined in it.
 - `app.js`, `api.js`, `config.js`, `styles.css` — source mirrors of the same logic, kept for readability and diffing. They are **not** loaded by `index.html` (no `<script src="...">` tags reference them) — editing them alone won't change app behavior. If you edit the app, edit `index.html`.
-- `supabase-migrations.sql` — the full database schema as SQL, in three migrations (stock reservations, packing claims + QC photo, orders table). Already applied to the live Supabase project; keep this file so the schema is reproducible if you ever spin up a new project.
+- `supabase-migrations.sql` — the full database schema as SQL, in five migrations (stock reservations, packing claims + QC photo, orders table, expected shipments / inbound tally, packer column on history). Already applied to the live Supabase project; keep this file so the schema is reproducible if you ever spin up a new project.
 
 ## Deploying to git + Vercel
 
@@ -28,4 +28,4 @@ Note on security: every table uses "allow all" RLS policies for the `anon` role 
 
 ## Optional manual step
 
-Supabase's built-in leaked-password protection (checks new passwords against HaveIBeenPwned) is off by default and isn't controllable via the tools used to build this — turn it on yourself in Supabase Dashboard → Authentication → Policies if you want it.
+Supabase's built-in leaked-password protection (checks new passwords against HaveIBeenPwned) is off by default and isn't controllable via the tools used to build this — turn it on yourself in Supaba

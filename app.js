@@ -1,6 +1,3 @@
-// ═══ CaratLane WMS — App Logic & UI ═══
-// All UI rendering, state management, SKU data
-
 
 let SKUS=[
   {sku:"UNI-GS-M-34",cat:"Uniform",sub:"Grey Sweater- Male",variant:"Size 34",rack:"A",shelf:"1"},
@@ -245,7 +242,7 @@ async function saveHist(){
       box_l:h.boxL||null, box_w:h.boxW||null, box_h:h.boxH||null,
       actual_weight:h.actualWeight||null, vol_weight:h.volWeight||null, chargeable_weight:h.chargeableWeight||null,
       pack_notes:h.packNotes||null, packed_id:h.packedId||null, category:h.category||null,
-      grn:h.grn||null, items:h.items||[], photo:h.photo||null
+      grn:h.grn||null, items:h.items||[], photo:h.photo||null, packer:h.packer||null
     };
     // If type=dispatched, update existing record instead of insert
     const {error} = await supa.from('history').upsert(row, {onConflict:'id'});
@@ -530,6 +527,42 @@ async function executeFullClear(){
   nav('dashboard');
   toast('All data cleared — WMS reset to zero','s');
 }
+const ORDER_SLA_HOURS = {
+  'Express':    { unassigned: 1,  assigned: 3  },
+  'Standard':   { unassigned: 4,  assigned: 12 },
+  'Pre-order':  { unassigned: 24, assigned: 48 }
+};
+function renderOrderAgingAlert(){
+  const el=document.getElementById('order-aging-banner');
+  if(!el) return;
+  if(typeof orders==='undefined' || !orders.length){ el.innerHTML=''; return; }
+  const now=Date.now();
+  const breaches=[];
+  orders.forEach(o=>{
+    if(o.status==='cancelled'||o.status==='picked') return;
+    const sla=ORDER_SLA_HOURS[o.priority]||ORDER_SLA_HOURS.Standard;
+    if(o.status==='unassigned' && o.createdAt){
+      const hrs=(now-new Date(o.createdAt).getTime())/3600000;
+      if(hrs>sla.unassigned) breaches.push({o,hrs,stage:'unassigned',limit:sla.unassigned});
+    } else if(o.status==='assigned' && o.assignedAt){
+      const hrs=(now-new Date(o.assignedAt).getTime())/3600000;
+      if(hrs>sla.assigned) breaches.push({o,hrs,stage:'assigned, not yet picked',limit:sla.assigned});
+    }
+  });
+  breaches.sort((a,b)=>b.hrs-a.hrs);
+  if(!breaches.length){ el.innerHTML=''; return; }
+  el.innerHTML=`<div style="background:var(--dbg);border:1px solid var(--dt);border-radius:10px;padding:12px 14px;margin-bottom:14px">
+    <div style="font-weight:700;font-size:12px;color:var(--dt);display:flex;align-items:center;gap:6px;margin-bottom:8px"><i class="ti ti-clock-exclamation"></i>${breaches.length} order(s) past SLA</div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      ${breaches.slice(0,8).map(b=>`<div style="font-size:11px;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
+        <span class="mono">${esc(b.o.id)}</span>
+        <span style="color:var(--t2)">${esc(b.o.priority)} · ${b.stage}</span>
+        <span style="color:var(--dt);font-weight:600">${b.hrs.toFixed(1)}h (SLA ${b.limit}h)</span>
+      </div>`).join('')}
+      ${breaches.length>8?`<div style="font-size:10px;color:var(--t3)">+ ${breaches.length-8} more</div>`:''}
+    </div>
+  </div>`;
+}
 function renderDash(){
   const total=SKUS.length,ins=SKUS.filter(s=>inv[s.sku]&&inv[s.sku].qty>0).length;
   const low=SKUS.filter(s=>inv[s.sku]&&getSt(inv[s.sku].qty)==='low');
@@ -541,6 +574,7 @@ function renderDash(){
   const pendingDispatch=history.filter(h=>h.type==='packed').length;
   document.getElementById('alert-ct').textContent=low.length+out.length+pendingDispatch;
   renderSameDayAlert();
+  renderOrderAgingAlert();
   document.getElementById('stat-cards').innerHTML=`
     <div class="sc"><div class="sl"><i class="ti ti-package"></i>Total SKUs</div><div class="sv">${total}</div><div class="ss">2 racks · 16 shelves</div></div>
     <div class="sc"><div class="sl"><i class="ti ti-check"></i>In stock</div><div class="sv">${ins}</div><div class="ss">${total-ins} empty SKUs</div></div>
@@ -685,13 +719,20 @@ function reconcileAgainstExpected(asn, receivedItems){
     const full=SKUS.find(x=>x.sku===sku);
     summary.push({sku, name:full?full.sub:sku, expected:0, received:receivedBySku[sku], diff:receivedBySku[sku]});
   });
-  const anyDiff=summary.some(r=>r.diff!==0);
-  const anyZero=summary.some(r=>r.expected>0 && r.received===0);
-  s.status=anyDiff?'discrepancy':'received';
+  const anyOverage=summary.some(r=>r.diff>0);
+  const anyShortage=summary.some(r=>r.diff<0);
+  // Overage (or a mystery SKU that wasn't expected at all) is a real
+  // discrepancy worth flagging distinctly. A shortage-only mismatch is
+  // treated as 'partial' — the rest may still be arriving on another
+  // truck under the same ASN, so it's not necessarily wrong, just not
+  // finished yet.
+  if(anyOverage){ s.status='discrepancy'; }
+  else if(anyShortage){ s.status='partial'; }
+  else { s.status='received'; }
   s.receivedAt=new Date().toISOString();
   s.receivedSummary=summary;
   saveExpectedShipmentRow(s);
-  return {status:s.status, summary, anyZero};
+  return {status:s.status, summary, anyShortage, anyOverage};
 }
 function renderExpShipmentsBoard(){
   const el=document.getElementById('exp-shipments-board');
@@ -801,10 +842,12 @@ function createGRN(){
   renderExpShipmentsBoard();
   populateExpectedSelect();
   if(recon){
+    const shorts=recon.summary.filter(r=>r.diff<0).map(r=>`${r.sku} short ${Math.abs(r.diff)}`);
+    const overs=recon.summary.filter(r=>r.diff>0).map(r=>`${r.sku} over ${r.diff}`);
     if(recon.status==='discrepancy'){
-      const shorts=recon.summary.filter(r=>r.diff<0).map(r=>`${r.sku} short ${Math.abs(r.diff)}`);
-      const overs=recon.summary.filter(r=>r.diff>0).map(r=>`${r.sku} over ${r.diff}`);
-      toast(`GRN ${gid} created · Tally mismatch vs ${asn}: ${[...shorts,...overs].join(', ')}`,'w');
+      toast(`GRN ${gid} created · Tally discrepancy vs ${asn}: ${[...shorts,...overs].join(', ')}`,'w');
+    } else if(recon.status==='partial'){
+      toast(`GRN ${gid} created · Partial receipt vs ${asn}: ${shorts.join(', ')} — mark as expected on the next delivery`,'w');
     } else {
       toast(`GRN ${gid} created · ${pass} units added to inventory · Tally matches ${asn} exactly`,'s');
     }
@@ -1186,6 +1229,45 @@ async function loadPickerNames(){
     pickerNames=(data||[]).map(r=>r.full_name).filter(Boolean);
   }catch(e){ console.error('loadPickerNames failed:',e.message||e); pickerNames=[]; }
 }
+let editingOrderId=null;
+function editOrder(orderId){
+  const o=orders.find(x=>x.id===orderId);
+  if(!o) return;
+  if(o.status!=='unassigned'){ toast('Only unassigned orders can be edited — unassign it first','w'); return; }
+  editingOrderId=orderId;
+  document.getElementById('ord-id').value=o.id;
+  document.getElementById('ord-id').disabled=true;
+  document.getElementById('ord-customer').value=o.customerName||'';
+  document.getElementById('ord-address').value=o.address||'';
+  document.getElementById('ord-pincode').value=o.pincode||'';
+  document.getElementById('ord-phone').value=o.phone||'';
+  document.getElementById('ord-priority').value=o.priority;
+  document.getElementById('ord-method').value=o.method;
+  ordItemsList=o.items.map(it=>({...it}));
+  renderOrdItemsList();
+  const panel=document.getElementById('order-create-panel');
+  if(panel){ panel.style.display='block'; panel.scrollIntoView({behavior:'smooth',block:'start'}); }
+  const btn=document.getElementById('ord-submit-btn');
+  if(btn) btn.innerHTML='<i class="ti ti-check"></i>Save changes';
+  const cancelBtn=document.getElementById('ord-cancel-edit-btn');
+  if(cancelBtn) cancelBtn.style.display='inline-flex';
+  toast(`Editing ${orderId} — update the fields below and save`,'w');
+}
+function cancelEditOrder(){
+  editingOrderId=null;
+  const idEl=document.getElementById('ord-id');
+  idEl.disabled=false; idEl.value='';
+  document.getElementById('ord-customer').value='';
+  document.getElementById('ord-address').value='';
+  document.getElementById('ord-pincode').value='';
+  document.getElementById('ord-phone').value='';
+  ordItemsList=[];
+  renderOrdItemsList();
+  const btn=document.getElementById('ord-submit-btn');
+  if(btn) btn.innerHTML='<i class="ti ti-check"></i>Create order';
+  const cancelBtn=document.getElementById('ord-cancel-edit-btn');
+  if(cancelBtn) cancelBtn.style.display='none';
+}
 function addOrderItem(){
   const sku=document.getElementById('ord-sku').value;
   const qty=parseInt(document.getElementById('ord-qty').value)||1;
@@ -1208,10 +1290,13 @@ function removeOrdItem(i){
   renderOrdItemsList();
 }
 async function createOrder(){
-  const id=document.getElementById('ord-id').value.trim()||newId('ORD');
+  const isEdit=!!editingOrderId;
+  const id=isEdit?editingOrderId:(document.getElementById('ord-id').value.trim()||newId('ORD'));
   if(!ordItemsList.length){toast('Add at least one item to the order','w');return;}
-  if(orders.some(o=>o.id===id)){toast('An order with this ID already exists','w');return;}
+  if(!isEdit && orders.some(o=>o.id===id)){toast('An order with this ID already exists','w');return;}
   if(!rateLimit('create-order',1500)){toast('Please wait before submitting again','w');return;}
+  const existing=isEdit?orders.find(o=>o.id===editingOrderId):null;
+  if(isEdit && !existing){ toast('That order no longer exists','w'); cancelEditOrder(); return; }
   const o={
     id, customerName:document.getElementById('ord-customer').value.trim()||null,
     address:document.getElementById('ord-address').value.trim()||null,
@@ -1219,22 +1304,182 @@ async function createOrder(){
     phone:document.getElementById('ord-phone').value.trim()||null,
     priority:document.getElementById('ord-priority').value,
     method:document.getElementById('ord-method').value,
-    items:[...ordItemsList], assignedPicker:null, status:'unassigned',
-    createdBy:currentProfile?.full_name||'Unknown', createdAt:new Date().toISOString()
+    items:[...ordItemsList],
+    assignedPicker: isEdit?existing.assignedPicker:null,
+    status: isEdit?existing.status:'unassigned',
+    createdBy: isEdit?existing.createdBy:(currentProfile?.full_name||'Unknown'),
+    createdAt: isEdit?existing.createdAt:new Date().toISOString(),
+    assignedAt: isEdit?existing.assignedAt:null,
+    pickedTaskId: isEdit?existing.pickedTaskId:null
   };
   const ok=await saveOrderRow(o);
   if(!ok) return;
-  orders.unshift(o);
+  if(isEdit){
+    const idx=orders.findIndex(x=>x.id===editingOrderId);
+    if(idx>-1) orders[idx]=o;
+  } else {
+    orders.unshift(o);
+  }
   ordItemsList=[];
   renderOrdItemsList();
+  document.getElementById('ord-id').disabled=false;
   document.getElementById('ord-id').value='';
   document.getElementById('ord-customer').value='';
   document.getElementById('ord-address').value='';
   document.getElementById('ord-pincode').value='';
   document.getElementById('ord-phone').value='';
-  logAudit('CREATE_ORDER','orders',id,null,{items:o.items.length,priority:o.priority});
+  logAudit(isEdit?'EDIT_ORDER':'CREATE_ORDER','orders',id,null,{items:o.items.length,priority:o.priority});
+  editingOrderId=null;
+  const btn=document.getElementById('ord-submit-btn');
+  if(btn) btn.innerHTML='<i class="ti ti-check"></i>Create order';
+  const cancelBtn=document.getElementById('ord-cancel-edit-btn');
+  if(cancelBtn) cancelBtn.style.display='none';
   renderOrdersBoard();
-  toast(`Order ${id} created — assign it to a picker below`,'s');
+  toast(isEdit?`Order ${id} updated`:`Order ${id} created — assign it to a picker below`,'s');
+}
+// ═══ BULK ORDER IMPORT (CSV) ═══
+let csvImportOrders=[];
+let csvImportErrors=[];
+function parseCSV(text){
+  const rows=[];
+  let row=[], field='', inQuotes=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(inQuotes){
+      if(c==='"'){
+        if(text[i+1]==='"'){ field+='"'; i++; } else { inQuotes=false; }
+      } else field+=c;
+    } else {
+      if(c==='"') inQuotes=true;
+      else if(c===','){ row.push(field); field=''; }
+      else if(c==='\n' || c==='\r'){
+        if(c==='\r' && text[i+1]==='\n') i++;
+        row.push(field); field='';
+        if(row.length>1||row[0]!=='') rows.push(row);
+        row=[];
+      } else field+=c;
+    }
+  }
+  if(field!==''||row.length){ row.push(field); rows.push(row); }
+  return rows;
+}
+function handleOrdersCSVFile(evt){
+  const file=evt.target.files[0];
+  if(!file) return;
+  const reader=new FileReader();
+  reader.onload=(e)=>{
+    try{ processOrdersCSV(e.target.result); }
+    catch(err){ toast('Could not parse CSV: '+(err.message||err),'w'); }
+  };
+  reader.readAsText(file);
+  evt.target.value='';
+}
+function processOrdersCSV(text){
+  const rows=parseCSV(text);
+  if(!rows.length){ toast('CSV is empty','w'); return; }
+  const header=rows[0].map(h=>(h||'').trim().toLowerCase());
+  const col=name=>header.indexOf(name);
+  const idxId=col('order_id'), idxCust=col('customer_name'), idxAddr=col('address'),
+    idxPin=col('pincode'), idxPhone=col('phone'), idxPri=col('priority'),
+    idxMethod=col('method'), idxSku=col('sku'), idxQty=col('qty'), idxNotes=col('notes');
+  if(idxId===-1 || idxSku===-1 || idxQty===-1){
+    toast('CSV must include at least order_id, sku and qty columns','w');
+    return;
+  }
+  const grouped={};
+  const errors=[];
+  let lastId='';
+  for(let r=1;r<rows.length;r++){
+    const row=rows[r];
+    if(!row || row.every(c=>!c || !c.trim())) continue;
+    let oid=(idxId>-1?(row[idxId]||''):'').trim();
+    if(!oid) oid=lastId; else lastId=oid;
+    if(!oid){ errors.push(`Row ${r+1}: missing order_id`); continue; }
+    if(!validateOrderId(oid)){ errors.push(`Row ${r+1}: invalid order_id "${oid}"`); continue; }
+    const skuCode=(idxSku>-1?(row[idxSku]||''):'').trim();
+    const qtyRaw=idxQty>-1?(row[idxQty]||''):'';
+    const qty=parseInt(qtyRaw)||0;
+    const skuObj=SKUS.find(s=>s.sku===skuCode);
+    if(!skuObj){ errors.push(`Row ${r+1}: unknown SKU "${skuCode}"`); continue; }
+    if(!validateQty(qty)){ errors.push(`Row ${r+1}: invalid qty "${qtyRaw}"`); continue; }
+    if(!grouped[oid]){
+      if(orders.some(x=>x.id===oid)){ errors.push(`Order ${oid}: an order with this ID already exists — skipped`); grouped[oid]={skip:true,items:[]}; }
+      else {
+        const pincode=(idxPin>-1?(row[idxPin]||''):'').trim();
+        const phone=(idxPhone>-1?(row[idxPhone]||''):'').trim();
+        if(pincode && !validatePincode(pincode)) errors.push(`Row ${r+1}: invalid pincode "${pincode}" (order ${oid})`);
+        if(phone && !validatePhone(phone)) errors.push(`Row ${r+1}: invalid phone "${phone}" (order ${oid})`);
+        const priorityRaw=(idxPri>-1?(row[idxPri]||''):'').trim();
+        const priority=['Express','Standard','Pre-order'].includes(priorityRaw)?priorityRaw:'Standard';
+        const methodRaw=(idxMethod>-1?(row[idxMethod]||''):'').trim();
+        const method=['Single','Batch','Zone'].includes(methodRaw)?methodRaw:'Single';
+        grouped[oid]={
+          id:oid,
+          customerName:(idxCust>-1?(row[idxCust]||''):'').trim()||null,
+          address:(idxAddr>-1?(row[idxAddr]||''):'').trim()||null,
+          pincode:pincode||null, phone:phone||null,
+          priority, method,
+          notes:(idxNotes>-1?(row[idxNotes]||''):'').trim()||null,
+          items:[]
+        };
+      }
+    }
+    if(grouped[oid].skip) continue;
+    const existingItem=grouped[oid].items.find(it=>it.sku===skuCode);
+    if(existingItem){ existingItem.qty+=qty; } else {
+      grouped[oid].items.push({sku:skuCode,name:skuObj.sub,variant:skuObj.variant,qty,bin:`${skuObj.rack}-${skuObj.shelf}`});
+    }
+  }
+  const draftOrders=Object.values(grouped).filter(o=>!o.skip);
+  csvImportOrders=draftOrders.filter(o=>o.items.length>0);
+  csvImportErrors=errors;
+  renderCSVImportPreview();
+}
+function renderCSVImportPreview(){
+  const wrap=document.getElementById('csv-import-preview');
+  if(!wrap) return;
+  if(!csvImportOrders.length && !csvImportErrors.length){ wrap.style.display='none'; wrap.innerHTML=''; return; }
+  wrap.style.display='block';
+  wrap.innerHTML=`
+    <div class="stitle" style="margin-top:0">CSV import preview</div>
+    ${csvImportOrders.length?`<div class="tw" style="margin-bottom:8px"><table><thead><tr><th>Order ID</th><th>Customer</th><th>Priority</th><th>Items</th></tr></thead><tbody>${csvImportOrders.map(o=>`<tr><td class="mono">${esc(o.id)}</td><td style="font-size:11px">${esc(o.customerName||'—')}</td><td>${esc(o.priority)}</td><td>${o.items.length} SKU(s)</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">No valid orders to import</div>'}
+    ${csvImportErrors.length?`<div style="background:var(--dbg);color:var(--dt);border-radius:8px;padding:10px;font-size:11px;margin-bottom:8px"><b>${csvImportErrors.length} issue(s):</b><br>${csvImportErrors.map(e=>esc(e)).join('<br>')}</div>`:''}
+    <div style="display:flex;gap:8px">
+      <button onclick="cancelCSVImport()">Cancel</button>
+      ${csvImportOrders.length?`<button class="btn-primary" style="flex:1;justify-content:center" onclick="confirmCSVImport()"><i class="ti ti-upload"></i>Import ${csvImportOrders.length} order(s)</button>`:''}
+    </div>`;
+}
+function cancelCSVImport(){
+  csvImportOrders=[]; csvImportErrors=[];
+  const wrap=document.getElementById('csv-import-preview');
+  if(wrap){ wrap.style.display='none'; wrap.innerHTML=''; }
+}
+async function confirmCSVImport(){
+  if(!csvImportOrders.length) return;
+  const toImport=[...csvImportOrders];
+  let ok=0, fail=0;
+  for(const draft of toImport){
+    const o={...draft, assignedPicker:null, status:'unassigned', createdBy:currentProfile?.full_name||'Unknown', createdAt:new Date().toISOString()};
+    const saved=await saveOrderRow(o);
+    if(saved){ orders.unshift(o); logAudit('CREATE_ORDER','orders',o.id,null,{items:o.items.length,priority:o.priority,source:'csv_import'}); ok++; }
+    else fail++;
+  }
+  cancelCSVImport();
+  renderOrdersBoard();
+  toast(fail?`Imported ${ok} order(s), ${fail} failed — check connection`:`Imported ${ok} order(s) from CSV`, fail?'w':'s');
+}
+function downloadOrdersCSVTemplate(){
+  const s0=SKUS[0]?.sku||'SKU001', s1=SKUS[1]?.sku||'SKU002', s2=SKUS[2]?.sku||'SKU003';
+  const csv='order_id,customer_name,address,pincode,phone,priority,method,sku,qty,notes\n'+
+    `ORD-SAMPLE-01,Rahul Mehta,12 MG Road,560001,9876543210,Express,Single,${s0},2,\n`+
+    `ORD-SAMPLE-01,,,,,,,${s1},1,\n`+
+    `ORD-SAMPLE-02,Sana Iyer,44 Anna Salai,600002,9123456780,Standard,Single,${s2},3,Fragile\n`;
+  const blob=new Blob([csv],{type:'text/csv'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download='orders_import_template.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 function renderOrdersBoard(){
   const el=document.getElementById('orders-board');
@@ -1246,12 +1491,24 @@ function renderOrdersBoard(){
     let action='';
     if(canManage && o.status==='unassigned'){
       const opts=pickerNames.length?pickerNames.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join(''):'<option value="">No pickers registered</option>';
-      action=`<div style="display:flex;gap:4px"><select id="assign-sel-${esc(o.id)}" style="font-size:10px;padding:3px">${opts}</select><button class="btn-sm" style="background:var(--gold);color:#fff;border:none;border-radius:4px;padding:4px 8px;cursor:pointer;font-size:10px" onclick="assignOrder('${esc(o.id)}')">Assign</button></div>`;
+      action=`<div style="display:flex;gap:4px"><select id="assign-sel-${esc(o.id)}" style="font-size:10px;padding:3px">${opts}</select><button class="btn-sm" style="background:var(--gold);color:#fff;border:none;border-radius:4px;padding:4px 8px;cursor:pointer;font-size:10px" onclick="assignOrder('${esc(o.id)}')">Assign</button><button class="btn-sm" onclick="editOrder('${esc(o.id)}')" title="Edit this order"><i class="ti ti-edit"></i></button><button class="btn-sm btn-danger" onclick="cancelOrder('${esc(o.id)}')" title="Cancel this order"><i class="ti ti-x"></i></button></div>`;
     } else if(canManage && o.status==='assigned'){
       action=`<button class="btn-sm btn-danger" onclick="unassignOrder('${esc(o.id)}')">Unassign</button>`;
     }
-    return `<tr><td class="mono">${esc(o.id)}</td><td style="font-size:11px">${esc(o.customerName||'—')}</td><td><span class="pill ${o.priority==='Express'?'p-out':o.priority==='Standard'?'p-info':'p-hold'}">${o.priority}</span></td><td>${o.items.length} SKU(s)</td><td><span class="pill ${statusPill[o.status]||'p-info'}">${o.status}</span></td><td style="font-size:11px">${o.assignedPicker?esc(o.assignedPicker):'—'}${o.status==='picked'&&o.pickedTaskId?` <span style="color:var(--t3)">(${esc(o.pickedTaskId)})</span>`:''}</td>${canManage?`<td>${action}</td>`:''}</tr>`;
+    return `<tr${o.status==='cancelled'?' style="opacity:0.5"':''}><td class="mono">${esc(o.id)}</td><td style="font-size:11px">${esc(o.customerName||'—')}</td><td><span class="pill ${o.priority==='Express'?'p-out':o.priority==='Standard'?'p-info':'p-hold'}">${o.priority}</span></td><td>${o.items.length} SKU(s)</td><td><span class="pill ${statusPill[o.status]||'p-info'}">${o.status}</span></td><td style="font-size:11px">${o.assignedPicker?esc(o.assignedPicker):'—'}${o.status==='picked'&&o.pickedTaskId?` <span style="color:var(--t3)">(${esc(o.pickedTaskId)})</span>`:''}</td>${canManage?`<td>${action}</td>`:''}</tr>`;
   }).join('')}</tbody></table></div>`;
+  renderOrderAgingAlert();
+}
+async function cancelOrder(orderId){
+  const o=orders.find(x=>x.id===orderId);
+  if(!o) return;
+  if(!confirm(`Cancel order ${orderId}? This can't be undone.`)) return;
+  o.status='cancelled';
+  const ok=await saveOrderRow(o);
+  if(!ok) return;
+  logAudit('CANCEL_ORDER','orders',orderId,null,{});
+  renderOrdersBoard();
+  toast(`Order ${orderId} cancelled`,'s');
 }
 async function assignOrder(orderId){
   const sel=document.getElementById('assign-sel-'+orderId);
@@ -1340,6 +1597,21 @@ function fmtLoc(bin){
   const parts=String(bin).split('-');
   return parts.length===2?`Rack ${parts[0]} · Shelf ${parts[1]}`:bin;
 }
+// After any item is confirmed, jump the SKU picker to the next
+// not-yet-fully-picked expected item so the picker can just keep
+// scanning/confirming down the list without re-selecting each SKU.
+function advancePkSkuSelect(){
+  const sel=document.getElementById('pk-sku');
+  if(!sel||!activeOrder) return;
+  const next=activeOrder.items.find(it=>{
+    const picked=pkItemsList.find(p=>p.sku===it.sku);
+    const pq=picked?picked.qty:0;
+    return pq<it.qty;
+  });
+  if(next) sel.value=next.sku;
+  const qtyEl=document.getElementById('pk-qty');
+  if(qtyEl) qtyEl.value=1;
+}
 function renderPkChecklist(){
   const el=document.getElementById('pk-checklist');
   if(!el||!activeOrder) return;
@@ -1374,7 +1646,29 @@ async function addPkItem(){
   }
   renderPkItemsList();
   renderPkChecklist();
+  advancePkSkuSelect();
   toast(`Reserved ${qty} × ${sku} — ${res.available} left for other pickers`,'s');
+}
+async function pkScanAdd(sku){
+  if(!activeOrder){ toast('Start a pick from an assigned order first','w'); return; }
+  const expected=activeOrder.items.find(it=>it.sku===sku.sku);
+  if(!expected){ toast(sku.sku+' is not part of this order','w'); return; }
+  const already=pkItemsList.find(it=>it.sku===sku.sku);
+  const remaining=expected.qty-(already?already.qty:0);
+  if(remaining<=0){ toast(sku.sku+' already fully picked for this order','w'); return; }
+  const picker=activeOrder.assignedPicker||currentProfile?.full_name||'Unassigned';
+  const res=await reserveStock(sku.sku,1,pkSessionId,activeOrder.id,picker);
+  if(!res.success){
+    toast(res.reason==='network_error'?'Could not reach server to reserve stock — try again':`Insufficient stock: ${sku.sku} has only ${res.available} units available`,'w');
+    return;
+  }
+  if(already){ already.qty+=1; } else {
+    pkItemsList.push({sku:sku.sku,name:sku.sub,variant:sku.variant,qty:1,bin:`${sku.rack}-${sku.shelf}`});
+  }
+  renderPkItemsList();
+  renderPkChecklist();
+  advancePkSkuSelect();
+  toast(`Scanned ${sku.sku} · ${expected.qty-remaining+1}/${expected.qty} picked — ${res.available} left for other pickers`,'s');
 }
 function renderPkItemsList(){
   const el=document.getElementById('pk-items-list');
@@ -1530,6 +1824,7 @@ function confirmPackWithDetails(){
     id:pkid,type:'packed',ts:endTs,
     detail:`${t.orderId} · ${t.items.length} SKUs packed — ready for dispatch`,
     orderId:t.orderId,items:t.items,
+    packer:t.claimedBy||currentProfile?.full_name||null,
     packStartTs:t.packStartTs,packStartTime:t.packStartTime,
     packEndTs:endTs,packEndTime:endTime,
     packDuration:durationStr,packDurationSecs:durationSecs,
@@ -1554,6 +1849,65 @@ function renderDispatchPage(){
   renderDispatchCompletedLog();
   renderDispatchSameDayAlert();
 }
+function printPackingSlip(historyId){
+  const p=history.find(h=>h.id===historyId);
+  if(!p){ toast('Packing record not found','w'); return; }
+  const o=orders.find(x=>x.id===p.orderId);
+  const printWindow=window.open('','SLIP_'+historyId,'width=850,height=1000');
+  if(!printWindow){ toast('Please allow popups to print','w'); return; }
+  const items=p.items||[];
+  const dims=p.boxL?`${p.boxL} × ${p.boxW} × ${p.boxH} cm`:'—';
+  printWindow.document.write(`
+    <!DOCTYPE html><html><head><title>Packing Slip — ${esc(p.orderId||historyId)}</title>
+    <style>
+      body{font-family:Arial,sans-serif;margin:20px;color:#333}
+      .header{border-bottom:3px solid #000;padding-bottom:12px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:flex-end}
+      .company{font-size:18px;font-weight:bold}
+      .subtitle{font-size:11px;color:#666;margin-top:2px}
+      .orderid{font-size:22px;font-weight:bold;text-align:right}
+      .meta{display:grid;grid-template-columns:1fr 1fr;gap:6px 20px;margin:14px 0;font-size:12px}
+      .meta b{color:#000}
+      table{width:100%;border-collapse:collapse;margin-top:10px}
+      th{background:#f0f0f0;padding:8px;text-align:left;border:1px solid #ccc;font-size:11px}
+      td{padding:9px 8px;border:1px solid #ccc;font-size:12px}
+      .totals{margin-top:10px;font-size:12px;text-align:right}
+      .sign{margin-top:50px;display:grid;grid-template-columns:1fr 1fr;gap:30px}
+      .sign div{border-top:1px solid #000;padding-top:6px;text-align:center;font-size:11px}
+      .footer{margin-top:30px;font-size:10px;color:#999;text-align:center}
+    </style></head><body>
+    <div class="header">
+      <div>
+        <div class="company">CaratLane WMS — Packing Slip</div>
+        <div class="subtitle">EPS Worldwide Integrated Logistics</div>
+      </div>
+      <div class="orderid">${esc(p.orderId||'—')}</div>
+    </div>
+    <div class="meta">
+      <div><b>Customer:</b> ${esc(o&&o.customerName||'—')}</div>
+      <div><b>Priority:</b> ${esc(o&&o.priority||'—')}</div>
+      <div><b>Address:</b> ${esc(o&&o.address||'—')}</div>
+      <div><b>Pincode / Phone:</b> ${esc(o&&o.pincode||'—')} / ${esc(o&&o.phone||'—')}</div>
+      <div><b>Packed by:</b> ${esc(p.packer||'—')}</div>
+      <div><b>Packed on:</b> ${esc(p.packEndTs||p.ts||'—')}</div>
+      <div><b>Box dimensions:</b> ${dims}</div>
+      <div><b>Chargeable weight:</b> ${p.chargeableWeight?p.chargeableWeight+' kg':'—'}</div>
+    </div>
+    <table><thead><tr><th>SKU</th><th>Item</th><th>Variant</th><th>Qty</th></tr></thead><tbody>
+      ${items.map(it=>`<tr><td>${esc(it.sku)}</td><td>${esc(it.name||'')}</td><td>${esc(it.variant||'')}</td><td style="text-align:center">${it.qty}</td></tr>`).join('')}
+    </tbody></table>
+    <div class="totals">Total items: <strong>${items.reduce((a,it)=>a+(it.qty||0),0)}</strong> across ${items.length} SKU(s)</div>
+    ${p.packNotes?`<div style="margin-top:10px;font-size:11px"><b>Notes:</b> ${esc(p.packNotes)}</div>`:''}
+    <div class="sign">
+      <div>Packed &amp; verified by</div>
+      <div>Dispatch handover / courier signature</div>
+    </div>
+    <div class="footer">Printed ${new Date().toLocaleString('en-IN')} · CaratLane WMS</div>
+    </body></html>
+  `);
+  printWindow.document.close();
+  printWindow.focus();
+  setTimeout(()=>printWindow.print(),300);
+}
 function renderPackedOrdersList(){
   const el=document.getElementById('dispatch-packed-list');
   if(!el){console.log('ERROR: dispatch-packed-list element not found');return;}
@@ -1563,12 +1917,13 @@ function renderPackedOrdersList(){
     const hasDims=p.boxL&&p.boxW&&p.boxH;
     const dimsStr=hasDims?`${p.boxL}×${p.boxW}×${p.boxH}cm · ${p.chargeableWeight}kg chargeable`:'Dims not captured';
     const durStr=p.packDuration?`Packed in ${p.packDuration}`:'';
-    return `<div class="hist-entry" onclick="selectDispatchOrder('${p.id}')" style="cursor:pointer">
-      <div class="hist-head"><span class="hist-id">${p.id}</span><span class="pill p-info">Awaiting AWB</span></div>
-      <div class="hist-body">
+    return `<div class="hist-entry" style="cursor:pointer">
+      <div class="hist-head" onclick="selectDispatchOrder('${p.id}')"><span class="hist-id">${p.id}</span><span class="pill p-info">Awaiting AWB</span></div>
+      <div class="hist-body" onclick="selectDispatchOrder('${p.id}')">
         <div>${p.ts} · Order: <strong>${p.orderId}</strong> · ${itemCount} SKU(s)</div>
         <div style="font-size:10px;color:var(--t2);margin-top:2px">📦 ${dimsStr}${durStr?' · ⏱ '+durStr:''}</div>
       </div>
+      <button class="btn-sm" onclick="event.stopPropagation();printPackingSlip('${p.id}')" style="margin-top:6px"><i class="ti ti-printer"></i>Print slip</button>
     </div>`;
   }).join(''):'<div class="empty">No packed orders yet — create and pack orders first</div>';
 }
@@ -2263,7 +2618,14 @@ async function mobilePickAddScan(sku){
     return;
   }
   const picker=currentProfile?.full_name||'Mobile picker';
-  const res=await reserveStock(sku.sku,1,mobilePickSession.sessionId,mobilePickSession.orderId,picker);
+  let res=await reserveStock(sku.sku,1,mobilePickSession.sessionId,mobilePickSession.orderId,picker);
+  if(!res.success && res.reason==='network_error'){
+    const localAvail=(inv[sku.sku]||{qty:0}).qty-(already?already.qty:0);
+    if(localAvail>0){
+      queueOfflineAction('reserve_stock',{sku:sku.sku,qty:1,sessionId:mobilePickSession.sessionId,orderId:mobilePickSession.orderId,picker},`Reserve ${sku.sku} · ${mobilePickSession.orderId}`);
+      res={success:true,available:localAvail-1,offline:true};
+    }
+  }
   if(!res.success){
     mobileScanFeedback(false);
     if(res.reason==='network_error'){
@@ -2280,7 +2642,7 @@ async function mobilePickAddScan(sku){
   renderMobilePickSession();
   renderMpPickChecklist();
   mobileScanFeedback(true);
-  toast('Reserved '+sku.sub+' — '+sku.variant,'s');
+  toast(res.offline?`Offline — queued ${sku.sub} (will sync)`:'Reserved '+sku.sub+' — '+sku.variant, res.offline?'w':'s');
 }
 
 function mobilePickManualAdd(){
@@ -2562,6 +2924,7 @@ function completeMobilePack(){
     id:pkid,type:'packed',ts:endTs,
     detail:`${t.orderId} · ${t.items.length} SKUs packed — ready for dispatch (mobile, scan-verified)`,
     orderId:t.orderId,items:t.items,
+    packer:t.claimedBy||currentProfile?.full_name||null,
     packStartTs:t.packStartTs,packStartTime:t.packStartTime,
     packEndTs:endTs,packEndTime:endTime,
     packDuration:durationStr,packDurationSecs:durationSecs,
@@ -2570,9 +2933,22 @@ function completeMobilePack(){
     packNotes:notes
   });
   saveHist();
-  deletePackingQueueItem(t.id);
-  logAudit('MOBILE_PACK_COMPLETE','packing_queue',t.id,null,{orderId:t.orderId,chargeable});
-  toast(`Order ${t.orderId} packed in ${durationStr} · ${chargeable}kg chargeable`,'s');
+  if(!navigator.onLine){
+    const h=history[history.length-1];
+    const row={id:h.id,type:h.type,ts:h.ts,detail:h.detail||null,order_id:h.orderId||null,
+      pack_start_ts:h.packStartTs||null,pack_start_time:h.packStartTime||null,
+      pack_end_ts:h.packEndTs||null,pack_end_time:h.packEndTime||null,
+      pack_duration:h.packDuration||null,pack_duration_secs:h.packDurationSecs||null,
+      box_l:h.boxL||null,box_w:h.boxW||null,box_h:h.boxH||null,
+      actual_weight:h.actualWeight||null,vol_weight:h.volWeight||null,chargeable_weight:h.chargeableWeight||null,
+      pack_notes:h.packNotes||null,items:h.items||[],packer:h.packer||null};
+    queueOfflineAction('mobile_pack_complete',{historyRow:row,taskId:t.id,orderId:t.orderId,chargeable},`Pack complete · ${t.orderId}`);
+    toast(`Offline — Order ${t.orderId} packed in ${durationStr}, queued to sync (${chargeable}kg chargeable)`,'w');
+  } else {
+    deletePackingQueueItem(t.id);
+    logAudit('MOBILE_PACK_COMPLETE','packing_queue',t.id,null,{orderId:t.orderId,chargeable});
+    toast(`Order ${t.orderId} packed in ${durationStr} · ${chargeable}kg chargeable`,'s');
+  }
   mobilePackActive=null;
   disableBarcodeScanner();
   renderMobilePackQueue();
@@ -2693,14 +3069,81 @@ if('serviceWorker' in navigator){
   navigator.serviceWorker.register('data:text/javascript,').catch(()=>{});
 }
 
-function checkOnlineStatus(){
+// ═══ OFFLINE QUEUE — mobile scan-driven flows ═══
+const OFFLINE_Q_KEY='cl_wms_offline_queue';
+let offlineQueue=(function(){ try{ return JSON.parse(localStorage.getItem(OFFLINE_Q_KEY)||'[]'); }catch(e){ return []; } })();
+function persistOfflineQueue(){
+  try{ localStorage.setItem(OFFLINE_Q_KEY, JSON.stringify(offlineQueue)); }catch(e){}
+  updateOfflineQueueBadge();
+}
+function queueOfflineAction(type,payload,label){
+  offlineQueue.push({qid:'OQ'+Date.now()+Math.random().toString(36).slice(2,6),type,payload,label,ts:new Date().toISOString()});
+  persistOfflineQueue();
+}
+function updateOfflineQueueBadge(){
+  const n=offlineQueue.length;
   const online=navigator.onLine;
   const badge=document.getElementById('m-offline-badge');
-  if(badge)badge.style.display=online?'none':'block';
+  if(badge){
+    if(!online){
+      badge.style.display='block';
+      badge.style.background='var(--dbg)'; badge.style.color='var(--dt)';
+      badge.innerHTML=`<i class="ti ti-wifi-off"></i> Working offline${n?` — ${n} action(s) queued, will sync when back online`:" — actions won't sync until you're back online"}`;
+    } else if(n>0){
+      badge.style.display='block';
+      badge.style.background='var(--wbg)'; badge.style.color='var(--wt)';
+      badge.innerHTML=`<i class="ti ti-cloud-upload"></i> Syncing ${n} queued action(s)…`;
+    } else {
+      badge.style.display='none';
+    }
+  }
+}
+async function replayOfflineAction(item){
+  if(item.type==='reserve_stock'){
+    const p=item.payload;
+    const res=await reserveStock(p.sku,p.qty,p.sessionId,p.orderId,p.picker);
+    return res.success || res.reason!=='network_error';
+  }
+  if(item.type==='mobile_pack_complete'){
+    const p=item.payload;
+    try{
+      await upsertHistoryRowRaw(p.historyRow);
+    }catch(e){ console.error('offline replay: history upsert failed', e); return false; }
+    await deletePackingQueueItem(p.taskId);
+    await logAudit('MOBILE_PACK_COMPLETE','packing_queue',p.taskId,null,{orderId:p.orderId,chargeable:p.chargeable});
+    return true;
+  }
+  return true;
+}
+async function upsertHistoryRowRaw(row){
+  const {error}=await supa.from('history').upsert(row,{onConflict:'id'});
+  if(error) throw error;
+}
+async function flushOfflineQueue(){
+  if(!navigator.onLine || !offlineQueue.length) return;
+  const pending=[...offlineQueue];
+  const remaining=[];
+  for(const item of pending){
+    try{
+      const ok=await replayOfflineAction(item);
+      if(!ok) remaining.push(item);
+    }catch(e){ console.error('offline replay failed for', item, e); remaining.push(item); }
+  }
+  offlineQueue=remaining;
+  persistOfflineQueue();
+  if(pending.length){
+    if(!remaining.length) toast(`Synced ${pending.length} queued action(s)`,'s');
+    else toast(`${remaining.length} of ${pending.length} queued action(s) still pending sync`,'w');
+  }
+}
+
+function checkOnlineStatus(){
+  const online=navigator.onLine;
+  updateOfflineQueueBadge();
   return online;
 }
 
-window.addEventListener('online',()=>checkOnlineStatus());
+window.addEventListener('online',()=>{ checkOnlineStatus(); flushOfflineQueue(); });
 window.addEventListener('offline',()=>checkOnlineStatus());
 
 function filterCountList(){
@@ -3416,6 +3859,17 @@ function lookupOrderStatus(){
         </div>
       </div>`;
     }
+    if(order.status==='cancelled'){
+      rows+=`
+      <div style="display:flex;gap:12px;padding:12px 0;border-bottom:0.5px solid var(--b)">
+        <div style="width:32px;height:32px;border-radius:50%;background:var(--dt);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <i class="ti ti-x"></i>
+        </div>
+        <div style="flex:1">
+          <div style="font-weight:700;font-size:12px;color:var(--dt)">Order cancelled</div>
+        </div>
+      </div>`;
+    }
   }
   rows+=entries.map(h=>`
     <div style="display:flex;gap:12px;padding:12px 0;border-bottom:0.5px solid var(--b)">
@@ -3423,7 +3877,10 @@ function lookupOrderStatus(){
         <i class="ti ${stageIcon[h.type]||'ti-circle'}"></i>
       </div>
       <div style="flex:1">
-        <div style="font-weight:700;font-size:12px">${stageLabel[h.type]||h.type}</div>
+        <div style="font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <span>${stageLabel[h.type]||h.type}</span>
+          ${h.type==='packed'?`<button class="btn-sm" onclick="printPackingSlip('${esc(h.id)}')"><i class="ti ti-printer"></i>Print slip</button>`:''}
+        </div>
         <div style="font-size:11px;color:var(--t2);margin-top:2px">${esc(h.detail||'')}</div>
         <div style="font-size:10px;color:var(--t3);margin-top:2px">${h.ts||''}${h.picker?' · '+esc(h.picker):''}</div>
       </div>
@@ -3733,6 +4190,36 @@ function renderReports(){
       return `<tr><td class="mono" style="font-size:10px">${p.id}</td><td style="font-size:10px">${esc(p.orderId||'—')}</td><td style="font-size:10px">${dims}</td><td style="text-align:center">${p.actualWeight||'—'}</td><td style="text-align:center;color:var(--it)">${p.volWeight||'—'}</td><td style="text-align:center;font-weight:700;color:var(--gold)">${p.chargeableWeight||'—'}</td><td style="font-size:10px">${p.packStartTs||'—'}</td><td style="font-size:10px">${p.packEndTs||'—'}</td><td style="font-weight:600;color:var(--st)">${p.packDuration||'—'}</td></tr>`;
     }).join('')}
     </tbody></table></div>`:'<div class="empty">No packing time data for this week — use Start Packing button to capture times</div>';
+
+  // TEAM PRODUCTIVITY
+  const pickByPicker={};
+  picks.forEach(p=>{
+    const name=p.picker||'Unknown';
+    if(!pickByPicker[name]) pickByPicker[name]={orders:0,items:0};
+    pickByPicker[name].orders+=1;
+    pickByPicker[name].items+=(p.items||[]).reduce((a,it)=>a+(it.qty||0),0);
+  });
+  const packByPacker={};
+  packed.forEach(p=>{
+    const name=p.packer||'Unknown';
+    if(!packByPacker[name]) packByPacker[name]={orders:0,items:0,totalSecs:0,withTime:0};
+    packByPacker[name].orders+=1;
+    packByPacker[name].items+=(p.items||[]).reduce((a,it)=>a+(it.qty||0),0);
+    if(p.packDurationSecs>0){ packByPacker[name].totalSecs+=p.packDurationSecs; packByPacker[name].withTime+=1; }
+  });
+  const allNames=new Set([...Object.keys(pickByPicker),...Object.keys(packByPacker)]);
+  const prodRows=[...allNames].map(name=>{
+    const pk=pickByPicker[name]||{orders:0,items:0};
+    const pc=packByPacker[name]||{orders:0,items:0,totalSecs:0,withTime:0};
+    const avgSecs=pc.withTime?Math.round(pc.totalSecs/pc.withTime):null;
+    const avgStr=avgSecs?`${Math.floor(avgSecs/60)}m ${avgSecs%60}s`:'—';
+    return {name,pickOrders:pk.orders,pickItems:pk.items,packOrders:pc.orders,packItems:pc.items,avgPack:avgStr};
+  }).sort((a,b)=>(b.pickOrders+b.packOrders)-(a.pickOrders+a.packOrders));
+  document.getElementById('rpt-productivity').innerHTML=prodRows.length?`
+    <div style="font-size:11px;color:var(--t2);margin-bottom:8px">Week: <strong>${weekLabel}</strong> · ${prodRows.length} team member(s) active</div>
+    <div class="tw"><table><thead><tr><th>Name</th><th>Orders picked</th><th>Items picked</th><th>Orders packed</th><th>Items packed</th><th>Avg pack time</th></tr></thead><tbody>
+    ${prodRows.map(r=>`<tr><td style="font-weight:600">${esc(r.name)}</td><td style="text-align:center">${r.pickOrders}</td><td style="text-align:center">${r.pickItems}</td><td style="text-align:center">${r.packOrders}</td><td style="text-align:center">${r.packItems}</td><td style="text-align:center;color:var(--st);font-weight:600">${r.avgPack}</td></tr>`).join('')}
+    </tbody></table></div>`:'<div class="empty">No pick/pack activity this week</div>';
 }
 function downloadWeeklyCSV(){
   const sel=document.getElementById('rpt-week-select');
@@ -4614,11 +5101,17 @@ function processBarcodeInput(barcode){
     document.getElementById('ib-qty')?.focus();
     toast('Scanned: '+sku.sub+' — '+sku.variant,'s');
   } else if(_barcodeTarget==='picking'){
-    // Auto-fill SKU in picking form
-    const pkSel=document.getElementById('pk-sku');
-    if(pkSel){ pkSel.value=sku.sku; }
-    document.getElementById('pk-qty')?.focus();
-    toast('Scanned: '+sku.sub+' — '+sku.variant,'s');
+    // Scanning during an active pick auto-adds 1 unit (reserved
+    // immediately), same behavior as the mobile scan flow. If no pick
+    // is in progress yet, just pre-fill the SKU so it's ready to Add.
+    if(activeOrder){
+      pkScanAdd(sku);
+    } else {
+      const pkSel=document.getElementById('pk-sku');
+      if(pkSel){ pkSel.value=sku.sku; }
+      document.getElementById('pk-qty')?.focus();
+      toast('Scanned: '+sku.sub+' — '+sku.variant+' — start a pick first to auto-add','w');
+    }
   } else if(_barcodeTarget==='dispatch'){
     // Match AWB or order ID
     const awbInput=document.getElementById('disp-awb');
@@ -4663,6 +5156,8 @@ async function bootWMS(){
   setupRealtimeSync();
   setSyncStatus('ok');
   initBarcodeScanner();
+  updateOfflineQueueBadge();
+  flushOfflineQueue();
 }
 
 // Check for existing session on load
