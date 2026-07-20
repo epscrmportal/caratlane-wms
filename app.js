@@ -576,7 +576,7 @@ function renderDash(){
   renderSameDayAlert();
   renderOrderAgingAlert();
   document.getElementById('stat-cards').innerHTML=`
-    <div class="sc"><div class="sl"><i class="ti ti-package"></i>Total SKUs</div><div class="sv">${total}</div><div class="ss">2 racks · 16 shelves</div></div>
+    <div class="sc"><div class="sl"><i class="ti ti-package"></i>Total SKUs</div><div class="sv">${total}</div><div class="ss">${RACK_LETTERS.length} racks · ${RACK_LETTERS.length*SHELVES_PER_RACK} shelves</div></div>
     <div class="sc"><div class="sl"><i class="ti ti-check"></i>In stock</div><div class="sv">${ins}</div><div class="ss">${total-ins} empty SKUs</div></div>
     <div class="sc"><div class="sl"><i class="ti ti-alert-triangle"></i>Low stock</div><div class="sv" style="color:var(--wt)">${low.length}</div><div class="ss">≤3 units</div></div>
     <div class="sc"><div class="sl"><i class="ti ti-box"></i>Total units</div><div class="sv">${tq}</div><div class="ss">All SKUs combined</div></div>
@@ -1577,6 +1577,7 @@ function startDesktopPick(orderId){
   activeOrder=o;
   pkSessionId=newId('SESS');
   pkItemsList=[];
+  clearConfirmedShelf();
   document.getElementById('pk-my-orders-wrap').style.display='none';
   document.getElementById('pk-active-wrap').style.display='block';
   document.getElementById('pk-active-orderid').textContent=o.id;
@@ -1589,13 +1590,17 @@ async function cancelActivePick(){
   if(pkItemsList.length && !confirm('Discard this pick? Everything reserved will be released back to stock.')) return;
   if(pkSessionId) await releasePickSession(pkSessionId);
   pkItemsList=[]; pkSessionId=null; activeOrder=null;
+  clearConfirmedShelf();
   renderPkItemsList();
   showPickOrdersList();
 }
 function fmtLoc(bin){
   if(!bin) return '—';
   const parts=String(bin).split('-');
-  return parts.length===2?`Rack ${parts[0]} · Shelf ${parts[1]}`:bin;
+  if(parts.length!==2) return bin;
+  const shelfNum=parseInt(parts[1]);
+  const invalid=!isNaN(shelfNum)&&shelfNum>SHELVES_PER_RACK;
+  return `Rack ${parts[0]} · Shelf ${parts[1]}${invalid?' ⚠ needs reassignment':''}`;
 }
 // After any item is confirmed, jump the SKU picker to the next
 // not-yet-fully-picked expected item so the picker can just keep
@@ -2388,26 +2393,26 @@ function updateCountSummary(){
     setHTML('ic-discrepancies-list',discList);
   }
   
-  // Rack analysis
+  // Rack analysis — dynamic across whichever of the 15 racks (A–O)
+  // currently have SKUs placed on them, instead of assuming only A/B.
   setDisplay('ic-rack-analysis','block');
-  const rackAData=SKUS.filter(s=>s.rack==='A').map(s=>currentCount.counts[s.sku]);
-  const rackBData=SKUS.filter(s=>s.rack==='B').map(s=>currentCount.counts[s.sku]);
-  const rackASystem=rackAData.reduce((a,c)=>a+c.systemQty,0);
-  const rackAPhysical=rackAData.reduce((a,c)=>a+c.physicalQty,0);
-  const rackBSystem=rackBData.reduce((a,c)=>a+c.systemQty,0);
-  const rackBPhysical=rackBData.reduce((a,c)=>a+c.physicalQty,0);
-  
-  setHTML('ic-rack-a-stats',`
-    <div><span style="color:var(--t2)">System Qty:</span> <strong>${rackASystem}</strong></div>
-    <div><span style="color:var(--t2)">Physical Qty:</span> <strong>${rackAPhysical}</strong></div>
-    <div><span style="color:var(--t2)">Variance:</span> <strong style="color:${rackAPhysical-rackASystem===0?'var(--st)':rackAPhysical-rackASystem>0?'var(--wt)':'var(--dt)'}">${(rackAPhysical-rackASystem)>0?'+':''}${rackAPhysical-rackASystem}</strong></div>
-  `);
-  
-  setHTML('ic-rack-b-stats',`
-    <div><span style="color:var(--t2)">System Qty:</span> <strong>${rackBSystem}</strong></div>
-    <div><span style="color:var(--t2)">Physical Qty:</span> <strong>${rackBPhysical}</strong></div>
-    <div><span style="color:var(--t2)">Variance:</span> <strong style="color:${rackBPhysical-rackBSystem===0?'var(--st)':rackBPhysical-rackBSystem>0?'var(--wt)':'var(--dt)'}">${(rackBPhysical-rackBSystem)>0?'+':''}${rackBPhysical-rackBSystem}</strong></div>
-  `);
+  const racksInUse=[...new Set(SKUS.map(s=>s.rack))].sort();
+  const rackAnalysisHTML=racksInUse.map(r=>{
+    const data=SKUS.filter(s=>s.rack===r).map(s=>currentCount.counts[s.sku]).filter(Boolean);
+    const sysQty=data.reduce((a,c)=>a+c.systemQty,0);
+    const physQty=data.reduce((a,c)=>a+c.physicalQty,0);
+    const variance=physQty-sysQty;
+    const vColor=variance===0?'var(--st)':variance>0?'var(--wt)':'var(--dt)';
+    return `<div style="background:var(--s2);padding:12px;border-radius:6px;font-size:11px">
+      <div style="font-weight:600;margin-bottom:8px">Rack ${esc(r)}</div>
+      <div style="line-height:2">
+        <div><span style="color:var(--t2)">System Qty:</span> <strong>${sysQty}</strong></div>
+        <div><span style="color:var(--t2)">Physical Qty:</span> <strong>${physQty}</strong></div>
+        <div><span style="color:var(--t2)">Variance:</span> <strong style="color:${vColor}">${variance>0?'+':''}${variance}</strong></div>
+      </div>
+    </div>`;
+  }).join('');
+  setHTML('ic-rack-analysis-grid', rackAnalysisHTML);
   
   // Movement analysis
   setDisplay('ic-movement-section','block');
@@ -2550,8 +2555,9 @@ function startMobilePick(orderId){
   const o=orders.find(x=>x.id===orderId);
   if(!o){ toast('Order not found','w'); return; }
   mobilePickSession={orderId:o.id,priority:o.priority,method:o.method,items:[],sessionId:newId('SESS'),order:o};
+  clearConfirmedShelf();
   initMobilePickView();
-  toast('Pick started for '+o.id+' — scan items now','s');
+  toast('Scan the shelf label first, then the item','s');
 }
 
 function mobileScanFeedback(ok){
@@ -3432,15 +3438,14 @@ function renderFinance(){
   renderWarehouseUtil();
   renderBinEfficiency();
   renderSpaceUtil();
-  renderRackAUtil();
-  renderRackBUtil();
+  renderAllRackUtil();
   renderCostInputs();
   renderCapacityAlerts();
 }
 function renderSpaceUtil(){
   const el=document.getElementById('space-util-section');
   if(!el)return;
-  const TOTAL_RACKS=20;
+  const TOTAL_RACKS=RACK_LETTERS.length;
   const RACK_W_FT=4,RACK_D_FT=2,RACK_H_FT=10;
   const CEILING_H_FT=10;
   const WAREHOUSE_SQFT=1600;
@@ -3605,45 +3610,38 @@ function renderBinEfficiency(){
     </div>
   `;
 }
-function renderRackAUtil(){
-  const el=document.getElementById('rack-a-util');
+function renderAllRackUtil(){
+  const el=document.getElementById('rack-util-all');
   if(!el)return;
-  const shelves={};
-  for(let i=1;i<=11;i++)shelves[i]={total:0,occupied:0};
-  SKUS.filter(s=>s.rack==='A').forEach(s=>{
-    const shelf=parseInt(s.shelf);
-    shelves[shelf].total++;
-    if((inv[s.sku]||{qty:0}).qty>0)shelves[shelf].occupied++;
-  });
   let html='';
-  for(let i=1;i<=11;i++){
-    const pct=shelves[i].total>0?Math.round((shelves[i].occupied/shelves[i].total)*100):0;
-    html+=`<div style="display:grid;grid-template-columns:40px 1fr 50px;gap:6px;align-items:center;margin-bottom:6px;font-size:11px">
-      <span style="font-weight:600;color:var(--t2)">A${i}</span>
-      <div style="height:6px;background:var(--b);border-radius:3px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--st);border-radius:3px"></div></div>
-      <span style="text-align:right;color:var(--t2)">${shelves[i].occupied}/${shelves[i].total}</span>
+  RACK_LETTERS.forEach(r=>{
+    // Only real shelves 1–SHELVES_PER_RACK — items still tagged with
+    // a higher shelf number are leftover data, not a real location,
+    // so they're excluded here (and flagged on the Rack View page).
+    const itemsOnRack=SKUS.filter(s=>s.rack===r&&parseInt(s.shelf)<=SHELVES_PER_RACK);
+    const shelves={};
+    for(let i=1;i<=SHELVES_PER_RACK;i++) shelves[i]={total:0,occupied:0};
+    itemsOnRack.forEach(s=>{
+      const shelf=parseInt(s.shelf);
+      shelves[shelf].total++;
+      if((inv[s.sku]||{qty:0}).qty>0)shelves[shelf].occupied++;
+    });
+    const hasAny=itemsOnRack.length>0;
+    html+=`<div style="margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;color:var(--t2);margin-bottom:4px">Rack ${r}${hasAny?'':' — empty'}</div>
+      ${[1,2,3,4,5,6].map(i=>{
+        const pct=shelves[i].total>0?Math.round((shelves[i].occupied/shelves[i].total)*100):0;
+        return `<div style="display:grid;grid-template-columns:40px 1fr 50px;gap:6px;align-items:center;margin-bottom:4px;font-size:11px">
+          <span style="font-weight:600;color:var(--t2)">${r}${i}</span>
+          <div style="height:6px;background:var(--b);border-radius:3px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--st);border-radius:3px"></div></div>
+          <span style="text-align:right;color:var(--t2)">${shelves[i].occupied}/${shelves[i].total}</span>
+        </div>`;
+      }).join('')}
     </div>`;
-  }
-  el.innerHTML=html;
-}
-function renderRackBUtil(){
-  const el=document.getElementById('rack-b-util');
-  if(!el)return;
-  const shelves={};
-  for(let i=1;i<=5;i++)shelves[i]={total:0,occupied:0};
-  SKUS.filter(s=>s.rack==='B').forEach(s=>{
-    const shelf=parseInt(s.shelf);
-    shelves[shelf].total++;
-    if((inv[s.sku]||{qty:0}).qty>0)shelves[shelf].occupied++;
   });
-  let html='';
-  for(let i=1;i<=5;i++){
-    const pct=shelves[i].total>0?Math.round((shelves[i].occupied/shelves[i].total)*100):0;
-    html+=`<div style="display:grid;grid-template-columns:40px 1fr 50px;gap:6px;align-items:center;margin-bottom:6px;font-size:11px">
-      <span style="font-weight:600;color:var(--t2)">B${i}</span>
-      <div style="height:6px;background:var(--b);border-radius:3px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--st);border-radius:3px"></div></div>
-      <span style="text-align:right;color:var(--t2)">${shelves[i].occupied}/${shelves[i].total}</span>
-    </div>`;
+  const unplaced=getUnplacedSKUs();
+  if(unplaced.length){
+    html+=`<div style="font-size:11px;color:var(--dt);margin-top:8px"><i class="ti ti-alert-triangle"></i> ${unplaced.length} item(s) tagged with an invalid shelf number — see Rack View for details</div>`;
   }
   el.innerHTML=html;
 }
@@ -3788,15 +3786,72 @@ function exportCSV(){
 }
 
 // RACK VIEW
-function renderRack(){
-  const rA={},rB={};
-  SKUS.forEach(s=>{const qty=(inv[s.sku]||{qty:0}).qty;if(s.rack==='A'){if(!rA[s.shelf])rA[s.shelf]=[];rA[s.shelf].push({...s,qty});}else{if(!rB[s.shelf])rB[s.shelf]=[];rB[s.shelf].push({...s,qty});}});
-  buildRack(rA,'rack-a');buildRack(rB,'rack-b');
+// Physical warehouse layout: 15 racks (A–O), 6 shelves each. Existing
+// SKU placements (currently only Rack A/B) keep whatever rack/shelf
+// they already have — nothing here reassigns items. New racks C–O
+// simply render as empty capacity until items are placed on them.
+const RACK_LETTERS=['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O'];
+const SHELVES_PER_RACK=6;
+// Every valid shelf-location code: the nominal 15×6 grid, plus any
+// shelf numbers already in use beyond that (e.g. Rack A currently
+// uses shelves up to 11) so nothing existing becomes unreachable.
+function getShelfLocations(){
+  // Only the real physical grid — 15 racks × 6 shelves. Items whose
+  // SKU data still points at a shelf number beyond 6 (leftover from
+  // before the 15-rack layout existed) are NOT real locations and
+  // don't get a label — they show up as "needs reassignment" instead.
+  const locs=[];
+  RACK_LETTERS.forEach(r=>{
+    for(let i=1;i<=SHELVES_PER_RACK;i++){
+      locs.push({rack:r,shelf:String(i)});
+    }
+  });
+  return locs;
 }
-function buildRack(data,elId){
-  const keys=Object.keys(data).sort((a,b)=>+a-+b);
-  const mid=Math.ceil(keys.length/2);
-  document.getElementById(elId).innerHTML=[keys.slice(0,mid),keys.slice(mid)].map((col,ci)=>`<div class="rack-card"><div class="rack-head"><span style="font-size:12px;font-weight:600">Bay ${ci+1}</span><span style="font-size:10px;color:var(--t2)">${col.length} shelves</span></div>${col.map(sh=>{const items=data[sh];const tot=items.reduce((a,i)=>a+i.qty,0);const held=items.reduce((a,i)=>a+(reservedMap[i.sku]||0),0);const mx=items.length*10;const pct=Math.min(100,Math.round(tot/mx*100));const bc=pct===0?'bar-out':pct<30?'bar-low':'bar-ok';const lbl=items[0].sub.replace(/ - .*/,'').replace(/- .*/,'').trim();return`<div class="rack-row"><span class="shelf-l">S${sh}</span><div><div style="font-size:11px;font-weight:600;margin-bottom:3px">${lbl}</div><div class="bar-bg"><div class="bar-f ${bc}" style="width:${pct}%"></div></div></div><span class="qty-r">${tot}u${held>0?`<div style="font-size:9px;color:var(--wt);font-weight:600">${held} held</div>`:''}</span></div>`;}).join('')}</div>`).join('');
+// SKUs currently sitting on a shelf number that doesn't exist on a
+// real 6-shelf rack — left over from before the 15-rack layout. These
+// need manual reassignment once the consignment/relocation happens.
+function getUnplacedSKUs(){
+  return SKUS.filter(s=>{
+    const n=parseInt(s.shelf);
+    return !isNaN(n)&&n>SHELVES_PER_RACK;
+  });
+}
+function renderRack(){
+  const container=document.getElementById('rack-view-container');
+  if(!container) return;
+  const byRack={};
+  RACK_LETTERS.forEach(r=>byRack[r]={});
+  SKUS.forEach(s=>{
+    const qty=(inv[s.sku]||{qty:0}).qty;
+    if(!byRack[s.rack]) byRack[s.rack]={};
+    if(!byRack[s.rack][s.shelf]) byRack[s.rack][s.shelf]=[];
+    byRack[s.rack][s.shelf].push({...s,qty});
+  });
+  const rackHTML=RACK_LETTERS.map(r=>{
+    const data=byRack[r]||{};
+    // Only shelves 1–SHELVES_PER_RACK are real. Anything beyond that
+    // is leftover from before the 15-rack layout and doesn't belong
+    // in the rack grid — it's called out separately below instead.
+    const keys=Object.keys(data).filter(sh=>+sh<=SHELVES_PER_RACK).sort((a,b)=>+a-+b);
+    if(!keys.length){
+      return `<div class="stitle" style="margin-top:14px">Rack ${r} <span style="font-weight:400;color:var(--t3);font-size:11px">— no items placed yet</span></div>`;
+    }
+    // Each rack is its own single bay (physically 1 rack = 1 bay, 6
+    // shelves) — no splitting into Bay 1/Bay 2 columns.
+    return `<div class="stitle" style="margin-top:14px">Rack ${r} <span style="font-weight:400;color:var(--t3);font-size:11px">— ${keys.length}/${SHELVES_PER_RACK} shelves in use</span></div>
+      <div class="rack-wrap"><div class="rack-card"><div class="rack-head"><span style="font-size:12px;font-weight:600">Rack ${r}</span><span style="font-size:10px;color:var(--t2)">${keys.length} shelves</span></div>${keys.map(sh=>{const items=data[sh];const tot=items.reduce((a,i)=>a+i.qty,0);const held=items.reduce((a,i)=>a+(reservedMap[i.sku]||0),0);const mx=items.length*10;const pct=Math.min(100,Math.round(tot/mx*100));const bc=pct===0?'bar-out':pct<30?'bar-low':'bar-ok';const lbl=items[0].sub.replace(/ - .*/,'').replace(/- .*/,'').trim();return`<div class="rack-row"><span class="shelf-l">${r}${sh}</span><div><div style="font-size:11px;font-weight:600;margin-bottom:3px">${lbl}</div><div class="bar-bg"><div class="bar-f ${bc}" style="width:${pct}%"></div></div></div><span class="qty-r">${tot}u${held>0?`<div style="font-size:9px;color:var(--wt);font-weight:600">${held} held</div>`:''}</span></div>`;}).join('')}</div></div>`;
+  }).join('');
+  const unplaced=getUnplacedSKUs();
+  const unplacedHTML=unplaced.length?`<div class="sep" style="margin:16px 0"></div>
+    <div style="background:var(--dbg);border:1px solid var(--dt);border-radius:10px;padding:12px 14px">
+      <div style="font-weight:700;font-size:12px;color:var(--dt);display:flex;align-items:center;gap:6px;margin-bottom:8px"><i class="ti ti-alert-triangle"></i>${unplaced.length} item(s) need shelf reassignment</div>
+      <div style="font-size:11px;color:var(--t2);margin-bottom:8px">These are still tagged with a shelf number that doesn't exist on a real 6-shelf rack (left over from before racks C–O existed). Update their rack/shelf once placed.</div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        ${unplaced.map(s=>`<div style="font-size:11px"><span class="mono">${esc(s.sku)}</span> — ${esc(s.sub)} (${esc(s.variant)}) <span style="color:var(--t3)">currently tagged Rack ${esc(s.rack)} Shelf ${esc(s.shelf)}</span></div>`).join('')}
+      </div>
+    </div>`:'';
+  container.innerHTML=rackHTML+unplacedHTML;
 }
 
 // UNIFIED ORDER STATUS
@@ -4575,6 +4630,7 @@ async function addSKU(skuObj){
 // LABEL PRINTER SYSTEM
 // ═══════════════════════════════════════════
 let _lblSelected = new Set();
+let _shelfLblSelected = new Set();
 let _jsBarcodeLoaded = false;
 
 function loadJsBarcode(cb){
@@ -4602,7 +4658,6 @@ function renderLabelPage(){
         <div class="lbl-check">${selected?'<i class="ti ti-check" style="font-size:11px"></i>':''}</div>
         <div style="font-size:10px;font-weight:700;color:var(--t);margin-bottom:2px;padding-right:20px">${esc(s.sub)}</div>
         <div style="font-size:10px;color:var(--t2)">${esc(s.variant)}</div>
-        <div style="font-size:9px;color:var(--t3);margin-top:2px">Rack ${s.rack} · Shelf ${s.shelf} · ${qty} units</div>
         <div class="lbl-preview">
           <svg id="bc-${s.sku.replace(/[^a-zA-Z0-9]/g,'_')}" style="max-width:100%;height:40px"></svg>
           <div style="font-size:9px;color:#333;margin-top:2px;font-family:monospace">${s.sku}</div>
@@ -4624,7 +4679,65 @@ function renderLabelPage(){
       } catch(e){ console.warn('Barcode error for',s.sku,e); }
     });
     updateLabelSelCount();
+    renderShelfLabelGrid();
   });
+}
+function renderShelfLabelGrid(){
+  const grid=document.getElementById('shelf-label-grid');
+  if(!grid) return;
+  const locs=getShelfLocations();
+  grid.innerHTML=locs.map(loc=>{
+    const key=loc.rack+'-'+loc.shelf;
+    const selected=_shelfLblSelected.has(key);
+    const itemsHere=SKUS.filter(s=>s.rack===loc.rack&&s.shelf===loc.shelf);
+    const summary=itemsHere.length?`${itemsHere.length} SKU(s) here`:'Empty';
+    const svgId='bc-loc-'+key.replace(/[^a-zA-Z0-9]/g,'_');
+    return `<div class="lbl-card${selected?' selected':''}" onclick="toggleShelfLabelSelect('${key}')" id="shelf-lbl-card-${key}">
+      <div class="lbl-check">${selected?'<i class="ti ti-check" style="font-size:11px"></i>':''}</div>
+      <div style="font-size:11px;font-weight:700;color:var(--t);margin-bottom:2px;padding-right:20px">Rack ${loc.rack} · Shelf ${loc.shelf}</div>
+      <div style="font-size:10px;color:var(--t2)">${summary}</div>
+      <div class="lbl-preview">
+        <svg id="${svgId}" style="max-width:100%;height:40px"></svg>
+        <div style="font-size:9px;color:#333;margin-top:2px;font-family:monospace">LOC-${key}</div>
+      </div>
+    </div>`;
+  }).join('');
+  locs.forEach(loc=>{
+    const key=loc.rack+'-'+loc.shelf;
+    try {
+      const svgId='bc-loc-'+key.replace(/[^a-zA-Z0-9]/g,'_');
+      const el=document.getElementById(svgId);
+      if(el&&typeof JsBarcode!=='undefined'){
+        JsBarcode('#'+svgId, 'LOC-'+key, {
+          format:'CODE128', width:1.2, height:35,
+          displayValue:false, margin:2,
+          background:'#ffffff', lineColor:'#000000'
+        });
+      }
+    } catch(e){ console.warn('Shelf barcode error for',key,e); }
+  });
+  updateShelfLabelSelCount();
+}
+function toggleShelfLabelSelect(key){
+  if(_shelfLblSelected.has(key)) _shelfLblSelected.delete(key);
+  else _shelfLblSelected.add(key);
+  const card=document.getElementById('shelf-lbl-card-'+key);
+  if(!card) return;
+  card.classList.toggle('selected',_shelfLblSelected.has(key));
+  card.querySelector('.lbl-check').innerHTML=_shelfLblSelected.has(key)?'<i class="ti ti-check" style="font-size:11px"></i>':'';
+  updateShelfLabelSelCount();
+}
+function selectAllShelfLabels(){
+  getShelfLocations().forEach(loc=>_shelfLblSelected.add(loc.rack+'-'+loc.shelf));
+  renderShelfLabelGrid();
+}
+function clearShelfLabelSelection(){
+  _shelfLblSelected.clear();
+  renderShelfLabelGrid();
+}
+function updateShelfLabelSelCount(){
+  const el=document.getElementById('shelf-lbl-sel-count');
+  if(el) el.textContent=_shelfLblSelected.size;
 }
 
 function toggleLabelSelect(sku){
@@ -4689,7 +4802,6 @@ function printSelectedLabels(){
         <div class="lbl-brand">CaratLane WMS · EPS Worldwide</div>
         <div class="lbl-name">${s.sub}</div>
         <div class="lbl-variant">${s.variant}</div>
-        <div class="lbl-location">Rack ${s.rack} · Shelf ${s.shelf} &nbsp;|&nbsp; Stock: ${qty}</div>
         ${bcDataURI?`<img src="${bcDataURI}" class="lbl-barcode" alt="${s.sku}">`:'<div class="lbl-sku-plain">'+s.sku+'</div>'}
         <div class="lbl-sku">${s.sku}</div>
       </div>`;
@@ -4708,23 +4820,26 @@ function printSelectedLabels(){
       .lbl-sku{font-size:7px;color:#333;font-family:monospace;text-align:center;margin-top:auto}
       .lbl-sku-plain{font-size:8px;font-weight:700;font-family:monospace;text-align:center;padding:3px;border:1px solid #ccc;border-radius:2px;margin:1mm 0}
       .print-info{font-size:11px;color:#666;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #ddd}
+      .hidden-bar{display:none !important}
       @media print{
         body{padding:2mm}
-        .no-print{display:none}
+        .no-print{display:none !important}
         @page{margin:3mm;size:${mmW*2+10}mm auto}
       }
     </style></head><body>
-    <div class="no-print" style="margin-bottom:12px;padding:10px;background:#f9f9f9;border-radius:6px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+    <div class="no-print" id="lbl-controls-bar" style="margin-bottom:12px;padding:10px;background:#f9f9f9;border-radius:6px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
       <div>
         <div style="font-weight:700;font-size:13px">CaratLane WMS — SKU Labels</div>
         <div style="font-size:11px;color:#666;margin-top:3px">${selectedSKUs.length} labels · ${mmW}×${mmH}mm · Generated ${new Date().toLocaleString('en-IN')}</div>
-        <div style="font-size:11px;color:#888;margin-top:3px">For SEZNIK Josh LD0801: Open "We Print" app → Import image → Print on 2-inch thermal paper</div>
+        <div style="font-size:11px;color:#888;margin-top:3px">Printing via a phone app (e.g. "We Print")? Tap <b>Hide bar &amp; screenshot</b> first so only the labels show, then take your screenshot/import.</div>
       </div>
       <div style="display:flex;gap:8px">
         <button onclick="window.print()" style="padding:8px 16px;background:#B8860B;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px">🖨 Print Labels</button>
+        <button onclick="document.getElementById('lbl-controls-bar').classList.add('hidden-bar');document.getElementById('lbl-show-bar-btn').style.display='flex'" style="padding:8px 16px;background:#444;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px">📷 Hide bar &amp; screenshot</button>
         <button onclick="window.close()" style="padding:8px 16px;background:#f0f0f0;border:none;border-radius:6px;cursor:pointer;font-size:12px">Close</button>
       </div>
     </div>
+    <button id="lbl-show-bar-btn" onclick="document.getElementById('lbl-controls-bar').classList.remove('hidden-bar');this.style.display='none'" class="no-print" style="display:none;position:fixed;top:8px;right:8px;padding:8px 14px;background:#B8860B;color:#fff;border:none;border-radius:20px;cursor:pointer;font-weight:700;font-size:11px;z-index:999;box-shadow:0 2px 8px rgba(0,0,0,.2)">Show controls</button>
     <div class="label-grid">${labelHTML}</div>
     </body></html>`);
     pw.document.close();
@@ -4732,6 +4847,74 @@ function printSelectedLabels(){
     logAudit('PRINT_LABELS','inventory','batch',null,{count:selectedSKUs.length,skus:selectedSKUs.map(s=>s.sku)});
     toast(selectedSKUs.length+' labels sent to print preview','s');
   });
+}
+function printSelectedShelfLabels(){
+  if(!_shelfLblSelected.size){ toast('Select at least one shelf to print','w'); return; }
+  const locs=getShelfLocations().filter(loc=>_shelfLblSelected.has(loc.rack+'-'+loc.shelf));
+  const {w:mmW, h:mmH}=getLabelSizeMM();
+  const pw=window.open('','CARATLANE_SHELF_LABELS_'+Date.now(),'width=700,height=900');
+  if(!pw){ toast('Please allow popups to print','w'); return; }
+  const labelHTML=locs.map(loc=>{
+    const code=`LOC-${loc.rack}-${loc.shelf}`;
+    const svgNS='http://www.w3.org/2000/svg';
+    const tmpSvg=document.createElementNS(svgNS,'svg');
+    tmpSvg.setAttribute('id','tmp_bc_print_shelf');
+    document.body.appendChild(tmpSvg);
+    let bcDataURI='';
+    try {
+      JsBarcode(tmpSvg, code, {format:'CODE128',width:1.5,height:40,displayValue:true,fontSize:8,margin:3,background:'#ffffff',lineColor:'#000000'});
+      const svgStr=new XMLSerializer().serializeToString(tmpSvg);
+      bcDataURI='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(svgStr)));
+    } catch(e){ console.warn('Shelf label barcode error:',e); }
+    document.body.removeChild(tmpSvg);
+    const itemsHere=SKUS.filter(s=>s.rack===loc.rack&&s.shelf===loc.shelf);
+    const itemNames=itemsHere.length?itemsHere.map(s=>s.sub).slice(0,2).join(', ')+(itemsHere.length>2?` +${itemsHere.length-2} more`:''):'Unassigned — no items yet';
+    return `<div class="label">
+      <div class="lbl-brand">CaratLane WMS · SHELF LOCATION</div>
+      <div class="lbl-name" style="font-size:14px">Rack ${esc(loc.rack)} · Shelf ${esc(loc.shelf)}</div>
+      <div class="lbl-variant">${esc(itemNames)}</div>
+      ${bcDataURI?`<img src="${bcDataURI}" class="lbl-barcode" alt="${code}">`:'<div class="lbl-sku-plain">'+code+'</div>'}
+      <div class="lbl-sku">${code}</div>
+    </div>`;
+  }).join('');
+  pw.document.write(`<!DOCTYPE html><html><head><title>CaratLane Shelf Location Labels</title>
+    <style>
+      *{box-sizing:border-box;margin:0;padding:0}
+      body{font-family:Arial,sans-serif;background:#fff;padding:4mm}
+      .label-grid{display:flex;flex-wrap:wrap;gap:3mm}
+      .label{width:${mmW}mm;height:${mmH}mm;border:0.5px solid #ccc;border-radius:2mm;padding:2mm;display:flex;flex-direction:column;justify-content:space-between;overflow:hidden;page-break-inside:avoid;background:#fff}
+      .lbl-brand{font-size:6px;color:#999;letter-spacing:0.5px;text-transform:uppercase}
+      .lbl-name{font-weight:700;color:#111;margin-top:1mm;line-height:1.2}
+      .lbl-variant{font-size:7px;color:#666;margin-top:0.5mm;overflow:hidden;max-height:2.4em}
+      .lbl-barcode{width:100%;max-height:${Math.round(mmH*0.4)}mm;object-fit:contain;margin:1mm 0}
+      .lbl-sku{font-size:7px;color:#333;font-family:monospace;text-align:center;margin-top:auto}
+      .lbl-sku-plain{font-size:8px;font-weight:700;font-family:monospace;text-align:center;padding:3px;border:1px solid #ccc;border-radius:2px;margin:1mm 0}
+      .hidden-bar{display:none !important}
+      @media print{
+        body{padding:2mm}
+        .no-print{display:none !important}
+        @page{margin:3mm;size:${mmW*2+10}mm auto}
+      }
+    </style></head><body>
+    <div class="no-print" id="lbl-controls-bar" style="margin-bottom:12px;padding:10px;background:#f9f9f9;border-radius:6px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-weight:700;font-size:13px">CaratLane WMS — Shelf Location Labels</div>
+        <div style="font-size:11px;color:#666;margin-top:3px">${locs.length} labels · ${mmW}×${mmH}mm · Generated ${new Date().toLocaleString('en-IN')}</div>
+        <div style="font-size:11px;color:#888;margin-top:3px">Stick one per shelf. Pickers scan this first, then the product — confirms they're at the right shelf.</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button onclick="window.print()" style="padding:8px 16px;background:#1a2b4c;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px">🖨 Print Labels</button>
+        <button onclick="document.getElementById('lbl-controls-bar').classList.add('hidden-bar');document.getElementById('lbl-show-bar-btn').style.display='flex'" style="padding:8px 16px;background:#444;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px">📷 Hide bar &amp; screenshot</button>
+        <button onclick="window.close()" style="padding:8px 16px;background:#f0f0f0;border:none;border-radius:6px;cursor:pointer;font-size:12px">Close</button>
+      </div>
+    </div>
+    <button id="lbl-show-bar-btn" onclick="document.getElementById('lbl-controls-bar').classList.remove('hidden-bar');this.style.display='none'" class="no-print" style="display:none;position:fixed;top:8px;right:8px;padding:8px 14px;background:#1a2b4c;color:#fff;border:none;border-radius:20px;cursor:pointer;font-weight:700;font-size:11px;z-index:999;box-shadow:0 2px 8px rgba(0,0,0,.2)">Show controls</button>
+    <div class="label-grid">${labelHTML}</div>
+    </body></html>`);
+  pw.document.close();
+  pw.focus();
+  logAudit('PRINT_SHELF_LABELS','inventory','batch',null,{count:locs.length});
+  toast(locs.length+' shelf location labels sent to print preview','s');
 }
 
 // ═══════════════════════════════════════════
@@ -5083,16 +5266,71 @@ function disableBarcodeScanner(){
   _barcodeTarget=null;
   const indicators=document.querySelectorAll('.barcode-indicator');
   indicators.forEach(el=>el.style.display='none');
+  clearConfirmedShelf();
 }
 
+let confirmedShelf=null; // {rack, shelf} once a shelf-location label has been scanned
+function parseShelfLocationCode(barcode){
+  const m=/^LOC-([A-Za-z])-(\d+)$/i.exec((barcode||'').trim());
+  if(!m) return null;
+  return {rack:m[1].toUpperCase(), shelf:String(parseInt(m[2],10))};
+}
+function updateShelfLocationBadge(){
+  ['pk-shelf-badge','mp-shelf-badge'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(!el) return;
+    if(confirmedShelf){
+      el.style.display='flex';
+      el.innerHTML=`<i class="ti ti-map-pin-filled"></i> At Rack ${esc(confirmedShelf.rack)} · Shelf ${esc(confirmedShelf.shelf)}`;
+    } else {
+      el.style.display='none';
+      el.innerHTML='';
+    }
+  });
+}
+function clearConfirmedShelf(){
+  confirmedShelf=null;
+  updateShelfLocationBadge();
+}
+function handleShelfLocationScan(loc){
+  confirmedShelf=loc;
+  updateShelfLocationBadge();
+  const itemsHere=SKUS.filter(s=>s.rack===loc.rack&&s.shelf===loc.shelf).map(s=>({...s,qty:(inv[s.sku]||{qty:0}).qty}));
+  const totalQty=itemsHere.reduce((a,s)=>a+s.qty,0);
+  if(_barcodeTarget==='mobile-pick'||_barcodeTarget==='mobile-pack'){ mobileScanFeedback(true); }
+  if(!itemsHere.length){
+    toast(`📍 Rack ${loc.rack} Shelf ${loc.shelf} confirmed — no SKUs assigned to this shelf yet`,'w');
+  } else {
+    const summary=itemsHere.map(s=>`${s.sku} (${s.qty} left)`).join(', ');
+    toast(`📍 Rack ${loc.rack} Shelf ${loc.shelf} confirmed — ${totalQty} unit(s) here: ${summary}`,'s');
+  }
+}
 function processBarcodeInput(barcode){
   console.log('Barcode scanned:',barcode);
+  // Shelf-location labels (LOC-{rack}-{shelf}) are scanned first to
+  // confirm the picker is at the right spot, before scanning the item.
+  const loc=parseShelfLocationCode(barcode);
+  if(loc){
+    handleShelfLocationScan(loc);
+    return;
+  }
   // Find matching SKU
   const sku=SKUS.find(s=>s.sku===barcode||s.sku.toUpperCase()===barcode.toUpperCase());
   if(!sku){
     if(_barcodeTarget==='mobile-pick'||_barcodeTarget==='mobile-pack'){ mobileScanFeedback(false); }
     toast('Unknown barcode: '+barcode,'w');
     return;
+  }
+  // If a shelf has been confirmed for a picking flow, the scanned item
+  // must actually belong to that shelf — otherwise flag it instead of
+  // silently picking from the wrong location.
+  if((_barcodeTarget==='picking'||_barcodeTarget==='mobile-pick') && confirmedShelf){
+    if(sku.rack!==confirmedShelf.rack || sku.shelf!==confirmedShelf.shelf){
+      if(_barcodeTarget==='mobile-pick'){ mobileScanFeedback(false); }
+      toast(`⚠ Location mismatch — ${sku.sku} belongs on Rack ${sku.rack} Shelf ${sku.shelf}, but you're confirmed at Rack ${confirmedShelf.rack} Shelf ${confirmedShelf.shelf}. Scan that shelf's label first.`,'w');
+      logAudit('LOCATION_MISMATCH','inventory',sku.sku,null,{scannedAt:confirmedShelf,expected:{rack:sku.rack,shelf:sku.shelf}});
+      return;
+    }
   }
   if(_barcodeTarget==='inbound'){
     // Auto-fill SKU in inbound form
