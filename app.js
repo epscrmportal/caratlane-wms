@@ -5653,7 +5653,16 @@ const _origSaveHist=saveHist;
 // ═══════════════════════════════════════════
 // BOOT
 // ═══════════════════════════════════════════
+// Guarded so a race between the login handler and Supabase's own
+// onAuthStateChange('SIGNED_IN') listener can't boot the app twice —
+// that used to double up initBarcodeScanner()'s keydown listener,
+// which made every scanned character (and the barcode scanner
+// generally) come through duplicated, e.g. "UNI-GS-F-34" became
+// "UUNNII--GGSS--FF--3344".
+let _wmsBooted=false;
 async function bootWMS(){
+  if(_wmsBooted) return;
+  _wmsBooted=true;
   setSyncStatus('syncing');
   await loadSKUsFromDB(); // load dynamic SKUs first
   await initInv();
