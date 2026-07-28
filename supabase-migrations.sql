@@ -364,6 +364,33 @@ alter table packing_queue add column if not exists tote_id text;
 
 alter table skus add column if not exists short_code integer;
 
+
+-- ═══════════════════════════════════════════════════════════════
+-- MIGRATION 8 — create_order_events_table
+-- Granular, order-correlated scan timeline: tote scanned, shelf
+-- scanned, each item scanned/added, packing started, each item
+-- verified during packing. Shown as one merged, timestamped timeline
+-- on the Order Status page alongside the existing pick/pack/dispatch
+-- milestones. Insert-only log table, queried by order_id on demand.
+-- ═══════════════════════════════════════════════════════════════
+
+create table if not exists order_events (
+  id          bigint generated always as identity primary key,
+  order_id    text not null,
+  event_type  text not null,   -- tote_scanned | shelf_scanned | item_scanned | pack_started | pack_item_verified
+  actor       text,
+  detail      jsonb,
+  created_at  timestamptz not null default now()
+);
+
+create index if not exists idx_order_events_order_id on order_events(order_id, created_at);
+
+alter table order_events enable row level security;
+
+drop policy if exists "anon full access" on order_events;
+create policy "anon full access" on order_events
+  for all to anon, authenticated using (true) with check (true);
+
 -- ═══════════════════════════════════════════════════════════════
 -- End of migrations. After running these, your schema matches what
 -- caratlane-wms/index.html expects: inventory, history, packing_queue,

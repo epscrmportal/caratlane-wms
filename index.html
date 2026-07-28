@@ -3401,6 +3401,7 @@ async function addPkItem(){
   renderPkItemsList();
   renderPkChecklist();
   advancePkSkuSelect();
+  logOrderEvent(activeOrder.id,'item_scanned',picker,{sku,qty,manual:true});
   toast(`Reserved ${qty} × ${sku} — ${res.available} left for other pickers`,'s');
 }
 async function pkScanAdd(sku){
@@ -3423,6 +3424,7 @@ async function pkScanAdd(sku){
   renderPkItemsList();
   renderPkChecklist();
   advancePkSkuSelect();
+  logOrderEvent(activeOrder.id,'item_scanned',picker,{sku:sku.sku,qty:1,manual:false});
   toast(`Scanned ${sku.sku} · ${expected.qty-remaining+1}/${expected.qty} picked — ${res.available} left for other pickers`,'s');
 }
 function renderPkItemsList(){
@@ -3511,6 +3513,7 @@ async function startPacking(i){
   task.claimedBy=res.claimed_by;
   task.packStartTime=res.pack_start_time;
   task.packStartTs=res.pack_start_ts;
+  logOrderEvent(task.orderId,'pack_started',picker,{taskId:task.id});
   renderPackingQ();
   toast(`Packing started for ${task.orderId} — timer running`,'s');
 }
@@ -3562,6 +3565,8 @@ function pmScanItem(sku){
   if(!item){ toast(sku.sku+' is not part of this order','w'); return; }
   if(item.scannedQty>=item.expectedQty){ toast(sku.sku+' already fully verified','w'); return; }
   item.scannedQty+=1;
+  const activeTask=packingQueue[_activePackIdx];
+  if(activeTask) logOrderEvent(activeTask.orderId,'pack_item_verified',currentProfile?.full_name,{sku:sku.sku});
   renderPmChecklist();
 }
 function proceedToPmDetails(){
@@ -4450,6 +4455,7 @@ async function mobilePickAddScan(sku){
   renderMobilePickSession();
   renderMpPickChecklist();
   mobileScanFeedback(true);
+  logOrderEvent(mobilePickSession.orderId,'item_scanned',picker,{sku:sku.sku,qty:1,manual:false});
   toast(res.offline?`Offline — queued ${sku.sub} (will sync)`:'Reserved '+sku.sub+' — '+sku.variant, res.offline?'w':'s');
 }
 
@@ -4615,6 +4621,7 @@ async function startMobilePack(i){
     task.claimedBy=res.claimed_by;
     task.packStartTime=res.pack_start_time;
     task.packStartTs=res.pack_start_ts;
+    logOrderEvent(task.orderId,'pack_started',picker,{taskId:task.id});
   } else if(task.claimedBy && task.claimedBy!==(currentProfile?.full_name||'')){
     toast(`Already being packed by ${task.claimedBy}`,'w');
     renderMobilePackQueue();
@@ -4646,6 +4653,7 @@ function mobilePackScan(sku){
   }
   item.scannedQty+=1;
   mobileScanFeedback(true);
+  logOrderEvent(mobilePackActive.task.orderId,'pack_item_verified',currentProfile?.full_name,{sku:sku.sku});
   renderMobilePackChecklist();
 }
 
@@ -5686,72 +5694,92 @@ function renderOrderStatusRecent(){
       `<button onclick="document.getElementById('os-order-id').value='${esc(oid)}';lookupOrderStatus()" style="padding:5px 10px;background:var(--s2);border:0.5px solid var(--b);border-radius:14px;cursor:pointer;font-size:11px;color:var(--t);font-family:monospace">${esc(oid)}</button>`
     ).join('')}</div>`;
 }
-function lookupOrderStatus(){
+async function lookupOrderStatus(){
   const oid=document.getElementById('os-order-id').value.trim();
   const el=document.getElementById('os-result');
   if(!oid){ el.innerHTML='<div class="empty">Enter an Order ID to track</div>'; return; }
   const order=orders.find(o=>o.id.toLowerCase()===oid.toLowerCase());
-  const entries=history.filter(h=>h.orderId && h.orderId.toLowerCase()===oid.toLowerCase())
-    .sort((a,b)=>(a.ts||'').localeCompare(b.ts||''));
+  const entries=history.filter(h=>h.orderId && h.orderId.toLowerCase()===oid.toLowerCase());
   const queueTask=packingQueue.find(t=>t.orderId && t.orderId.toLowerCase()===oid.toLowerCase());
   if(!entries.length && !queueTask && !order){
     el.innerHTML=`<div class="empty">No records found for "${esc(oid)}" — check the Order ID and try again</div>`;
     return;
   }
+  el.innerHTML='<div class="empty">Loading full timeline…</div>';
+  const realOrderId=order?order.id:(entries[0]?entries[0].orderId:(queueTask?queueTask.orderId:oid));
+  const orderEvents=await loadOrderEvents(realOrderId);
+
   const stageIcon={pick:'ti-scan',packed:'ti-box',dispatched:'ti-truck-delivery',exception:'ti-alert-triangle'};
-  const stageLabel={pick:'Picked',packed:'Packed',dispatched:'Dispatched',exception:'Exception / QC'};
+  const stageLabel={pick:'Picking complete',packed:'Packing complete',dispatched:'Dispatched',exception:'Exception / QC'};
   const stageColor={pick:'var(--st)',packed:'var(--gold)',dispatched:'var(--navy)',exception:'var(--dt)'};
-  let rows='';
+  const evMeta={
+    tote_scanned:{icon:'ti-package',bg:'#6a1b9a',label:'Tote bag scanned'},
+    shelf_scanned:{icon:'ti-map-pin',bg:'var(--it)',label:'Shelf location scanned'},
+    item_scanned:{icon:'ti-barcode',bg:'var(--st)',label:'Item scanned'},
+    pack_started:{icon:'ti-player-play',bg:'var(--gold)',label:'Packing started'},
+    pack_item_verified:{icon:'ti-check',bg:'var(--st)',label:'Item verified (packing)'}
+  };
+
+  // One chronologically-sorted timeline built from three sources: the
+  // order record itself (created/assigned/cancelled), the coarse
+  // history milestones (picked/packed/dispatched/exception), and the
+  // granular order_events log (tote/shelf/item scans, pack start/verify).
+  const timeline=[];
   if(order){
-    rows+=`
-    <div style="display:flex;gap:12px;padding:12px 0;border-bottom:0.5px solid var(--b)">
-      <div style="width:32px;height:32px;border-radius:50%;background:var(--t3);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0">
-        <i class="ti ti-clipboard-list"></i>
-      </div>
-      <div style="flex:1">
-        <div style="font-weight:700;font-size:12px">Order created</div>
-        <div style="font-size:11px;color:var(--t2);margin-top:2px">${order.items.length} SKU(s) · ${order.priority} · ${order.method}${order.customerName?' · '+esc(order.customerName):''}</div>
-        <div style="font-size:10px;color:var(--t3);margin-top:2px">${order.createdBy?'Created by '+esc(order.createdBy):''}</div>
-      </div>
-    </div>`;
+    timeline.push({sortTs:order.createdAt?new Date(order.createdAt).getTime():0,
+      ts:order.createdAt?new Date(order.createdAt).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'',
+      iconBg:'var(--t3)',icon:'ti-clipboard-list',title:'Order created',
+      sub:`${order.items.length} SKU(s) · ${order.priority} · ${order.method}${order.customerName?' · '+esc(order.customerName):''}`,
+      meta:order.createdBy?'Created by '+esc(order.createdBy):''});
     if(order.assignedPicker){
-      rows+=`
-      <div style="display:flex;gap:12px;padding:12px 0;border-bottom:0.5px solid var(--b)">
-        <div style="width:32px;height:32px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0">
-          <i class="ti ti-user-check"></i>
-        </div>
-        <div style="flex:1">
-          <div style="font-weight:700;font-size:12px">Assigned to picker</div>
-          <div style="font-size:11px;color:var(--t2);margin-top:2px">${esc(order.assignedPicker)}</div>
-        </div>
-      </div>`;
+      timeline.push({sortTs:order.assignedAt?new Date(order.assignedAt).getTime():0.5,
+        ts:order.assignedAt?new Date(order.assignedAt).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'',
+        iconBg:'var(--navy)',icon:'ti-user-check',title:'Assigned to picker',sub:esc(order.assignedPicker),meta:''});
     }
     if(order.status==='cancelled'){
-      rows+=`
-      <div style="display:flex;gap:12px;padding:12px 0;border-bottom:0.5px solid var(--b)">
-        <div style="width:32px;height:32px;border-radius:50%;background:var(--dt);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0">
-          <i class="ti ti-x"></i>
-        </div>
-        <div style="flex:1">
-          <div style="font-weight:700;font-size:12px;color:var(--dt)">Order cancelled</div>
-        </div>
-      </div>`;
+      timeline.push({sortTs:Number.MAX_SAFE_INTEGER,ts:'',iconBg:'var(--dt)',icon:'ti-x',title:'Order cancelled',sub:'',meta:''});
     }
   }
-  rows+=entries.map(h=>`
+  entries.forEach(h=>{
+    timeline.push({
+      sortTs:parseDisplayTs(h.ts), ts:h.ts||'',
+      iconBg:stageColor[h.type]||'var(--t3)', icon:stageIcon[h.type]||'ti-circle',
+      title:stageLabel[h.type]||h.type, sub:esc(h.detail||''), meta:h.picker?esc(h.picker):'',
+      printBtn:h.type==='packed'?h.id:null
+    });
+  });
+  orderEvents.forEach(e=>{
+    const m=evMeta[e.event_type]||{icon:'ti-circle',bg:'var(--t3)',label:e.event_type};
+    const d=e.detail||{};
+    let sub='';
+    if(e.event_type==='tote_scanned') sub=`Tote ${esc(d.toteId||'')}`;
+    else if(e.event_type==='shelf_scanned') sub=`Rack ${esc(d.rack||'')} · Shelf ${esc(d.shelf||'')}`;
+    else if(e.event_type==='item_scanned') sub=`${esc(d.sku||'')}${d.manual?' (manual entry)':' (scanned)'}${d.qty?' × '+d.qty:''}`;
+    else if(e.event_type==='pack_item_verified') sub=`${esc(d.sku||'')} verified`;
+    else if(e.event_type==='pack_started') sub='Timer started';
+    timeline.push({
+      sortTs:new Date(e.created_at).getTime(),
+      ts:new Date(e.created_at).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',second:'2-digit'}),
+      iconBg:m.bg, icon:m.icon, title:m.label, sub, meta:e.actor?esc(e.actor):''
+    });
+  });
+  timeline.sort((a,b)=>a.sortTs-b.sortTs);
+
+  let rows=timeline.map(t=>`
     <div style="display:flex;gap:12px;padding:12px 0;border-bottom:0.5px solid var(--b)">
-      <div style="width:32px;height:32px;border-radius:50%;background:${stageColor[h.type]||'var(--t3)'};color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0">
-        <i class="ti ${stageIcon[h.type]||'ti-circle'}"></i>
+      <div style="width:32px;height:32px;border-radius:50%;background:${t.iconBg};color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <i class="ti ${t.icon}"></i>
       </div>
       <div style="flex:1">
         <div style="font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:space-between;gap:8px">
-          <span>${stageLabel[h.type]||h.type}</span>
-          ${h.type==='packed'?`<button class="btn-sm" onclick="printPackingSlip('${esc(h.id)}')"><i class="ti ti-printer"></i>Print slip</button>`:''}
+          <span>${t.title}</span>
+          ${t.printBtn?`<button class="btn-sm" onclick="printPackingSlip('${esc(t.printBtn)}')"><i class="ti ti-printer"></i>Print slip</button>`:''}
         </div>
-        <div style="font-size:11px;color:var(--t2);margin-top:2px">${esc(h.detail||'')}</div>
-        <div style="font-size:10px;color:var(--t3);margin-top:2px">${h.ts||''}${h.picker?' · '+esc(h.picker):''}</div>
+        ${t.sub?`<div style="font-size:11px;color:var(--t2);margin-top:2px">${t.sub}</div>`:''}
+        <div style="font-size:10px;color:var(--t3);margin-top:2px">${esc(t.ts)}${t.meta?' · '+t.meta:''}</div>
       </div>
     </div>`).join('');
+
   if(queueTask && !entries.some(h=>h.type==='packed')){
     const state=queueTask.claimedBy?`<div style="font-size:11px;color:var(--wt);font-weight:600"><i class="ti ti-lock"></i> Being packed by ${esc(queueTask.claimedBy)}</div>`:`<div style="font-size:11px;color:var(--t2)">Awaiting packing</div>`;
     rows+=`
@@ -7142,6 +7170,46 @@ async function logAudit(action,entityType,entityId,oldVals,newVals){
   } catch(e){ console.warn('Audit log failed:',e.message); }
 }
 
+// ═══ ORDER TIMELINE EVENTS ═══
+// Granular, order-correlated scan log — tote scan, shelf scan, each item
+// scan/add, pack start, each pack-verify scan. Separate from audit_log
+// (which isn't order-correlated for scans) and from history (which only
+// has the coarse pick/pack/dispatch milestones). Surfaced on the Order
+// Status page as one merged, timestamped timeline.
+async function logOrderEvent(orderId,eventType,actor,detail){
+  if(!orderId||!supa) return;
+  try{
+    const {error}=await supa.from('order_events').insert({order_id:orderId,event_type:eventType,actor:actor||null,detail:detail||null});
+    if(error) throw error;
+  }catch(e){ console.warn('logOrderEvent skipped (order_events table may not be migrated yet):',e.message||e); }
+}
+async function loadOrderEvents(orderId){
+  if(!orderId||!supa) return [];
+  try{
+    const {data,error}=await supa.from('order_events').select('*').eq('order_id',orderId).order('created_at',{ascending:true});
+    if(error) throw error;
+    return data||[];
+  }catch(e){ console.warn('loadOrderEvents failed:',e.message||e); return []; }
+}
+// Best-effort parse of the app's display timestamp format ("28 Jul, 02:30 pm")
+// back into an epoch, purely so mixed-source timeline rows sort correctly.
+// The original display string is always shown to the user unchanged.
+function parseDisplayTs(str){
+  if(!str) return 0;
+  const m=/(\d{1,2})\s+(\w{3})[,]?\s+(\d{1,2}):(\d{2})\s*(am|pm)?/i.exec(str.trim());
+  if(!m) return 0;
+  const months=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+  const day=parseInt(m[1],10);
+  const mon=months.indexOf(m[2].toLowerCase());
+  if(mon<0) return 0;
+  let hr=parseInt(m[3],10);
+  const min=parseInt(m[4],10);
+  const ap=(m[5]||'').toLowerCase();
+  if(ap==='pm'&&hr<12) hr+=12;
+  if(ap==='am'&&hr===12) hr=0;
+  return new Date(new Date().getFullYear(),mon,day,hr,min,0).getTime();
+}
+
 async function renderAuditLog(){
   const el=document.getElementById('audit-log-container');
   if(!el)return;
@@ -7265,6 +7333,11 @@ function handleShelfLocationScan(loc){
   const itemsHere=SKUS.filter(s=>s.rack===loc.rack&&s.shelf===loc.shelf).map(s=>({...s,qty:(inv[s.sku]||{qty:0}).qty}));
   const totalQty=itemsHere.reduce((a,s)=>a+s.qty,0);
   if(_barcodeTarget==='mobile-pick'||_barcodeTarget==='mobile-pack'){ mobileScanFeedback(true); }
+  if(_barcodeTarget==='picking' && activeOrder){
+    logOrderEvent(activeOrder.id,'shelf_scanned',currentProfile?.full_name,{rack:loc.rack,shelf:loc.shelf});
+  } else if(_barcodeTarget==='mobile-pick' && mobilePickSession){
+    logOrderEvent(mobilePickSession.orderId,'shelf_scanned',currentProfile?.full_name,{rack:loc.rack,shelf:loc.shelf});
+  }
   if(!itemsHere.length){
     toast(`📍 Rack ${loc.rack} Shelf ${loc.shelf} confirmed — no SKUs assigned to this shelf yet`,'w');
   } else {
@@ -7320,9 +7393,10 @@ function handleToteScan(tote){
   if(_barcodeTarget==='picking'){
     pkToteId=tote;
     updateToteBadge();
+    if(activeOrder) logOrderEvent(activeOrder.id,'tote_scanned',currentProfile?.full_name,{toteId:tote});
     toast(`📦 Tote ${tote} assigned to this pick — now scan the shelf label, then items`,'s');
   } else if(_barcodeTarget==='mobile-pick'){
-    if(mobilePickSession){ mobilePickSession.toteId=tote; }
+    if(mobilePickSession){ mobilePickSession.toteId=tote; logOrderEvent(mobilePickSession.orderId,'tote_scanned',currentProfile?.full_name,{toteId:tote}); }
     updateToteBadge();
     mobileScanFeedback(true);
     toast(`📦 Tote ${tote} assigned — now scan the shelf label, then items`,'s');
