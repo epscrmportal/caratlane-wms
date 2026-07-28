@@ -7418,93 +7418,29 @@ async function bootWMS(){
   flushOfflineQueue();
 }
 
-async function previewBoot(){
-  window.saveInv=async function(){};
-  window.saveHist=async function(){};
-  window.logAudit=async function(){};
-  window.reserveStock=async function(sku,qty){
-    const avail=(inv[sku]||{qty:0}).qty;
-    if(avail<qty) return {success:false,reason:'insufficient_stock',available:avail};
-    return {success:true,available:avail-qty};
-  };
-  window.releaseStock=async function(){ return {success:true,released:0}; };
-  window.commitPickSession=async function(){ return {success:true}; };
-  window.releasePickSession=async function(){ return {success:true}; };
-  window.loadReservedMap=async function(){ reservedMap={}; };
-  window.upsertPackingQueueItem=async function(){};
-  window.deletePackingQueueItem=async function(){};
-  window.claimPackingTask=async function(taskId,picker){
-    const t=packingQueue.find(x=>x.id===taskId);
-    if(t && t.claimedBy && t.claimedBy!==picker) return {success:false,reason:'already_claimed',claimed_by:t.claimedBy};
-    return {success:true,claimed_by:picker,pack_start_time:Date.now(),pack_start_ts:ts()};
-  };
-  window.releasePackingClaim=async function(){ return {success:true}; };
-  window.loadOrders=async function(){};
-  window.saveOrderRow=async function(){ return true; };
-  window.loadPickerNames=async function(){ pickerNames=['Anita','Ramesh','Priya Nair']; };
-  window.loadExpectedShipments=async function(){};
-  window.saveExpectedShipmentRow=async function(){ return true; };
-  window.upsertHistoryRowRaw=async function(){ return true; };
-
-  currentUser={id:'preview-user',email:'admin@epsworldwide.com'};
-  currentProfile={role:'admin',full_name:'Preview Admin',email:'admin@epsworldwide.com'};
-  document.getElementById('auth-screen').style.display='none';
-  const userMenu=document.getElementById('user-menu');
-  if(userMenu) userMenu.style.display='flex';
-  document.getElementById('user-menu-name').textContent='Preview';
-  document.getElementById('user-email-display').textContent=currentProfile.email;
-  const badge=document.getElementById('user-role-badge');
-  badge.textContent='ADMIN';
-  badge.style.background='var(--gold)';
-  document.getElementById('tab-audit').style.display='';
-  document.getElementById('tab-users').style.display='';
-  const mui=document.getElementById('manage-users-item');
-  if(mui) mui.style.display='flex';
-  applyRoleRestrictions();
-  await bootWMS();
-  let i=0;
-  SKUS.forEach(s=>{
-    i++;
-    const p=i%7;
-    const qty=p===0?0:p===1?2:p<4?Math.floor(Math.random()*15)+5:Math.floor(Math.random()*40)+15;
-    inv[s.sku]={qty,rack:s.rack,shelf:s.shelf};
+// Check for existing session on load
+async function initAuth(){
+  const {data:{session}} = await supa.auth.getSession();
+  if(session){
+    currentUser=session.user;
+    await loadUserProfile();
+    await onAuthSuccess();
+  } else {
+    document.getElementById('auth-screen').style.display='flex';
+    // Hide main app until logged in
+  }
+  // Listen for auth changes
+  supa.auth.onAuthStateChange(async(event,session)=>{
+    if(event==='SIGNED_IN'&&session&&!currentUser){
+      currentUser=session.user;
+      await loadUserProfile();
+      await onAuthSuccess();
+    } else if(event==='SIGNED_OUT'){
+      currentUser=null; currentProfile=null;
+    }
   });
-  history=[
-    {id:'GRN-000123',type:'grn',ts:'12 Jul, 09:14',detail:'ASN: ASN-4471 · 6 SKUs · PASS:180 HOLD:0 REJ:0'},
-    {id:'PCK-000456',type:'pick',ts:'12 Jul, 10:02',detail:'ORD-88213 · Single pick · Express · 3 SKUs · Picker: Ramesh',orderId:'ORD-88213',picker:'Ramesh'},
-    {id:'DSP-000789',type:'dispatch',ts:'12 Jul, 11:40',detail:'AWB: DL4471209 · To: Priya Nair, 400001 · Shipping: Express · 2 SKUs'},
-    {id:'RET-000234',type:'return',ts:'11 Jul, 16:20',detail:'AWB: BL1120044 · Customer Return · Grade A:2 B:1 C:0 · 2 units restocked'}
-  ];
-  packingQueue=[
-    {id:'PCK-000501',orderId:'ORD-88240',priority:'Express',method:'Single',picker:'Anita',items:[
-      {sku:SKUS[0].sku,name:SKUS[0].sub,variant:SKUS[0].variant,qty:2,bin:SKUS[0].rack+'-'+SKUS[0].shelf},
-      {sku:SKUS[1].sku,name:SKUS[1].sub,variant:SKUS[1].variant,qty:1,bin:SKUS[1].rack+'-'+SKUS[1].shelf}
-    ],ts:'12 Jul, 13:10',status:'awaiting_packing'},
-    {id:'PCK-000502',orderId:'ORD-88241',priority:'Standard',method:'Single',picker:'Ramesh',items:[
-      {sku:SKUS[2].sku,name:SKUS[2].sub,variant:SKUS[2].variant,qty:3,bin:SKUS[2].rack+'-'+SKUS[2].shelf}
-    ],ts:'12 Jul, 13:25',status:'awaiting_packing'}
-  ];
-  orders=[
-    {id:'ORD-88242',customerName:'Rahul Mehta',address:'12 MG Road',pincode:'560001',phone:'9876543210',
-     priority:'Express',method:'Single',
-     items:[{sku:SKUS[3].sku,name:SKUS[3].sub,variant:SKUS[3].variant,qty:2,bin:SKUS[3].rack+'-'+SKUS[3].shelf}],
-     assignedPicker:'Anita',status:'assigned',createdBy:'Preview Admin',createdAt:new Date().toISOString(),assignedAt:new Date().toISOString()},
-    {id:'ORD-88243',customerName:'Sana Iyer',address:'44 Anna Salai',pincode:'600002',phone:'9123456780',
-     priority:'Standard',method:'Single',
-     items:[{sku:SKUS[4].sku,name:SKUS[4].sub,variant:SKUS[4].variant,qty:1,bin:SKUS[4].rack+'-'+SKUS[4].shelf}],
-     assignedPicker:null,status:'unassigned',createdBy:'Preview Admin',createdAt:new Date().toISOString()}
-  ];
-  expectedShipments=[
-    {id:'ASN-2026-0099',vendor:'CaratLane Central',carrier:'Blue Dart',expectedDate:'2026-07-16',
-     items:[{sku:SKUS[5].sku,name:SKUS[5].sub,variant:SKUS[5].variant,qty:20},{sku:SKUS[6].sku,name:SKUS[6].sub,variant:SKUS[6].variant,qty:10}],
-     status:'expected',createdBy:'Preview Admin',createdAt:new Date().toISOString()}
-  ];
-  pickerNames=['Anita','Ramesh','Priya Nair'];
-  renderDash();renderInv();renderRack();renderReports();
-  nav('dashboard');
-  toast('Preview mode — sample data, fully offline, never touches your real Supabase project','w');
 }
-previewBoot();
+initAuth();
 </script>
 </body>
 </html>

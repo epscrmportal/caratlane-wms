@@ -213,7 +213,8 @@ async function loadHist(){
       if(pq) packingQueue = pq.map(r => ({
         id:r.id, orderId:r.order_id, priority:r.priority, method:r.method,
         picker:r.picker, items:r.items||[], ts:r.ts, status:r.status,
-        packStartTime:r.pack_start_time, packStartTs:r.pack_start_ts, claimedBy:r.claimed_by||null
+        packStartTime:r.pack_start_time, packStartTs:r.pack_start_ts, claimedBy:r.claimed_by||null,
+        toteId:r.tote_id||null
       }));
       setSyncStatus('ok');
     }
@@ -263,7 +264,7 @@ async function upsertPackingQueueItem(t){
       id:t.id, order_id:t.orderId, priority:t.priority, method:t.method,
       picker:t.picker, items:t.items||[], ts:t.ts, status:t.status||'awaiting_packing',
       pack_start_time:t.packStartTime||null, pack_start_ts:t.packStartTs||null,
-      claimed_by:t.claimedBy||null
+      claimed_by:t.claimedBy||null, tote_id:t.toteId||null
     };
     const {error} = await supa.from('packing_queue').upsert(row, {onConflict:'id'});
     if(error) throw error;
@@ -1578,6 +1579,8 @@ function startDesktopPick(orderId){
   pkSessionId=newId('SESS');
   pkItemsList=[];
   clearConfirmedShelf();
+  pkToteId=null;
+  updateToteBadge();
   document.getElementById('pk-my-orders-wrap').style.display='none';
   document.getElementById('pk-active-wrap').style.display='block';
   document.getElementById('pk-active-orderid').textContent=o.id;
@@ -1591,6 +1594,8 @@ async function cancelActivePick(){
   if(pkSessionId) await releasePickSession(pkSessionId);
   pkItemsList=[]; pkSessionId=null; activeOrder=null;
   clearConfirmedShelf();
+  pkToteId=null;
+  updateToteBadge();
   renderPkItemsList();
   showPickOrdersList();
 }
@@ -1629,6 +1634,7 @@ function renderPkChecklist(){
 }
 async function addPkItem(){
   if(!activeOrder){ toast('Start a pick from an assigned order first','w'); return; }
+  if(!pkToteId){ toast('Scan a tote bag barcode first — items need to go in the right tote','w'); return; }
   const sku=document.getElementById('pk-sku').value;
   const cond=document.getElementById('pk-cond').value;
   const qty=parseInt(document.getElementById('pk-qty').value)||1;
@@ -1656,6 +1662,7 @@ async function addPkItem(){
 }
 async function pkScanAdd(sku){
   if(!activeOrder){ toast('Start a pick from an assigned order first','w'); return; }
+  if(!pkToteId){ toast('Scan a tote bag barcode first — items need to go in the right tote','w'); return; }
   const expected=activeOrder.items.find(it=>it.sku===sku.sku);
   if(!expected){ toast(sku.sku+' is not part of this order','w'); return; }
   const already=pkItemsList.find(it=>it.sku===sku.sku);
@@ -1690,6 +1697,7 @@ async function removePkItem(i){
 async function releaseToPacking(){
   if(!activeOrder){ toast('No active pick in progress','w'); return; }
   if(!pkItemsList.length){toast('Add items to the pick list first','w');return;}
+  if(!pkToteId){toast('Scan a tote bag barcode before releasing to packing','w');return;}
   if(!rateLimit('release-packing',2000)){toast('Please wait before submitting again','w');return;}
   const oid=activeOrder.id;
   const pri=activeOrder.priority;
@@ -1699,14 +1707,15 @@ async function releaseToPacking(){
   if(!result.success){ toast('Could not release to packing — connection issue, try again','w'); return; }
   pkItemsList.forEach(item=>{ if(inv[item.sku]) inv[item.sku].qty-=item.qty; });
   const tid=newId('PCK');
-  const newTask={id:tid,orderId:oid,priority:pri,method,picker,items:[...pkItemsList],ts:ts(),status:'awaiting_packing'};
+  const newTask={id:tid,orderId:oid,priority:pri,method,picker,toteId:pkToteId,items:[...pkItemsList],ts:ts(),status:'awaiting_packing'};
   packingQueue.push(newTask);
-  history.push({id:tid,type:'pick',ts:ts(),detail:`${oid} · ${method} pick · ${pri} · ${pkItemsList.length} SKUs · Picker: ${picker}`,orderId:oid,items:[...pkItemsList],picker});
+  history.push({id:tid,type:'pick',ts:ts(),detail:`${oid} · ${method} pick · ${pri} · ${pkItemsList.length} SKUs · Picker: ${picker} · Tote ${pkToteId}`,orderId:oid,items:[...pkItemsList],picker});
   saveInv();saveHist();upsertPackingQueueItem(newTask);
   activeOrder.status='picked';
   activeOrder.pickedTaskId=tid;
   await saveOrderRow(activeOrder);
   pkItemsList=[];pkSessionId=null;activeOrder=null;
+  pkToteId=null;updateToteBadge();
   renderPkItemsList();
   const el=document.getElementById('pk-log');
   el.innerHTML=history.filter(h=>h.type==='pick').slice(-6).reverse().map(h=>`<div class="hist-entry"><div class="hist-head"><span class="hist-id">${h.id}</span><span class="hist-ts">${h.ts}</span></div><div class="hist-body">${h.detail}</div></div>`).join('');
@@ -1720,10 +1729,11 @@ function renderPackingQ(){
   const el=document.getElementById('packing-queue');
   if(!packingQueue.length){el.innerHTML='<div class="empty">No tasks awaiting packing — queue is clear</div>';return;}
   const me=currentProfile?.full_name||'';
-  el.innerHTML=`<div class="tw"><table><thead><tr><th>Task ID</th><th>Order ID</th><th>Priority</th><th>Items</th><th>Released</th><th>Pack Start</th><th>Action</th></tr></thead><tbody>${packingQueue.map((t,i)=>{
+  el.innerHTML=`<div class="tw"><table><thead><tr><th>Task ID</th><th>Order ID</th><th>Tote</th><th>Priority</th><th>Items</th><th>Released</th><th>Pack Start</th><th>Action</th></tr></thead><tbody>${packingQueue.map((t,i)=>{
     const started=t.packStartTime;
     const startedStr=started?`<span style="color:var(--st);font-weight:600;font-size:10px"><i class="ti ti-clock-check"></i> ${new Date(started).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</span>`:'<span style="color:var(--t3);font-size:10px">Not started</span>';
     const claimedByOther=t.claimedBy && t.claimedBy!==me;
+    const toteCell=t.toteId?`<span class="pill p-info">${esc(t.toteId)}</span>`:'<span style="color:var(--t3);font-size:10px">—</span>';
     let btn;
     if(claimedByOther){
       btn=`<span class="pill p-hold"><i class="ti ti-lock"></i> Being packed by ${esc(t.claimedBy)}</span>`;
@@ -1732,7 +1742,7 @@ function renderPackingQ(){
     } else {
       btn=`<button class="btn-sm" style="background:var(--gold);color:#fff;border:none;border-radius:4px;padding:4px 10px;cursor:pointer;font-size:11px;display:inline-flex;align-items:center;gap:4px" onclick="startPacking(${i})"><i class="ti ti-player-play"></i>Start Packing</button>`;
     }
-    return `<tr><td class="mono">${t.id}</td><td style="font-size:11px">${t.orderId}</td><td><span class="pill ${t.priority==='Express'?'p-out':t.priority==='Standard'?'p-info':'p-hold'}">${t.priority}</span></td><td>${t.items.length} SKU(s)</td><td style="font-size:11px;color:var(--t2)">${t.ts}</td><td>${startedStr}</td><td>${btn}</td></tr>`;
+    return `<tr><td class="mono">${t.id}</td><td style="font-size:11px">${t.orderId}</td><td>${toteCell}</td><td><span class="pill ${t.priority==='Express'?'p-out':t.priority==='Standard'?'p-info':'p-hold'}">${t.priority}</span></td><td>${t.items.length} SKU(s)</td><td style="font-size:11px;color:var(--t2)">${t.ts}</td><td>${startedStr}</td><td>${btn}</td></tr>`;
   }).join('')}</tbody></table></div>`;
 }
 let _activePackIdx=null;
@@ -1761,12 +1771,18 @@ async function startPacking(i){
   renderPackingQ();
   toast(`Packing started for ${task.orderId} — timer running`,'s');
 }
+let pmChecklist=null;
 function openPackModal(i){
   _activePackIdx=i;
   const t=packingQueue[i];
   document.getElementById('pm-order-id').textContent=t.orderId;
   document.getElementById('pm-start-time').textContent=t.packStartTs||ts();
   document.getElementById('pm-items-list').innerHTML=t.items.map(it=>`<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:0.5px solid var(--b)"><span>${it.sku} — ${it.variant||''}</span><span style="font-weight:600">×${it.qty}</span></div>`).join('')||'<div style="color:var(--t3)">No items</div>';
+  document.getElementById('pm-tote-line').innerHTML=t.toteId?`<i class="ti ti-package"></i> Tote ${esc(t.toteId)}`:`<span style="color:var(--t3);font-weight:400">No tote recorded for this pick</span>`;
+  pmChecklist=t.items.map(it=>({sku:it.sku,name:it.name,variant:it.variant,expectedQty:it.qty,scannedQty:0}));
+  document.getElementById('pm-checklist-wrap').style.display='block';
+  document.getElementById('pm-details-wrap').style.display='none';
+  renderPmChecklist();
   // Clear fields
   ['pm-length','pm-width','pm-height','pm-actual-weight','pm-notes'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('pm-vol-result').style.display='none';
@@ -1781,11 +1797,48 @@ function openPackModal(i){
   },1000);
   const overlay=document.getElementById('pack-modal-overlay');
   overlay.style.display='flex';
+  enableBarcodeScanner('desktop-pack');
+}
+function renderPmChecklist(){
+  const el=document.getElementById('pm-checklist');
+  if(!el||!pmChecklist) return;
+  el.innerHTML=pmChecklist.map(it=>{
+    const done=it.scannedQty>=it.expectedQty;
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:0.5px solid var(--b);${done?'opacity:0.6':''}">
+      <div><div style="font-weight:700">${it.sku}</div><div style="font-size:10px;color:var(--t2)">${esc(it.name||'')} — ${esc(it.variant||'')}</div></div>
+      <div style="font-weight:700;${done?'color:var(--st)':''}">${it.scannedQty}/${it.expectedQty}${done?' <i class="ti ti-check"></i>':''}</div>
+    </div>`;
+  }).join('');
+  const allDone=pmChecklist.every(it=>it.scannedQty>=it.expectedQty);
+  const btn=document.getElementById('pm-checklist-continue-btn');
+  if(btn) btn.disabled=!allDone;
+}
+function pmScanItem(sku){
+  if(!pmChecklist) return;
+  const item=pmChecklist.find(i=>i.sku===sku.sku);
+  if(!item){ toast(sku.sku+' is not part of this order','w'); return; }
+  if(item.scannedQty>=item.expectedQty){ toast(sku.sku+' already fully verified','w'); return; }
+  item.scannedQty+=1;
+  renderPmChecklist();
+}
+function proceedToPmDetails(){
+  if(!pmChecklist || !pmChecklist.every(it=>it.scannedQty>=it.expectedQty)) return;
+  document.getElementById('pm-checklist-wrap').style.display='none';
+  document.getElementById('pm-details-wrap').style.display='block';
+  disableBarcodeScanner();
+}
+function backToPmChecklist(){
+  document.getElementById('pm-checklist-wrap').style.display='block';
+  document.getElementById('pm-details-wrap').style.display='none';
+  renderPmChecklist();
+  enableBarcodeScanner('desktop-pack');
 }
 function closePackModal(){
   document.getElementById('pack-modal-overlay').style.display='none';
   if(_packElapsedTimer)clearInterval(_packElapsedTimer);
   _activePackIdx=null;
+  pmChecklist=null;
+  disableBarcodeScanner();
 }
 function calcVolWeight(){
   const L=parseFloat(document.getElementById('pm-length').value)||0;
@@ -2287,8 +2340,7 @@ function renderCountList(){
     if(filterType==='counted'&&!c.counted)return false;
     if(filterType==='uncounted'&&c.counted)return false;
     if(filterType==='discrepancy'&&c.physicalQty===c.systemQty)return false;
-    if(filterType==='rackA'&&s.rack!=='A')return false;
-    if(filterType==='rackB'&&s.rack!=='B')return false;
+    if(filterType.startsWith('rack:')&&s.rack!==filterType.slice(5))return false;
     return true;
   });
   
@@ -2525,6 +2577,7 @@ function initMobilePickView(){
     active.style.display='block';
     document.getElementById('mp-pick-order-label').textContent='Order '+mobilePickSession.orderId;
     populateSkuSelFromList('mp-manual-sku', mobilePickSession.order.items);
+    updateToteBadge();
     renderMobilePickSession();
     renderMpPickChecklist();
     enableBarcodeScanner('mobile-pick');
@@ -2554,10 +2607,11 @@ function renderMpMyOrders(){
 function startMobilePick(orderId){
   const o=orders.find(x=>x.id===orderId);
   if(!o){ toast('Order not found','w'); return; }
-  mobilePickSession={orderId:o.id,priority:o.priority,method:o.method,items:[],sessionId:newId('SESS'),order:o};
+  mobilePickSession={orderId:o.id,priority:o.priority,method:o.method,items:[],sessionId:newId('SESS'),order:o,toteId:null};
   clearConfirmedShelf();
+  updateToteBadge();
   initMobilePickView();
-  toast('Scan the shelf label first, then the item','s');
+  toast('Scan a tote bag first, then the shelf label, then the item','s');
 }
 
 function mobileScanFeedback(ok){
@@ -2611,6 +2665,11 @@ async function releasePickSession(sessionId){
 
 async function mobilePickAddScan(sku){
   if(!mobilePickSession) return;
+  if(!mobilePickSession.toteId){
+    mobileScanFeedback(false);
+    toast('Scan a tote bag barcode first — items need to go in the right tote','w');
+    return;
+  }
   const expected=mobilePickSession.order.items.find(it=>it.sku===sku.sku);
   if(!expected){
     mobileScanFeedback(false);
@@ -2732,7 +2791,7 @@ async function completeMobilePick(){
   mobilePickSession.items.forEach(it=>{ if(inv[it.sku]) inv[it.sku].qty-=it.qty; });
   const tid=newId('PCK');
   const picker=currentProfile?.full_name||'Mobile picker';
-  const newTask={id:tid,orderId:mobilePickSession.orderId,priority:mobilePickSession.priority,method:mobilePickSession.method,picker,items:[...mobilePickSession.items],ts:ts(),status:'awaiting_packing'};
+  const newTask={id:tid,orderId:mobilePickSession.orderId,priority:mobilePickSession.priority,method:mobilePickSession.method,picker,toteId:mobilePickSession.toteId||null,items:[...mobilePickSession.items],ts:ts(),status:'awaiting_packing'};
   packingQueue.push(newTask);
   history.push({id:tid,type:'pick',ts:ts(),detail:`${mobilePickSession.orderId} · ${mobilePickSession.method} pick · ${mobilePickSession.priority} · ${mobilePickSession.items.length} SKUs · Picker: ${picker} (mobile scan)`,orderId:mobilePickSession.orderId,items:[...mobilePickSession.items],picker});
   saveInv();saveHist();upsertPackingQueueItem(newTask);
@@ -2771,6 +2830,7 @@ function renderMobilePackQueue(){
   }
   queueWrap.style.display='block';
   activeWrap.style.display='none';
+  if(_barcodeTarget!=='mobile-pack-lookup'){ enableBarcodeScanner('mobile-pack-lookup'); }
   if(!el) return;
   const me=currentProfile?.full_name||'';
   el.innerHTML=packingQueue.length?packingQueue.map((t,i)=>{
@@ -2784,7 +2844,7 @@ function renderMobilePackQueue(){
         <span style="font-weight:700;font-size:13px">${t.orderId}</span>
         <span class="pill ${t.priority==='Express'?'p-out':'p-info'}">${t.priority}</span>
       </div>
-      <div style="font-size:11px;color:var(--t2);margin-bottom:9px">${t.items.length} SKU(s) · ${t.ts}${t.picker?' · Picked by '+esc(t.picker):''}</div>
+      <div style="font-size:11px;color:var(--t2);margin-bottom:9px">${t.items.length} SKU(s) · ${t.ts}${t.picker?' · Picked by '+esc(t.picker):''}${t.toteId?' · Tote '+esc(t.toteId):''}</div>
       ${actionBtn}
     </div>
   `;
@@ -2824,7 +2884,7 @@ async function startMobilePack(i){
     checklist:task.items.map(it=>({sku:it.sku,name:it.name,variant:it.variant,bin:it.bin,expectedQty:it.qty,scannedQty:0}))
   };
   document.getElementById('mp-pack-order-label').textContent='Order '+task.orderId;
-  document.getElementById('mp-pack-summary').textContent=`${task.items.length} SKU(s) · ${task.priority} · ${task.method}`;
+  document.getElementById('mp-pack-summary').textContent=`${task.items.length} SKU(s) · ${task.priority} · ${task.method}${task.toteId?' · Tote '+task.toteId:''}`;
   renderMobilePackQueue();
 }
 
@@ -3508,7 +3568,7 @@ function renderSpaceUtil(){
   <div style="font-size:10px;color:var(--t2);margin-bottom:4px;font-weight:600">CUBIC / AIR SPACE BREAKDOWN</div>
   <div style="padding:10px;background:var(--s2);border-radius:8px;font-size:11px;line-height:2">
     <div style="display:flex;justify-content:space-between"><span style="color:var(--t2)">Total warehouse volume (1600 sf x 10ft ceiling):</span><span style="font-weight:600">${WAREHOUSE_CUFT.toLocaleString()} cu ft</span></div>
-    <div style="display:flex;justify-content:space-between"><span style="color:var(--t2)">Volume occupied by 20 racks:</span><span style="font-weight:600;color:var(--gold)">${totalRackVol.toLocaleString()} cu ft</span></div>
+    <div style="display:flex;justify-content:space-between"><span style="color:var(--t2)">Volume occupied by ${TOTAL_RACKS} racks:</span><span style="font-weight:600;color:var(--gold)">${totalRackVol.toLocaleString()} cu ft</span></div>
     <div style="display:flex;justify-content:space-between"><span style="color:var(--t2)">Dead / unused air space:</span><span style="font-weight:600;color:var(--dt)">${deadAirVol.toLocaleString()} cu ft</span></div>
     <div style="display:flex;justify-content:space-between;border-top:0.5px solid var(--b);padding-top:6px;margin-top:4px"><span style="color:var(--t2)">Avg units per rack:</span><span style="font-weight:600">${avgUnitsPerRack}</span></div>
     <div style="display:flex;justify-content:space-between"><span style="color:var(--t2)">Active SKUs / Total SKUs:</span><span style="font-weight:600">${activeSKUs} / ${totalSKUs}</span></div>
@@ -3565,13 +3625,17 @@ function renderCostPerOp(){
 function renderWarehouseUtil(){
   const el=document.getElementById('warehouse-util');
   if(!el)return;
-  const rackA=11,rackB=5;
-  const totalShelf=rackA+rackB;
-  const occupiedA=SKUS.filter(s=>s.rack==='A'&&(inv[s.sku]||{qty:0}).qty>0).length;
-  const occupiedB=SKUS.filter(s=>s.rack==='B'&&(inv[s.sku]||{qty:0}).qty>0).length;
-  const totalOccupied=occupiedA+occupiedB;
+  const totalShelf=RACK_LETTERS.length*SHELVES_PER_RACK;
+  const occupiedByRack={};
+  let totalOccupied=0;
+  RACK_LETTERS.forEach(r=>{
+    const occ=SKUS.filter(s=>s.rack===r&&parseInt(s.shelf)<=SHELVES_PER_RACK&&(inv[s.sku]||{qty:0}).qty>0).length;
+    occupiedByRack[r]=occ;
+    totalOccupied+=occ;
+  });
   const utilPct=Math.round((totalOccupied/totalShelf)*100);
   const capCat=utilPct>=80?'High':utilPct>=50?'Medium':'Low';
+  const racksWithActivity=RACK_LETTERS.filter(r=>occupiedByRack[r]>0);
   el.innerHTML=`
     <div style="font-size:11px">
       <div style="margin-bottom:8px">
@@ -3584,8 +3648,8 @@ function renderWarehouseUtil(){
         </div>
       </div>
       <div style="padding:8px;background:var(--s2);border-radius:6px;font-size:10px;color:var(--t2)">
-        <div>Rack A (11 shelves): ${occupiedA} occupied</div>
-        <div>Rack B (5 shelves): ${occupiedB} occupied</div>
+        <div>${totalOccupied} / ${totalShelf} shelf-slots occupied across ${RACK_LETTERS.length} racks (${SHELVES_PER_RACK} shelves each)</div>
+        ${racksWithActivity.length?racksWithActivity.map(r=>`<div>Rack ${r}: ${occupiedByRack[r]}/${SHELVES_PER_RACK} occupied</div>`).join(''):'<div>No racks occupied yet</div>'}
         <div style="margin-top:4px;padding-top:4px;border-top:0.5px solid var(--b)">Capacity: <span style="font-weight:600">${capCat}</span></div>
       </div>
     </div>
@@ -3669,16 +3733,19 @@ function renderCapacityAlerts(){
   const el=document.getElementById('capacity-alerts');
   if(!el)return;
   const alerts=[];
-  const rackA=11,rackB=5;
-  const totalShelf=rackA+rackB;
-  const occupiedA=SKUS.filter(s=>s.rack==='A'&&(inv[s.sku]||{qty:0}).qty>0).length;
-  const occupiedB=SKUS.filter(s=>s.rack==='B'&&(inv[s.sku]||{qty:0}).qty>0).length;
-  const utilPct=Math.round(((occupiedA+occupiedB)/totalShelf)*100);
+  const totalShelf=RACK_LETTERS.length*SHELVES_PER_RACK;
+  let totalOccupied=0;
+  RACK_LETTERS.forEach(r=>{
+    const occ=SKUS.filter(s=>s.rack===r&&parseInt(s.shelf)<=SHELVES_PER_RACK&&(inv[s.sku]||{qty:0}).qty>0).length;
+    totalOccupied+=occ;
+    if(occ>=SHELVES_PER_RACK) alerts.push({type:'high',msg:`🔴 Rack ${r} is FULL — no space for new items`});
+  });
+  const utilPct=Math.round((totalOccupied/totalShelf)*100);
   if(utilPct>=80)alerts.push({type:'high',msg:'⚠️ Warehouse at 80%+ capacity — consider offloading or reorganizing'});
-  if(occupiedA===rackA)alerts.push({type:'high',msg:'🔴 Rack A is FULL — no space for new items'});
-  if(occupiedB===rackB)alerts.push({type:'high',msg:'🔴 Rack B is FULL — no space for new items'});
   const lowStock=SKUS.filter(s=>(inv[s.sku]||{qty:0}).qty<=3&&(inv[s.sku]||{qty:0}).qty>0).length;
   if(lowStock>5)alerts.push({type:'warn',msg:`⚠️ ${lowStock} SKUs at low stock — prioritize reordering`});
+  const unplaced=getUnplacedSKUs();
+  if(unplaced.length)alerts.push({type:'warn',msg:`⚠️ ${unplaced.length} item(s) tagged with an invalid shelf number — need reassignment (see Rack View)`});
   el.innerHTML=alerts.length?alerts.map(a=>`<div class="warn-box" style="background:${a.type==='high'?'var(--dbg)':'var(--wbg)'};color:${a.type==='high'?'var(--dt)':'var(--wt)'}"><i class="ti ti-alert-triangle"></i>${a.msg}</div>`).join(''):'<div class="empty">All capacity metrics normal ✓</div>';
 }
 
@@ -3792,6 +3859,8 @@ function exportCSV(){
 // simply render as empty capacity until items are placed on them.
 const RACK_LETTERS=['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O'];
 const SHELVES_PER_RACK=6;
+const TOTE_COUNT=10;
+const TOTE_IDS=Array.from({length:TOTE_COUNT},(_,i)=>'TOTE-'+String(i+1).padStart(2,'0'));
 // Every valid shelf-location code: the nominal 15×6 grid, plus any
 // shelf numbers already in use beyond that (e.g. Rack A currently
 // uses shelves up to 11) so nothing existing becomes unreachable.
@@ -4552,12 +4621,10 @@ function runFullSystemTest(){
   
   // TEST 8: Capacity planning
   console.log('TEST 8: Capacity Planning');
-  const rackA=11,rackB=5;
-  const occupiedA=SKUS.filter(s=>s.rack==='A'&&(inv[s.sku]||{qty:0}).qty>0).length;
-  const occupiedB=SKUS.filter(s=>s.rack==='B'&&(inv[s.sku]||{qty:0}).qty>0).length;
-  const utilPct=Math.round(((occupiedA+occupiedB)/(rackA+rackB))*100);
-  console.log('├─ Rack A occupied: ' + occupiedA + '/' + rackA);
-  console.log('├─ Rack B occupied: ' + occupiedB + '/' + rackB);
+  const totalShelfSlots=RACK_LETTERS.length*SHELVES_PER_RACK;
+  const totalOccupiedSlots=RACK_LETTERS.reduce((a,r)=>a+SKUS.filter(s=>s.rack===r&&parseInt(s.shelf)<=SHELVES_PER_RACK&&(inv[s.sku]||{qty:0}).qty>0).length,0);
+  const utilPct=Math.round((totalOccupiedSlots/totalShelfSlots)*100);
+  console.log('├─ Racks occupied: ' + totalOccupiedSlots + '/' + totalShelfSlots + ' across ' + RACK_LETTERS.length + ' racks');
   console.log('├─ Warehouse utilization: ' + utilPct + '%');
   console.log('└─ ✓ Capacity planning working\n');
   
@@ -4631,6 +4698,7 @@ async function addSKU(skuObj){
 // ═══════════════════════════════════════════
 let _lblSelected = new Set();
 let _shelfLblSelected = new Set();
+let _toteLblSelected = new Set();
 let _jsBarcodeLoaded = false;
 
 function loadJsBarcode(cb){
@@ -4680,6 +4748,7 @@ function renderLabelPage(){
     });
     updateLabelSelCount();
     renderShelfLabelGrid();
+    renderToteLabelGrid();
   });
 }
 function renderShelfLabelGrid(){
@@ -4738,6 +4807,59 @@ function clearShelfLabelSelection(){
 function updateShelfLabelSelCount(){
   const el=document.getElementById('shelf-lbl-sel-count');
   if(el) el.textContent=_shelfLblSelected.size;
+}
+
+function renderToteLabelGrid(){
+  const grid=document.getElementById('tote-label-grid');
+  if(!grid) return;
+  grid.innerHTML=TOTE_IDS.map(code=>{
+    const selected=_toteLblSelected.has(code);
+    const svgId='bc-tote-'+code.replace(/[^a-zA-Z0-9]/g,'_');
+    return `<div class="lbl-card${selected?' selected':''}" onclick="toggleToteLabelSelect('${code}')" id="tote-lbl-card-${code}">
+      <div class="lbl-check">${selected?'<i class="ti ti-check" style="font-size:11px"></i>':''}</div>
+      <div style="font-size:11px;font-weight:700;color:var(--t);margin-bottom:2px;padding-right:20px">Tote ${code.split('-')[1]}</div>
+      <div style="font-size:10px;color:var(--t2)">Reusable tote bag</div>
+      <div class="lbl-preview">
+        <svg id="${svgId}" style="max-width:100%;height:40px"></svg>
+        <div style="font-size:9px;color:#333;margin-top:2px;font-family:monospace">${code}</div>
+      </div>
+    </div>`;
+  }).join('');
+  TOTE_IDS.forEach(code=>{
+    try {
+      const svgId='bc-tote-'+code.replace(/[^a-zA-Z0-9]/g,'_');
+      const el=document.getElementById(svgId);
+      if(el&&typeof JsBarcode!=='undefined'){
+        JsBarcode('#'+svgId, code, {
+          format:'CODE128', width:1.2, height:35,
+          displayValue:false, margin:2,
+          background:'#ffffff', lineColor:'#000000'
+        });
+      }
+    } catch(e){ console.warn('Tote barcode error for',code,e); }
+  });
+  updateToteLabelSelCount();
+}
+function toggleToteLabelSelect(code){
+  if(_toteLblSelected.has(code)) _toteLblSelected.delete(code);
+  else _toteLblSelected.add(code);
+  const card=document.getElementById('tote-lbl-card-'+code);
+  if(!card) return;
+  card.classList.toggle('selected',_toteLblSelected.has(code));
+  card.querySelector('.lbl-check').innerHTML=_toteLblSelected.has(code)?'<i class="ti ti-check" style="font-size:11px"></i>':'';
+  updateToteLabelSelCount();
+}
+function selectAllToteLabels(){
+  TOTE_IDS.forEach(code=>_toteLblSelected.add(code));
+  renderToteLabelGrid();
+}
+function clearToteLabelSelection(){
+  _toteLblSelected.clear();
+  renderToteLabelGrid();
+}
+function updateToteLabelSelCount(){
+  const el=document.getElementById('tote-lbl-sel-count');
+  if(el) el.textContent=_toteLblSelected.size;
 }
 
 function toggleLabelSelect(sku){
@@ -4910,6 +5032,69 @@ function printSelectedShelfLabels(){
   pw.focus();
   logAudit('PRINT_SHELF_LABELS','inventory','batch',null,{count:locs.length});
   toast(locs.length+' shelf location labels sent to print preview','s');
+}
+function printSelectedToteLabels(){
+  if(!_toteLblSelected.size){ toast('Select at least one tote to print','w'); return; }
+  const codes=TOTE_IDS.filter(c=>_toteLblSelected.has(c));
+  const {w:mmW, h:mmH}=getLabelSizeMM();
+  const pw=window.open('','CARATLANE_TOTE_LABELS_'+Date.now(),'width=700,height=900');
+  if(!pw){ toast('Please allow popups to print','w'); return; }
+  const labelHTML=codes.map(code=>{
+    const svgNS='http://www.w3.org/2000/svg';
+    const tmpSvg=document.createElementNS(svgNS,'svg');
+    tmpSvg.setAttribute('id','tmp_bc_print_tote');
+    document.body.appendChild(tmpSvg);
+    let bcDataURI='';
+    try {
+      JsBarcode(tmpSvg, code, {format:'CODE128',width:1.5,height:40,displayValue:false,margin:2,background:'#ffffff',lineColor:'#000000'});
+      const svgStr=new XMLSerializer().serializeToString(tmpSvg);
+      bcDataURI='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(svgStr)));
+    } catch(e){ console.warn('Tote label barcode error:',e); }
+    document.body.removeChild(tmpSvg);
+    return `<div class="label">
+      <div class="lbl-name">Tote Bag ${esc(code.split('-')[1])}</div>
+      <div class="lbl-variant">Scan before picking — cross-checked at packing</div>
+      ${bcDataURI?`<img src="${bcDataURI}" class="lbl-barcode" alt="${code}">`:'<div class="lbl-sku-plain">'+code+'</div>'}
+      <div class="lbl-sku">${code}</div>
+    </div>`;
+  }).join('');
+  pw.document.write(`<!DOCTYPE html><html><head><title>CaratLane Tote Bag Labels</title>
+    <style>
+      *{box-sizing:border-box;margin:0;padding:0}
+      body{font-family:Arial,sans-serif;background:#fff;padding:4mm}
+      .label-grid{display:flex;flex-wrap:wrap;gap:3mm}
+      .label{width:${mmW}mm;height:${mmH}mm;border:0.5px solid #ccc;border-radius:1.5mm;padding:1.5mm;display:flex;flex-direction:column;justify-content:center;gap:0.5mm;overflow:hidden;page-break-inside:avoid;background:#fff}
+      .lbl-name{font-size:${Math.max(7,Math.min(11,Math.round(mmH*0.34)))}px;font-weight:700;color:#111;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .lbl-variant{font-size:${Math.max(6,Math.round(mmH*0.24))}px;color:#666;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .lbl-barcode{width:100%;height:${Math.max(6,Math.round(mmH*0.4))}mm;object-fit:contain}
+      .lbl-sku{font-size:${Math.max(6,Math.round(mmH*0.22))}px;color:#333;font-family:monospace;text-align:center;line-height:1.15}
+      .lbl-sku-plain{font-size:8px;font-weight:700;font-family:monospace;text-align:center;padding:3px;border:1px solid #ccc;border-radius:2px}
+      .hidden-bar{display:none !important}
+      @media print{
+        body{padding:2mm}
+        .no-print{display:none !important}
+        @page{margin:3mm;size:${mmW*2+10}mm auto}
+      }
+    </style></head><body>
+    <div class="no-print" id="lbl-controls-bar" style="margin-bottom:12px;padding:10px;background:#f9f9f9;border-radius:6px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-weight:700;font-size:13px">CaratLane WMS — Tote Bag Labels</div>
+        <div style="font-size:11px;color:#666;margin-top:3px">${codes.length} labels · ${mmW}×${mmH}mm · Generated ${new Date().toLocaleString('en-IN')}</div>
+        <div style="font-size:11px;color:#888;margin-top:3px">Stick one per physical tote bag (10 totes total). Pickers scan this before picking; packers scan it to auto-open the matching task.</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button onclick="window.print()" style="padding:8px 16px;background:#6a1b9a;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px">🖨 Print Labels</button>
+        <button onclick="document.getElementById('lbl-controls-bar').classList.add('hidden-bar');document.getElementById('lbl-show-bar-btn').style.display='flex'" style="padding:8px 16px;background:#444;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px">📷 Hide bar &amp; screenshot</button>
+        <button onclick="window.close()" style="padding:8px 16px;background:#f0f0f0;border:none;border-radius:6px;cursor:pointer;font-size:12px">Close</button>
+      </div>
+    </div>
+    <button id="lbl-show-bar-btn" onclick="document.getElementById('lbl-controls-bar').classList.remove('hidden-bar');this.style.display='none'" class="no-print" style="display:none;position:fixed;top:8px;right:8px;padding:8px 14px;background:#6a1b9a;color:#fff;border:none;border-radius:20px;cursor:pointer;font-weight:700;font-size:11px;z-index:999;box-shadow:0 2px 8px rgba(0,0,0,.2)">Show controls</button>
+    <div class="label-grid">${labelHTML}</div>
+    </body></html>`);
+  pw.document.close();
+  pw.focus();
+  logAudit('PRINT_TOTE_LABELS','inventory','batch',null,{count:codes.length});
+  toast(codes.length+' tote bag labels sent to print preview','s');
 }
 
 // ═══════════════════════════════════════════
@@ -5253,7 +5438,12 @@ function enableBarcodeScanner(target){
   _barcodeTarget=target;
   const indicators=document.querySelectorAll('.barcode-indicator');
   indicators.forEach(el=>el.style.display='flex');
-  toast('Barcode scanner active — scan a SKU barcode','s');
+  const msgs={
+    'packing-lookup':'Barcode scanner active — scan a tote bag to open its packing task',
+    'mobile-pack-lookup':'Barcode scanner active — scan a tote bag to open its packing task',
+    'desktop-pack':'Barcode scanner active — scan items to verify against the order'
+  };
+  toast(msgs[target]||'Barcode scanner active — scan a SKU barcode','s');
 }
 
 function disableBarcodeScanner(){
@@ -5300,8 +5490,96 @@ function handleShelfLocationScan(loc){
     toast(`📍 Rack ${loc.rack} Shelf ${loc.shelf} confirmed — ${totalQty} unit(s) here: ${summary}`,'s');
   }
 }
+
+// ═══ TOTE BAGS ═══
+// A tote is scanned BEFORE picking starts (so items go in the right
+// physical bag) and scanned AGAIN by the packer to auto-open and
+// cross-check the matching task — no manual order lookup needed.
+let pkToteId=null; // desktop pick session's assigned tote bag
+function parseToteCode(barcode){
+  const m=/^TOTE-?(\d{1,2})$/i.exec((barcode||'').trim());
+  if(!m) return null;
+  const n=parseInt(m[1],10);
+  if(n<1||n>TOTE_COUNT) return null;
+  return 'TOTE-'+String(n).padStart(2,'0');
+}
+function updateToteBadge(){
+  const pk=document.getElementById('pk-tote-badge');
+  if(pk){
+    if(pkToteId){ pk.style.display='flex'; pk.innerHTML=`<i class="ti ti-package"></i> Tote ${esc(pkToteId)}`; }
+    else { pk.style.display='none'; pk.innerHTML=''; }
+  }
+  const mp=document.getElementById('mp-tote-badge');
+  if(mp){
+    if(mobilePickSession && mobilePickSession.toteId){ mp.style.display='flex'; mp.innerHTML=`<i class="ti ti-package"></i> Tote ${esc(mobilePickSession.toteId)}`; }
+    else { mp.style.display='none'; mp.innerHTML=''; }
+  }
+}
+async function openPackingTaskByTote(tote){
+  const idx=packingQueue.findIndex(t=>t.toteId===tote);
+  if(idx===-1){ toast(`No packing task found for tote ${tote}`,'w'); return; }
+  const t=packingQueue[idx];
+  const me=currentProfile?.full_name||'';
+  if(t.claimedBy && t.claimedBy!==me){ toast(`Tote ${tote} — order ${t.orderId} is already being packed by ${t.claimedBy}`,'w'); return; }
+  if(!t.packStartTime){ await startPacking(idx); }
+  disableBarcodeScanner();
+  openPackModal(idx);
+}
+async function openMobilePackingTaskByTote(tote){
+  const idx=packingQueue.findIndex(t=>t.toteId===tote);
+  if(idx===-1){ toast(`No packing task found for tote ${tote}`,'w'); mobileScanFeedback(false); return; }
+  const t=packingQueue[idx];
+  const me=currentProfile?.full_name||'';
+  if(t.claimedBy && t.claimedBy!==me){ toast(`Tote ${tote} — order ${t.orderId} is already being packed by ${t.claimedBy}`,'w'); mobileScanFeedback(false); return; }
+  mobileScanFeedback(true);
+  await startMobilePack(idx);
+}
+function handleToteScan(tote){
+  if(_barcodeTarget==='picking'){
+    pkToteId=tote;
+    updateToteBadge();
+    toast(`📦 Tote ${tote} assigned to this pick — now scan the shelf label, then items`,'s');
+  } else if(_barcodeTarget==='mobile-pick'){
+    if(mobilePickSession){ mobilePickSession.toteId=tote; }
+    updateToteBadge();
+    mobileScanFeedback(true);
+    toast(`📦 Tote ${tote} assigned — now scan the shelf label, then items`,'s');
+  } else if(_barcodeTarget==='packing-lookup'){
+    openPackingTaskByTote(tote);
+  } else if(_barcodeTarget==='mobile-pack-lookup'){
+    openMobilePackingTaskByTote(tote);
+  } else if(_barcodeTarget==='desktop-pack'){
+    const activeTask=packingQueue[_activePackIdx];
+    const expected=activeTask?.toteId;
+    if(expected && expected!==tote){
+      toast(`⚠ Wrong tote — this task expects ${expected}, you scanned ${tote}`,'w');
+    } else {
+      toast(`✓ Tote ${tote} confirmed for this task`,'s');
+    }
+  } else if(_barcodeTarget==='mobile-pack'){
+    const expected=mobilePackActive?.task?.toteId;
+    if(expected && expected!==tote){
+      toast(`⚠ Wrong tote — this task expects ${expected}, you scanned ${tote}`,'w');
+      mobileScanFeedback(false);
+    } else {
+      toast(`✓ Tote ${tote} confirmed for this task`,'s');
+      mobileScanFeedback(true);
+    }
+  } else {
+    toast(`Tote barcode ${tote} scanned`,'s');
+  }
+}
+
 function processBarcodeInput(barcode){
   console.log('Barcode scanned:',barcode);
+  // Tote bag labels (TOTE-{NN}) are scanned first — before the shelf
+  // label and before any item — so we know which physical bag/task
+  // this scan session belongs to.
+  const tote=parseToteCode(barcode);
+  if(tote){
+    handleToteScan(tote);
+    return;
+  }
   // Shelf-location labels (LOC-{rack}-{shelf}) are scanned first to
   // confirm the picker is at the right spot, before scanning the item.
   const loc=parseShelfLocationCode(barcode);
@@ -5356,6 +5634,11 @@ function processBarcodeInput(barcode){
   } else if(_barcodeTarget==='mobile-pack'){
     // HT20 Pro handheld scan during mobile pack verification
     mobilePackScan(sku);
+  } else if(_barcodeTarget==='desktop-pack'){
+    // Desktop pack modal scan-to-verify checklist
+    pmScanItem(sku);
+  } else if(_barcodeTarget==='packing-lookup'||_barcodeTarget==='mobile-pack-lookup'){
+    toast('Scan a tote bag barcode here, not a SKU','w');
   }
   // Log the scan
   logAudit('BARCODE_SCAN','inventory',sku.sku,null,{sku:sku.sku,target:_barcodeTarget,barcode});

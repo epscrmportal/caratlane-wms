@@ -300,4 +300,61 @@ end $$;
 create table if not exists expected_shipments (
   id               text primary key,   -- ASN / PO reference
   vendor           text,
-  carrier          t
+  carrier          text,
+  expected_date    date,
+  items            jsonb not null default '[]',  -- [{sku,qty,name,variant}]
+  status           text not null default 'expected' check (status in ('expected','partial','received','discrepancy')),
+  notes            text,
+  created_by       text,
+  created_at       timestamptz not null default now(),
+  received_at      timestamptz,
+  received_summary jsonb
+);
+
+create index if not exists idx_expected_shipments_status on expected_shipments(status);
+
+alter table expected_shipments enable row level security;
+
+drop policy if exists "anon full access" on expected_shipments;
+create policy "anon full access" on expected_shipments
+  for all to anon, authenticated using (true) with check (true);
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and tablename = 'expected_shipments'
+  ) then
+    alter publication supabase_realtime add table expected_shipments;
+  end if;
+end $$;
+
+
+-- ═══════════════════════════════════════════════════════════════
+-- MIGRATION 5 — add_packer_column_to_history
+-- Team Productivity report (Reports tab) needs to know who packed
+-- each order, not just who picked it. The pick flow already stored
+-- a picker name on each history row; packing never did.
+-- ═══════════════════════════════════════════════════════════════
+
+alter table history add column if not exists packer text;
+
+
+-- ═══════════════════════════════════════════════════════════════
+-- MIGRATION 6 — add_tote_id_to_packing_queue
+-- Tote bag workflow: pickers scan one of 10 physical tote barcodes
+-- before picking (so items go in the right bag), and packers scan
+-- the same tote to auto-open and cross-check the matching task.
+-- ═══════════════════════════════════════════════════════════════
+
+alter table packing_queue add column if not exists tote_id text;
+
+-- ═══════════════════════════════════════════════════════════════
+-- End of migrations. After running these, your schema matches what
+-- caratlane-wms/index.html expects: inventory, history, packing_queue,
+-- orders, expected_shipments, stock_reservations, user_profiles, audit_log, skus,
+-- inventory_counts, inventory_snapshots — plus the RPC functions
+-- above. RLS on every table is "allow all" for anon+authenticated,
+-- matching this app's existing security model (the anon key is
+-- effectively a shared app password, not a public API key).
+-- ═══════════════════════════════════════════════════════════════
