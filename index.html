@@ -6419,18 +6419,56 @@ async function loadSKUsFromDB(){
     if(typeof supabase==='undefined'||!supa) return;
     const {data,error}=await supa.from('skus').select('*').order('cat').order('sub').order('variant');
     if(error||!data||!data.length) return; // fallback to hardcoded
-    SKUS=data.map(r=>({sku:r.sku,cat:r.cat,sub:r.sub,variant:r.variant,rack:r.rack,shelf:r.shelf}));
+    SKUS=data.map(r=>({sku:r.sku,cat:r.cat,sub:r.sub,variant:r.variant,rack:r.rack,shelf:r.shelf,shortCode:(r.short_code!=null?r.short_code:null)}));
     console.log('✓ SKUs loaded from DB:',SKUS.length);
   } catch(e){ console.warn('SKU DB load failed, using hardcoded list'); }
+}
+// Product barcodes encode a short 4-digit numeric ID instead of the full
+// SKU string. CODE128 can pack digit-pairs far more densely than mixed
+// letters — a SKU like "UNI-GS-F-34" needs ~150+ printed bars, which
+// won't scan reliably on a small thermal label; a 4-digit code needs
+// well under half that, and prints reliably even on the smallest label.
+// The human-readable SKU text still prints on the label for staff to read.
+function hashToCode(str){
+  let h=5381;
+  for(let i=0;i<str.length;i++){ h=((h*33)^str.charCodeAt(i))>>>0; }
+  return h%10000;
+}
+async function persistShortCode(sku,code){
+  try{
+    const {error}=await supa.from('skus').update({short_code:code}).eq('sku',sku);
+    if(error) throw error;
+    return true;
+  }catch(e){ return false; }
+}
+async function assignShortCodes(){
+  const used=new Set();
+  SKUS.forEach(s=>{ if(s.shortCode!=null && !isNaN(s.shortCode)) used.add(s.shortCode); });
+  const toPersist=[];
+  SKUS.forEach(s=>{
+    if(s.shortCode==null || isNaN(s.shortCode)){
+      let code=hashToCode(s.sku);
+      while(used.has(code)) code=(code+1)%10000;
+      s.shortCode=code; used.add(code); toPersist.push(s);
+    }
+  });
+  for(const s of toPersist){
+    const ok=await persistShortCode(s.sku,s.shortCode);
+    // If the short_code column hasn't been migrated in yet, stop trying —
+    // the codes still work fine in-memory for this session, they just
+    // won't be sticky across sessions until Migration 7 is applied.
+    if(!ok) break;
+  }
 }
 async function addSKU(skuObj){
   // Add to local array
   if(SKUS.find(s=>s.sku===skuObj.sku)){toast('SKU already exists','w');return false;}
   SKUS.push(skuObj);
   inv[skuObj.sku]={qty:0,rack:skuObj.rack,shelf:skuObj.shelf};
+  await assignShortCodes();
   // Save to DB
   try {
-    await supa.from('skus').upsert(skuObj,{onConflict:'sku'});
+    await supa.from('skus').upsert({...skuObj,short_code:skuObj.shortCode},{onConflict:'sku'});
     await saveInv();
     toast('SKU '+skuObj.sku+' added successfully','s');
     return true;
@@ -6481,7 +6519,7 @@ function renderLabelPage(){
         const svgId='bc-'+s.sku.replace(/[^a-zA-Z0-9]/g,'_');
         const el=document.getElementById(svgId);
         if(el&&typeof JsBarcode!=='undefined'){
-          JsBarcode('#'+svgId, s.sku, {
+          JsBarcode('#'+svgId, String(s.shortCode!=null?s.shortCode:hashToCode(s.sku)).padStart(4,'0'), {
             format:'CODE128', width:1.2, height:35,
             displayValue:false, margin:2,
             background:'#ffffff', lineColor:'#000000'
@@ -6656,8 +6694,9 @@ function printSelectedLabels(){
       tmpSvg.setAttribute('id','tmp_bc_print');
       document.body.appendChild(tmpSvg);
       let bcDataURI='';
+      const shortCode=String(s.shortCode!=null?s.shortCode:hashToCode(s.sku)).padStart(4,'0');
       try {
-        JsBarcode(tmpSvg, s.sku, {format:'CODE128',width:2.2,height:50,displayValue:false,margin:6,background:'#ffffff',lineColor:'#000000'});
+        JsBarcode(tmpSvg, shortCode, {format:'CODE128',width:2.6,height:50,displayValue:false,margin:8,background:'#ffffff',lineColor:'#000000'});
         const svgStr=new XMLSerializer().serializeToString(tmpSvg);
         bcDataURI='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(svgStr)));
       } catch(e){ console.warn('Print barcode error:',e); }
@@ -6666,8 +6705,8 @@ function printSelectedLabels(){
       return `<div class="label">
         <div class="lbl-name">${esc(s.sub)}</div>
         <div class="lbl-variant">${esc(s.variant)}</div>
-        ${bcDataURI?`<img src="${bcDataURI}" class="lbl-barcode" alt="${s.sku}">`:'<div class="lbl-sku-plain">'+s.sku+'</div>'}
-        <div class="lbl-sku">${s.sku}</div>
+        ${bcDataURI?`<img src="${bcDataURI}" class="lbl-barcode" alt="${shortCode}">`:'<div class="lbl-sku-plain">'+shortCode+'</div>'}
+        <div class="lbl-sku">${s.sku} <span style="color:#999">· #${shortCode}</span></div>
       </div>`;
     }).join('');
     pw.document.write(`<!DOCTYPE html><html><head><title>CaratLane SKU Labels</title>
@@ -7331,7 +7370,7 @@ function processBarcodeInput(barcode){
     return;
   }
   // Find matching SKU
-  const sku=SKUS.find(s=>s.sku===barcode||s.sku.toUpperCase()===barcode.toUpperCase());
+  const sku=SKUS.find(s=>s.sku===barcode||s.sku.toUpperCase()===barcode.toUpperCase()||(s.shortCode!=null&&String(s.shortCode).padStart(4,'0')===barcode));
   if(!sku){
     if(_barcodeTarget==='mobile-pick'||_barcodeTarget==='mobile-pack'){ mobileScanFeedback(false); }
     toast('Unknown barcode: '+barcode,'w');
@@ -7408,6 +7447,7 @@ async function bootWMS(){
   _wmsBooted=true;
   setSyncStatus('syncing');
   await loadSKUsFromDB(); // load dynamic SKUs first
+  await assignShortCodes(); // gives every product a compact, scannable barcode ID
   await initInv();
   await loadHist();
   await loadOrders();

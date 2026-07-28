@@ -349,6 +349,21 @@ alter table history add column if not exists packer text;
 
 alter table packing_queue add column if not exists tote_id text;
 
+
+-- ═══════════════════════════════════════════════════════════════
+-- MIGRATION 7 — add_short_code_to_skus
+-- Product SKU codes (e.g. "UNI-GS-F-34") are too long to print as a
+-- reliably scannable CODE128 barcode on small thermal labels — the
+-- bars end up too thin. Each SKU gets a short 4-digit numeric ID
+-- instead; that's what gets encoded in the printed barcode, while the
+-- full SKU still prints as human-readable text. The app computes and
+-- backfills these automatically on boot even before this migration
+-- runs, but they won't persist across sessions until this column
+-- exists — run this once you get a chance.
+-- ═══════════════════════════════════════════════════════════════
+
+alter table skus add column if not exists short_code integer;
+
 -- ═══════════════════════════════════════════════════════════════
 -- End of migrations. After running these, your schema matches what
 -- caratlane-wms/index.html expects: inventory, history, packing_queue,

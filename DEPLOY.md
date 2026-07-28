@@ -4,7 +4,7 @@
 
 - **`index.html`** — the entire app. This is the only file that actually gets deployed and loaded by the browser; all CSS and JS are inlined in it.
 - `app.js`, `api.js`, `config.js`, `styles.css` — source mirrors of the same logic, kept for readability and diffing. They are **not** loaded by `index.html` (no `<script src="...">` tags reference them) — editing them alone won't change app behavior. If you edit the app, edit `index.html`.
-- `supabase-migrations.sql` — the full database schema as SQL, in six migrations (stock reservations, packing claims + QC photo, orders table, expected shipments / inbound tally, packer column on history, tote_id column on packing_queue). Migrations 1–5 are already applied to the live Supabase project. **Migration 6 (tote_id) still needs to be run manually** — paste it into Supabase Dashboard → SQL Editor → Run — this build didn't have automated DB access to apply it for you. Keep this file so the schema is reproducible if you ever spin up a new project.
+- `supabase-migrations.sql` — the full database schema as SQL, in seven migrations (stock reservations, packing claims + QC photo, orders table, expected shipments / inbound tally, packer column on history, tote_id column on packing_queue, short_code column on skus). Migrations 1–5 are already applied to the live Supabase project. **Migrations 6 and 7 still need to be run manually** — paste them into Supabase Dashboard → SQL Editor → Run — this build didn't have automated DB access to apply them for you. Keep this file so the schema is reproducible if you ever spin up a new project.
 
 ## Deploying to git + Vercel
 
