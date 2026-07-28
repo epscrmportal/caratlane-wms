@@ -4914,7 +4914,7 @@ function printSelectedLabels(){
       document.body.appendChild(tmpSvg);
       let bcDataURI='';
       try {
-        JsBarcode(tmpSvg, s.sku, {format:'CODE128',width:1.5,height:40,displayValue:false,margin:2,background:'#ffffff',lineColor:'#000000'});
+        JsBarcode(tmpSvg, s.sku, {format:'CODE128',width:2.2,height:50,displayValue:false,margin:6,background:'#ffffff',lineColor:'#000000'});
         const svgStr=new XMLSerializer().serializeToString(tmpSvg);
         bcDataURI='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(svgStr)));
       } catch(e){ console.warn('Print barcode error:',e); }
@@ -4932,10 +4932,10 @@ function printSelectedLabels(){
       *{box-sizing:border-box;margin:0;padding:0}
       body{font-family:Arial,sans-serif;background:#fff;padding:4mm}
       .label-grid{display:flex;flex-wrap:wrap;gap:3mm}
-      .label{width:${mmW}mm;height:${mmH}mm;border:0.5px solid #ccc;border-radius:1.5mm;padding:1.5mm;display:flex;flex-direction:column;justify-content:center;gap:0.5mm;overflow:hidden;page-break-inside:avoid;background:#fff}
+      .label{width:${mmW}mm;height:${mmH}mm;border:0.5px solid #ccc;border-radius:1.5mm;padding:1mm;display:flex;flex-direction:column;justify-content:center;gap:0.5mm;overflow:hidden;page-break-inside:avoid;background:#fff}
       .lbl-name{font-size:${Math.max(7,Math.min(11,Math.round(mmH*0.34)))}px;font-weight:700;color:#111;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
       .lbl-variant{font-size:${Math.max(6,Math.round(mmH*0.24))}px;color:#444;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-      .lbl-barcode{width:100%;height:${Math.max(6,Math.round(mmH*0.4))}mm;object-fit:contain}
+      .lbl-barcode{display:block;margin:0 auto;width:auto;height:auto;max-width:100%;max-height:${Math.max(8,Math.round(mmH*0.55))}mm;object-fit:contain}
       .lbl-sku{font-size:${Math.max(6,Math.round(mmH*0.22))}px;color:#333;font-family:monospace;text-align:center;line-height:1.15}
       .lbl-sku-plain{font-size:8px;font-weight:700;font-family:monospace;text-align:center;padding:3px;border:1px solid #ccc;border-radius:2px}
       .print-info{font-size:11px;color:#666;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #ddd}
@@ -4981,7 +4981,7 @@ function printSelectedShelfLabels(){
     document.body.appendChild(tmpSvg);
     let bcDataURI='';
     try {
-      JsBarcode(tmpSvg, code, {format:'CODE128',width:1.5,height:40,displayValue:false,margin:2,background:'#ffffff',lineColor:'#000000'});
+      JsBarcode(tmpSvg, code, {format:'CODE128',width:2.2,height:50,displayValue:false,margin:6,background:'#ffffff',lineColor:'#000000'});
       const svgStr=new XMLSerializer().serializeToString(tmpSvg);
       bcDataURI='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(svgStr)));
     } catch(e){ console.warn('Shelf label barcode error:',e); }
@@ -5000,10 +5000,10 @@ function printSelectedShelfLabels(){
       *{box-sizing:border-box;margin:0;padding:0}
       body{font-family:Arial,sans-serif;background:#fff;padding:4mm}
       .label-grid{display:flex;flex-wrap:wrap;gap:3mm}
-      .label{width:${mmW}mm;height:${mmH}mm;border:0.5px solid #ccc;border-radius:1.5mm;padding:1.5mm;display:flex;flex-direction:column;justify-content:center;gap:0.5mm;overflow:hidden;page-break-inside:avoid;background:#fff}
+      .label{width:${mmW}mm;height:${mmH}mm;border:0.5px solid #ccc;border-radius:1.5mm;padding:1mm;display:flex;flex-direction:column;justify-content:center;gap:0.5mm;overflow:hidden;page-break-inside:avoid;background:#fff}
       .lbl-name{font-size:${Math.max(7,Math.min(11,Math.round(mmH*0.34)))}px;font-weight:700;color:#111;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
       .lbl-variant{font-size:${Math.max(6,Math.round(mmH*0.24))}px;color:#666;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-      .lbl-barcode{width:100%;height:${Math.max(6,Math.round(mmH*0.4))}mm;object-fit:contain}
+      .lbl-barcode{display:block;margin:0 auto;width:auto;height:auto;max-width:100%;max-height:${Math.max(8,Math.round(mmH*0.55))}mm;object-fit:contain}
       .lbl-sku{font-size:${Math.max(6,Math.round(mmH*0.22))}px;color:#333;font-family:monospace;text-align:center;line-height:1.15}
       .lbl-sku-plain{font-size:8px;font-weight:700;font-family:monospace;text-align:center;padding:3px;border:1px solid #ccc;border-radius:2px}
       .hidden-bar{display:none !important}
@@ -5046,7 +5046,7 @@ function printSelectedToteLabels(){
     document.body.appendChild(tmpSvg);
     let bcDataURI='';
     try {
-      JsBarcode(tmpSvg, code, {format:'CODE128',width:1.5,height:40,displayValue:false,margin:2,background:'#ffffff',lineColor:'#000000'});
+      JsBarcode(tmpSvg, code, {format:'CODE128',width:2.2,height:50,displayValue:false,margin:6,background:'#ffffff',lineColor:'#000000'});
       const svgStr=new XMLSerializer().serializeToString(tmpSvg);
       bcDataURI='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(svgStr)));
     } catch(e){ console.warn('Tote label barcode error:',e); }
@@ -5063,10 +5063,10 @@ function printSelectedToteLabels(){
       *{box-sizing:border-box;margin:0;padding:0}
       body{font-family:Arial,sans-serif;background:#fff;padding:4mm}
       .label-grid{display:flex;flex-wrap:wrap;gap:3mm}
-      .label{width:${mmW}mm;height:${mmH}mm;border:0.5px solid #ccc;border-radius:1.5mm;padding:1.5mm;display:flex;flex-direction:column;justify-content:center;gap:0.5mm;overflow:hidden;page-break-inside:avoid;background:#fff}
+      .label{width:${mmW}mm;height:${mmH}mm;border:0.5px solid #ccc;border-radius:1.5mm;padding:1mm;display:flex;flex-direction:column;justify-content:center;gap:0.5mm;overflow:hidden;page-break-inside:avoid;background:#fff}
       .lbl-name{font-size:${Math.max(7,Math.min(11,Math.round(mmH*0.34)))}px;font-weight:700;color:#111;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
       .lbl-variant{font-size:${Math.max(6,Math.round(mmH*0.24))}px;color:#666;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-      .lbl-barcode{width:100%;height:${Math.max(6,Math.round(mmH*0.4))}mm;object-fit:contain}
+      .lbl-barcode{display:block;margin:0 auto;width:auto;height:auto;max-width:100%;max-height:${Math.max(8,Math.round(mmH*0.55))}mm;object-fit:contain}
       .lbl-sku{font-size:${Math.max(6,Math.round(mmH*0.22))}px;color:#333;font-family:monospace;text-align:center;line-height:1.15}
       .lbl-sku-plain{font-size:8px;font-weight:700;font-family:monospace;text-align:center;padding:3px;border:1px solid #ccc;border-radius:2px}
       .hidden-bar{display:none !important}
