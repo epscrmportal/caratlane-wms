@@ -392,6 +392,18 @@ create policy "anon full access" on order_events
   for all to anon, authenticated using (true) with check (true);
 
 -- ═══════════════════════════════════════════════════════════════
+-- MIGRATION 9 — add_courier_partner_to_history
+-- Fixes: the Dispatch page only ever captured a shipping SPEED tier
+-- (Standard Road / Express Road / Air), not the actual courier
+-- company (Bluedart, Delhivery, Ekart, DTDC, etc). Every place in the
+-- app labelled "Courier" was actually showing the speed tier. This
+-- adds a real courier_partner column and the app now asks for it as
+-- its own field on the Dispatch page.
+-- ═══════════════════════════════════════════════════════════════
+
+alter table history add column if not exists courier_partner text;
+
+-- ═══════════════════════════════════════════════════════════════
 -- End of migrations. After running these, your schema matches what
 -- caratlane-wms/index.html expects: inventory, history, packing_queue,
 -- orders, expected_shipments, stock_reservations, user_profiles, audit_log, skus,

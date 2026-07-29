@@ -199,7 +199,7 @@ async function loadHist(){
         id:r.id, type:r.type, ts:r.ts, detail:r.detail,
         orderId:r.order_id, awb:r.awb, recipientName:r.recipient_name,
         address:r.address, pincode:r.pincode, phone:r.phone,
-        shippingMethod:r.shipping_method, dispatchedAt:r.dispatched_at,
+        shippingMethod:r.shipping_method, courierPartner:r.courier_partner, dispatchedAt:r.dispatched_at,
         packStartTs:r.pack_start_ts, packStartTime:r.pack_start_time,
         packEndTs:r.pack_end_ts, packEndTime:r.pack_end_time,
         packDuration:r.pack_duration, packDurationSecs:r.pack_duration_secs,
@@ -236,7 +236,7 @@ async function saveHist(){
       id:h.id, type:h.type, ts:h.ts, detail:h.detail||null,
       order_id:h.orderId||null, awb:h.awb||null, recipient_name:h.recipientName||null,
       address:h.address||null, pincode:h.pincode||null, phone:h.phone||null,
-      shipping_method:h.shippingMethod||null, dispatched_at:h.dispatchedAt||null,
+      shipping_method:h.shippingMethod||null, courier_partner:h.courierPartner||null, dispatched_at:h.dispatchedAt||null,
       pack_start_ts:h.packStartTs||null, pack_start_time:h.packStartTime||null,
       pack_end_ts:h.packEndTs||null, pack_end_time:h.packEndTime||null,
       pack_duration:h.packDuration||null, pack_duration_secs:h.packDurationSecs||null,
@@ -1073,6 +1073,10 @@ function printDispatch(dispatchId){
         <div class="info-box">
           <div class="info-label">Shipping Method</div>
           <div class="info-value">${dispatch.shippingMethod}</div>
+        </div>
+        <div class="info-box">
+          <div class="info-label">Courier Partner</div>
+          <div class="info-value">${dispatch.courierPartner||'—'}</div>
         </div>
       </div>
       
@@ -2082,6 +2086,7 @@ function loadDispatchOrder(){
   document.getElementById('disp-pincode').value='';
   document.getElementById('disp-phone').value='';
   document.getElementById('disp-shipping').value='Standard Road';
+  document.getElementById('disp-courier').value='';
   document.getElementById('disp-awb').value='';
 }
 function confirmCourierDispatch(){
@@ -2091,8 +2096,9 @@ function confirmCourierDispatch(){
   const pin=document.getElementById('disp-pincode').value.trim();
   const phone=document.getElementById('disp-phone').value.trim();
   const shipping=document.getElementById('disp-shipping').value;
+  const courier=document.getElementById('disp-courier').value.trim();
   const awb=document.getElementById('disp-awb').value.trim();
-  if(!pkdId||!name||!addr||!pin||!phone||!awb){toast('Please fill all fields including courier AWB number','w');return;}
+  if(!pkdId||!name||!addr||!pin||!phone||!courier||!awb){toast('Please fill all fields including courier partner and AWB number','w');return;}
   if(!validateAWB(awb)){toast('Invalid AWB — letters, numbers and hyphens only (4-30 chars)','w');return;}
   if(!validatePincode(pin)){toast('Invalid pincode — must be 6 digits','w');return;}
   if(!validatePhone(phone)){toast('Invalid phone number','w');return;}
@@ -2109,8 +2115,9 @@ function confirmCourierDispatch(){
   packed.pincode=pin;
   packed.phone=phone;
   packed.shippingMethod=shipping;
+  packed.courierPartner=courier;
   // Add dispatch record
-  history.push({id:did,type:'dispatch',ts:ts(),detail:`AWB: ${awb} · To: ${name}, ${pin} · Shipping: ${shipping} · Phone: ${phone} · ${items.length} SKUs`,packedId:pkdId});
+  history.push({id:did,type:'dispatch',ts:ts(),detail:`AWB: ${awb} · Courier: ${courier} · To: ${name}, ${pin} · Shipping: ${shipping} · Phone: ${phone} · ${items.length} SKUs`,packedId:pkdId});
   saveHist();
   renderDispatchPage();
   document.getElementById('disp-search-order').value='';
@@ -2137,7 +2144,7 @@ function renderDispatchCompletedLog(){
       </div>
       <div class="hist-body">
         <div style="margin-bottom:6px"><span style="font-weight:600">${d.orderId}</span> · AWB: <span class="mono">${d.awb}</span></div>
-        <div style="font-size:10px;color:var(--t2);line-height:1.6">To: ${d.recipientName}, ${d.pincode} · ${d.shippingMethod} · ${d.dispatchedAt}</div>
+        <div style="font-size:10px;color:var(--t2);line-height:1.6">To: ${d.recipientName}, ${d.pincode} · ${esc(d.courierPartner||'—')} · ${d.shippingMethod} · ${d.dispatchedAt}</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:4px;margin-top:6px">
           <div style="background:var(--s2);border-radius:4px;padding:5px 8px;font-size:10px"><div style="color:var(--t3)">Box (L×W×H)</div><div style="font-weight:600">${dimsStr}</div></div>
           <div style="background:var(--s2);border-radius:4px;padding:5px 8px;font-size:10px"><div style="color:var(--t3)">Actual wt</div><div style="font-weight:600">${actualW}</div></div>
@@ -3412,10 +3419,10 @@ function downloadInboundReport(){
 
 function downloadOutboundReport(){
   const dispatches=history.filter(h=>h.type==='dispatched');
-  let csv='Dispatch ID,Order ID,AWB,Date,Customer,Pincode,Shipping Method,SKU Count,Total Units\n';
+  let csv='Dispatch ID,Order ID,AWB,Date,Customer,Pincode,Courier Partner,Shipping Method,SKU Count,Total Units\n';
   dispatches.forEach(d=>{
     const qty=d.items.reduce((a,i)=>a+i.qty,0);
-    csv+=`"${d.id}","${d.orderId}","${d.awb}","${d.dispatchedAt}","${d.recipientName}","${d.pincode}","${d.shippingMethod}",${d.items.length},${qty}\n`;
+    csv+=`"${d.id}","${d.orderId}","${d.awb}","${d.dispatchedAt}","${d.recipientName}","${d.pincode}","${d.courierPartner||''}","${d.shippingMethod}",${d.items.length},${qty}\n`;
   });
   downloadCSV(`OutboundReport_${new Date().toISOString().split('T')[0]}.csv`,csv);
   toast('Outbound report downloaded','s');
@@ -3459,10 +3466,10 @@ function downloadAllReports(){
   
   // DISPATCH
   const dispatches=history.filter(h=>h.type==='dispatched');
-  masterCSV+='\n═══ DISPATCH REPORT ═══\nDispatch ID,Date,Order ID,AWB,Customer,Pincode,Shipping Method,Units\n';
+  masterCSV+='\n═══ DISPATCH REPORT ═══\nDispatch ID,Date,Order ID,AWB,Customer,Pincode,Courier Partner,Shipping Method,Units\n';
   dispatches.forEach(d=>{
     const qty=d.items?d.items.reduce((a,i)=>a+i.qty,0):0;
-    masterCSV+=`"${d.id}","${d.dispatchedAt||d.ts}","${d.orderId||'N/A'}","${d.awb||'N/A'}","${d.recipientName||'N/A'}","${d.pincode||'N/A'}","${d.shippingMethod||'N/A'}",${qty}\n`;
+    masterCSV+=`"${d.id}","${d.dispatchedAt||d.ts}","${d.orderId||'N/A'}","${d.awb||'N/A'}","${d.recipientName||'N/A'}","${d.pincode||'N/A'}","${d.courierPartner||'N/A'}","${d.shippingMethod||'N/A'}",${qty}\n`;
   });
   
   // RETURNS
@@ -3998,10 +4005,12 @@ async function lookupOrderStatus(){
     }
   }
   entries.forEach(h=>{
+    let hSub=h.detail||'';
+    if(h.type==='dispatched') hSub+=` · AWB: ${h.awb||'—'} · Courier: ${h.courierPartner||'—'}`;
     timeline.push({
       sortTs:parseDisplayTs(h.ts), ts:h.ts||'',
       iconBg:stageColor[h.type]||'var(--t3)', icon:stageIcon[h.type]||'ti-circle',
-      title:stageLabel[h.type]||h.type, sub:esc(h.detail||''), meta:h.picker?esc(h.picker):'',
+      title:stageLabel[h.type]||h.type, sub:esc(hSub), meta:h.picker?esc(h.picker):'',
       printBtn:h.type==='packed'?h.id:null
     });
   });
@@ -4223,8 +4232,58 @@ function getWeekHistory(weekStr){
     try{const d=new Date(h.ts);return !isNaN(d)&&d>=start&&d<=end;}catch(e){return false;}
   });
 }
+
+// ═══ MONTHLY MASTER REPORT helpers ═══
+// NOTE: history[].ts is a display string like "29 Jul, 14:32" with no year — new Date(ts)
+// silently defaults to year 2001, which would break month-range comparisons. We reuse
+// parseDisplayTs() (anchors to the current year) instead of new Date() for these entries.
+function getMonthKey(date){
+  const d=new Date(date);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+function getMonthBounds(monthStr){
+  const [y,m]=monthStr.split('-').map(Number);
+  const start=new Date(y,m-1,1,0,0,0,0);
+  const end=new Date(y,m,0,23,59,59,999);
+  return {start,end};
+}
+function getMonthHistory(monthStr){
+  const {start,end}=getMonthBounds(monthStr);
+  const s=start.getTime(),e=end.getTime();
+  return history.filter(h=>{
+    if(!h.ts)return false;
+    const t=parseDisplayTs(h.ts);
+    return t>0&&t>=s&&t<=e;
+  });
+}
+function getMonthOrders(monthStr){
+  const {start,end}=getMonthBounds(monthStr);
+  return orders.filter(o=>{
+    if(!o.createdAt)return false;
+    try{const d=new Date(o.createdAt);return !isNaN(d)&&d>=start&&d<=end;}catch(e){return false;}
+  });
+}
+function populateMonthSelector(){
+  const sel=document.getElementById('rpt-month-select');
+  if(!sel)return;
+  const months=new Set();
+  const now=new Date();
+  for(let i=0;i<12;i++){
+    const d=new Date(now.getFullYear(),now.getMonth()-i,1);
+    months.add(getMonthKey(d));
+  }
+  orders.forEach(o=>{ if(o.createdAt){try{const d=new Date(o.createdAt);if(!isNaN(d))months.add(getMonthKey(d));}catch(e){}} });
+  const sorted=[...months].sort().reverse();
+  const thisMonth=getMonthKey(now);
+  sel.innerHTML=sorted.map(m=>{
+    const [y,mm]=m.split('-').map(Number);
+    const label=new Date(y,mm-1,1).toLocaleDateString('en-IN',{month:'long',year:'numeric'});
+    return `<option value="${m}"${m===thisMonth?' selected':''}>${label}${m===thisMonth?' (This month)':''}</option>`;
+  }).join('');
+}
 function renderReports(){
   populateWeekSelector();
+  populateMonthSelector();
   renderMISEmailConfig();
   const sel=document.getElementById('rpt-week-select');
   const weekStr=sel?sel.value:getWeekKey(new Date());
@@ -4298,7 +4357,7 @@ function renderReports(){
     <div class="tw"><table><thead><tr><th>Dispatch ID</th><th>Order ID</th><th>AWB</th><th>Recipient</th><th>Courier</th><th>Box (cm)</th><th>Chargeable (kg)</th><th>Dispatched At</th></tr></thead><tbody>
     ${disps.map(d=>{
       const dims=d.boxL?`${d.boxL}×${d.boxW}×${d.boxH}`:'—';
-      return `<tr><td class="mono" style="font-size:10px">${d.id}</td><td style="font-size:10px">${esc(d.orderId||'—')}</td><td class="mono" style="font-size:10px">${esc(d.awb||'—')}</td><td style="font-size:10px">${esc(d.recipientName||'—')}</td><td style="font-size:10px">${d.shippingMethod||'—'}</td><td style="font-size:10px">${dims}</td><td style="text-align:center;font-weight:600">${d.chargeableWeight||'—'}</td><td style="font-size:10px">${d.dispatchedAt||d.ts}</td></tr>`;
+      return `<tr><td class="mono" style="font-size:10px">${d.id}</td><td style="font-size:10px">${esc(d.orderId||'—')}</td><td class="mono" style="font-size:10px">${esc(d.awb||'—')}</td><td style="font-size:10px">${esc(d.recipientName||'—')}</td><td style="font-size:10px">${esc(d.courierPartner||'—')}</td><td style="font-size:10px">${dims}</td><td style="text-align:center;font-weight:600">${d.chargeableWeight||'—'}</td><td style="font-size:10px">${d.dispatchedAt||d.ts}</td></tr>`;
     }).join('')}
     </tbody></table></div>`:'<div class="empty">No dispatch activity this week</div>';
 
@@ -4397,9 +4456,9 @@ function downloadWeeklyCSV(){
 
   const disps=wh.filter(h=>h.type==='dispatched');
   csv+=`\n=== OUTBOUND / DISPATCH REPORT ===\n`;
-  csv+=`Dispatch ID,Order ID,AWB,Recipient,Pincode,Courier,Box L,Box W,Box H,Actual Wt (kg),Vol Wt (kg),Chargeable Wt (kg),Pack Start,Pack End,Pack Duration,Dispatched At\n`;
+  csv+=`Dispatch ID,Order ID,AWB,Recipient,Pincode,Courier Partner,Shipping Method,Box L,Box W,Box H,Actual Wt (kg),Vol Wt (kg),Chargeable Wt (kg),Pack Start,Pack End,Pack Duration,Dispatched At\n`;
   disps.forEach(d=>{
-    csv+=`"${d.id}","${d.orderId||''}","${d.awb||''}","${d.recipientName||''}","${esc(d.pincode||'')}","${d.shippingMethod||''}",${d.boxL||''},${d.boxW||''},${d.boxH||''},${d.actualWeight||''},${d.volWeight||''},${d.chargeableWeight||''},"${d.packStartTs||''}","${d.packEndTs||''}","${d.packDuration||''}","${d.dispatchedAt||d.ts}"\n`;
+    csv+=`"${d.id}","${d.orderId||''}","${d.awb||''}","${d.recipientName||''}","${esc(d.pincode||'')}","${esc(d.courierPartner||'')}","${d.shippingMethod||''}",${d.boxL||''},${d.boxW||''},${d.boxH||''},${d.actualWeight||''},${d.volWeight||''},${d.chargeableWeight||''},"${d.packStartTs||''}","${d.packEndTs||''}","${d.packDuration||''}","${d.dispatchedAt||d.ts}"\n`;
   });
   csv+=`TOTAL DISPATCHED:,${disps.length}\n`;
 
@@ -4424,6 +4483,70 @@ function downloadWeeklyCSV(){
   });
 
   downloadCSV(`CaratLane_Weekly_MIS_${weekStr}.csv`,csv);
+}
+function downloadMonthlyMasterCSV(){
+  const sel=document.getElementById('rpt-month-select');
+  const monthStr=sel?sel.value:getMonthKey(new Date());
+  const {start}=getMonthBounds(monthStr);
+  const monthLabel=start.toLocaleDateString('en-IN',{month:'long',year:'numeric'});
+  const mOrders=getMonthOrders(monthStr);
+  const mHist=getMonthHistory(monthStr);
+  const grns=mHist.filter(h=>h.type==='grn');
+  const packDispatch=history.filter(h=>h.type==='packed'||h.type==='dispatched');
+  const picks=history.filter(h=>h.type==='pick');
+  const genTime=new Date().toLocaleString('en-IN');
+
+  let csv=`CaratLane WMS — Monthly Master Report\n`;
+  csv+=`EPS Worldwide Integrated Logistics Mumbai\n`;
+  csv+=`Report Month:,${monthLabel}\n`;
+  csv+=`Generated:,${genTime}\n\n`;
+
+  const totalUnitsIn=grns.reduce((a,g)=>{const items=g.items||[];return a+items.filter(i=>i.qc==='PASS').reduce((b,i)=>b+(i.qty||0),0);},0);
+  const dispatchedCount=mOrders.filter(o=>packDispatch.some(h=>h.orderId===o.id&&h.type==='dispatched')).length;
+  csv+=`=== SUMMARY ===\n`;
+  csv+=`Total Orders Created This Month:,${mOrders.length}\n`;
+  csv+=`Of Which Dispatched:,${dispatchedCount}\n`;
+  csv+=`Total GRNs Received This Month:,${grns.length}\n`;
+  csv+=`Total Inbound Units Received (PASS):,${totalUnitsIn}\n\n`;
+
+  csv+=`=== ORDERS MASTER ===\n`;
+  csv+=`Order ID,Customer Name,Address,Pincode,Phone,Priority,Items,Order Created At,Assigned At,Assigned Picker,Picked At,Picker,Pack Started,Pack Completed,Packer,Pack Duration,Dispatched At,AWB No,Courier Partner,Shipping Method,Status\n`;
+  mOrders.forEach(o=>{
+    const pick=picks.find(p=>p.orderId===o.id);
+    const pd=packDispatch.find(h=>h.orderId===o.id);
+    const isDispatched=pd&&pd.type==='dispatched';
+    const itemsStr=(o.items||[]).map(it=>`${it.sku} x${it.qty}`).join(' | ');
+    const createdAtStr=o.createdAt?new Date(o.createdAt).toLocaleString('en-IN'):'';
+    const assignedAtStr=o.assignedAt?new Date(o.assignedAt).toLocaleString('en-IN'):'';
+    csv+=`"${o.id}","${esc(o.customerName||'')}","${esc(o.address||'')}","${o.pincode||''}","${o.phone||''}","${o.priority||''}","${esc(itemsStr)}","${createdAtStr}","${assignedAtStr}","${esc(o.assignedPicker||'')}","${pick?pick.ts:''}","${pick?esc(pick.picker||''):''}","${pd?pd.packStartTs||'':''}","${pd?(pd.packEndTs||pd.ts||''):''}","${pd?esc(pd.packer||''):''}","${pd?pd.packDuration||'':''}","${isDispatched?pd.dispatchedAt||'':''}","${isDispatched?pd.awb||'':''}","${isDispatched?esc(pd.courierPartner||''):''}","${isDispatched?esc(pd.shippingMethod||''):''}","${esc(o.status||'')}"\n`;
+  });
+  csv+=`TOTAL ORDERS:,${mOrders.length}\n\n`;
+
+  csv+=`=== INBOUND / GRN MASTER (per SKU line) ===\n`;
+  csv+=`GRN ID,Date/Time Received,ASN,Carrier,Vehicle,SKU,Item Name,Variant,Qty Received,QC Result,Bin Location\n`;
+  let inboundLines=0;
+  grns.forEach(g=>{
+    (g.items||[]).forEach(i=>{
+      csv+=`"${g.id}","${g.ts}","${esc(g.asn||'N/A')}","${esc(g.carrier||'N/A')}","${esc(g.vehicle||'N/A')}","${i.sku}","${esc(i.name||'')}","${esc(i.variant||'')}",${i.qty||0},"${i.qc||''}","${esc(i.bin||'')}"\n`;
+      inboundLines++;
+    });
+  });
+  csv+=`TOTAL GRNs:,${grns.length}\n`;
+  csv+=`TOTAL SKU LINES RECEIVED:,${inboundLines}\n`;
+  csv+=`TOTAL UNITS RECEIVED (PASS):,${totalUnitsIn}\n\n`;
+
+  csv+=`=== MONTHLY INVENTORY SNAPSHOT (live — captured at report generation time, ${genTime}) ===\n`;
+  csv+=`SKU,Item Name,Variant,Rack,Shelf,Qty,Status\n`;
+  SKUS.forEach(s=>{
+    const q=(inv[s.sku]||{qty:0}).qty;
+    const st=q<=0?'Out of Stock':q<=3?'Low Stock':'In Stock';
+    csv+=`"${s.sku}","${esc(s.sub)}","${esc(s.variant)}",${s.rack},${s.shelf},${q},"${st}"\n`;
+  });
+  const totalUnitsNow=SKUS.reduce((a,s)=>a+((inv[s.sku]||{qty:0}).qty),0);
+  csv+=`TOTAL UNITS IN STOCK (as of generation):,${totalUnitsNow}\n`;
+
+  downloadCSV(`CaratLane_Monthly_Master_Report_${monthStr}.csv`,csv);
+  toast('Monthly master report downloaded','s');
 }
 function printWeeklyReport(){
   const sel=document.getElementById('rpt-week-select');
@@ -4486,7 +4609,7 @@ function printWeeklyReport(){
   ${grns.length?`<table><thead><tr><th>GRN ID</th><th>Date/Time</th><th>Details</th><th>Units In (Pass)</th><th>Units Hold</th></tr></thead><tbody>${grns.map(g=>{const items=g.items||[];const pass=items.filter(i=>i.qc==='PASS').reduce((a,i)=>a+(i.qty||0),0);const hold=items.filter(i=>i.qc==='HOLD').reduce((a,i)=>a+(i.qty||0),0);return `<tr><td>${g.id}</td><td>${g.ts}</td><td>${g.detail||''}</td><td style="text-align:center;color:#2e7d32;font-weight:bold">${pass}</td><td style="text-align:center;color:#e65100">${hold||0}</td></tr>`;}).join('')}<tr style="background:#f0f0f0;font-weight:bold"><td colspan="3">TOTAL</td><td style="text-align:center">${totalUnitsIn}</td><td style="text-align:center">${grns.reduce((a,g)=>{const items=g.items||[];return a+items.filter(i=>i.qc==='HOLD').reduce((b,i)=>b+(i.qty||0),0);},0)}</td></tr></tbody></table>`:'<p style="color:#999;padding:8px">No inbound activity this week.</p>'}
 
   <h3>2. Outbound / Dispatch Report</h3>
-  ${disps.length?`<table><thead><tr><th>Dispatch ID</th><th>Order ID</th><th>AWB</th><th>Recipient</th><th>Courier</th><th>Box (cm)</th><th>Actual (kg)</th><th>Vol. (kg)</th><th>Chargeable (kg)</th><th>Pack Duration</th><th>Dispatched At</th></tr></thead><tbody>${disps.map(d=>{const dims=d.boxL?`${d.boxL}×${d.boxW}×${d.boxH}`:'—';return `<tr><td>${d.id}</td><td>${esc(d.orderId||'—')}</td><td>${esc(d.awb||'—')}</td><td>${esc(d.recipientName||'—')}, ${esc(d.pincode||'')}</td><td>${d.shippingMethod||'—'}</td><td>${dims}</td><td style="text-align:center">${d.actualWeight||'—'}</td><td style="text-align:center">${d.volWeight||'—'}</td><td style="text-align:center;font-weight:bold;color:#B8860B">${d.chargeableWeight||'—'}</td><td style="text-align:center">${d.packDuration||'—'}</td><td>${d.dispatchedAt||d.ts}</td></tr>`;}).join('')}<tr style="background:#f0f0f0;font-weight:bold"><td colspan="2">TOTAL DISPATCHED: ${disps.length}</td><td colspan="9"></td></tr></tbody></table>`:'<p style="color:#999;padding:8px">No dispatch activity this week.</p>'}
+  ${disps.length?`<table><thead><tr><th>Dispatch ID</th><th>Order ID</th><th>AWB</th><th>Recipient</th><th>Courier</th><th>Box (cm)</th><th>Actual (kg)</th><th>Vol. (kg)</th><th>Chargeable (kg)</th><th>Pack Duration</th><th>Dispatched At</th></tr></thead><tbody>${disps.map(d=>{const dims=d.boxL?`${d.boxL}×${d.boxW}×${d.boxH}`:'—';return `<tr><td>${d.id}</td><td>${esc(d.orderId||'—')}</td><td>${esc(d.awb||'—')}</td><td>${esc(d.recipientName||'—')}, ${esc(d.pincode||'')}</td><td>${esc(d.courierPartner||'—')}</td><td>${dims}</td><td style="text-align:center">${d.actualWeight||'—'}</td><td style="text-align:center">${d.volWeight||'—'}</td><td style="text-align:center;font-weight:bold;color:#B8860B">${d.chargeableWeight||'—'}</td><td style="text-align:center">${d.packDuration||'—'}</td><td>${d.dispatchedAt||d.ts}</td></tr>`;}).join('')}<tr style="background:#f0f0f0;font-weight:bold"><td colspan="2">TOTAL DISPATCHED: ${disps.length}</td><td colspan="9"></td></tr></tbody></table>`:'<p style="color:#999;padding:8px">No dispatch activity this week.</p>'}
 
   <h3>3. Returns Report</h3>
   ${rets.length?`<table><thead><tr><th>Return ID</th><th>Date/Time</th><th>Details</th></tr></thead><tbody>${rets.map(r=>`<tr><td>${r.id}</td><td>${r.ts}</td><td>${esc(r.detail||'—')}</td></tr>`).join('')}</tbody></table>`:'<p style="color:#999;padding:8px">No returns this week.</p>'}
@@ -4610,6 +4733,7 @@ function runFullSystemTest(){
     packedOrder.pincode='400001';
     packedOrder.phone='+91-9876543210';
     packedOrder.shippingMethod='Standard Road';
+    packedOrder.courierPartner='Bluedart';
     history.push({id:newId('DSP'),type:'dispatch',ts:ts(),detail:`AWB: TEST-AWB-123456789 · To: Test Customer, 400001 · Standard Road · +91-9876543210 · 1 SKUs`});
     saveHist();
     console.log('├─ Dispatch created with AWB: TEST-AWB-123456789');
