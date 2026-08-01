@@ -3876,6 +3876,7 @@ async function renderInvVersionHistory(){
   </tbody></table></div>`;
 }
 let reservedMap={};
+let _binEditingSku=null;
 async function loadReservedMap(){
   try{
     const {data,error}=await supa.rpc('get_active_reservations');
@@ -3888,6 +3889,7 @@ function renderInv(){
   const q=(document.getElementById('inv-q').value||'').toLowerCase();
   const cat=document.getElementById('inv-cat').value;
   const st=document.getElementById('inv-st').value;
+  const canEditBin=getPerms().canEdit;
   const rows=SKUS.filter(s=>{
     if(cat&&s.cat!==cat)return false;
     const qty=(inv[s.sku]||{qty:0}).qty;
@@ -3898,7 +3900,10 @@ function renderInv(){
   document.getElementById('inv-tbody').innerHTML=rows.map(s=>{
     const i2=inv[s.sku]||{qty:0,rack:s.rack,shelf:s.shelf};
     const held=reservedMap[s.sku]||0;
-    return`<tr><td class="mono">${s.sku}</td><td><span class="pill p-info">${s.cat}</span></td><td style="font-weight:600;font-size:12px">${s.sub}</td><td style="color:var(--t2);font-size:11px">${s.variant}</td><td style="font-size:11px;font-weight:500">${i2.rack}-${i2.shelf}</td>
+    const binCell=_binEditingSku===s.sku
+      ?`<div style="display:flex;gap:4px;align-items:center"><select id="bin-edit-rack-${s.sku}" style="font-size:11px;padding:2px 4px;width:54px">${RACK_LETTERS.map(r=>`<option value="${r}" ${r===i2.rack?'selected':''}>${r}</option>`).join('')}</select><select id="bin-edit-shelf-${s.sku}" style="font-size:11px;padding:2px 4px;width:48px">${Array.from({length:SHELVES_PER_RACK},(_,i)=>i+1).map(n=>`<option value="${n}" ${String(n)===String(i2.shelf)?'selected':''}>${n}</option>`).join('')}</select><button class="btn-sm" style="padding:2px 6px" onclick="saveEditBin('${s.sku}')" title="Save"><i class="ti ti-check"></i></button><button class="btn-sm btn-danger" style="padding:2px 6px" onclick="cancelEditBin()" title="Cancel"><i class="ti ti-x"></i></button></div>`
+      :`<span style="font-size:11px;font-weight:500">${i2.rack}-${i2.shelf}</span>${canEditBin?` <button class="btn-sm" style="padding:1px 5px;margin-left:4px" onclick="startEditBin('${s.sku}')" title="Edit bin location"><i class="ti ti-edit" style="font-size:11px"></i></button>`:''}`;
+    return`<tr><td class="mono">${s.sku}</td><td><span class="pill p-info">${s.cat}</span></td><td style="font-weight:600;font-size:12px">${s.sub}</td><td style="color:var(--t2);font-size:11px">${s.variant}</td><td>${binCell}</td>
     <td><div class="qc"><button class="qb" onclick="adjQ('${s.sku}',-1)">−</button><span class="qv">${i2.qty}</span><button class="qb" onclick="adjQ('${s.sku}',1)">+</button></div>${held>0?`<div style="font-size:9.5px;color:var(--wt);margin-top:2px;font-weight:600">${held} held by pickers</div>`:''}</td>
     <td>${stPill(i2.qty)}</td>
     <td><button class="btn-sm" onclick="quickDisp('${s.sku}','${s.sub.replace(/'/g,"\\'").replace(/"/g,'&quot;')}','${s.variant.replace(/'/g,"\\'")}',${i2.qty})" ${i2.qty<=0?'disabled':''}><i class="ti ti-send"></i></button></td></tr>`;
@@ -3909,6 +3914,36 @@ function adjQ(sku,d){
   if(!inv[sku])inv[sku]={qty:0,rack:SKUS.find(s=>s.sku===sku).rack,shelf:SKUS.find(s=>s.sku===sku).shelf};
   inv[sku].qty=Math.max(0,inv[sku].qty+d);
   saveInv();renderInv();
+}
+function startEditBin(sku){
+  if(!getPerms().canEdit){ toast('You do not have permission to edit bin locations','w'); return; }
+  _binEditingSku=sku;
+  renderInv();
+}
+function cancelEditBin(){
+  _binEditingSku=null;
+  renderInv();
+}
+async function saveEditBin(sku){
+  const rackSel=document.getElementById('bin-edit-rack-'+sku);
+  const shelfSel=document.getElementById('bin-edit-shelf-'+sku);
+  if(!rackSel||!shelfSel) return;
+  const newRack=rackSel.value;
+  const newShelf=shelfSel.value;
+  const s=SKUS.find(x=>x.sku===sku);
+  if(!inv[sku]) inv[sku]={qty:0,rack:s.rack,shelf:s.shelf};
+  const oldRack=inv[sku].rack, oldShelf=inv[sku].shelf;
+  if(String(newRack)===String(oldRack)&&String(newShelf)===String(oldShelf)){
+    _binEditingSku=null;renderInv();return;
+  }
+  inv[sku].rack=newRack;
+  inv[sku].shelf=newShelf;
+  await saveInv();
+  logAudit('BIN_UPDATE','inventory',sku,{rack:oldRack,shelf:oldShelf},{rack:newRack,shelf:newShelf});
+  _binEditingSku=null;
+  renderInv();
+  renderRack();
+  toast(`${sku} moved to bin ${newRack}-${newShelf}`,'s');
 }
 function quickDisp(sku,name,variant,avail){addToCart(sku,name,variant,avail);nav('dispatch');}
 function exportCSV(){
@@ -5979,7 +6014,7 @@ function processBarcodeInput(barcode){
   if(_barcodeTarget==='inbound'){
     // Auto-fill SKU in inbound form
     const skuSel=document.getElementById('ib-sku');
-    if(skuSel){ skuSel.value=sku.sku; updateIbBin(); }
+    if(skuSel){ skuSel.value=sku.sku; }
     document.getElementById('ib-qty')?.focus();
     toast('Scanned: '+sku.sub+' — '+sku.variant,'s');
   } else if(_barcodeTarget==='picking'){

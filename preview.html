@@ -7888,30 +7888,198 @@ async function bootWMS(){
   updateOfflineQueueBadge();
   flushOfflineQueue();
 }
+async function previewBoot(){
+  window.saveInv=async function(){};
+  window.saveHist=async function(){};
+  window.logAudit=async function(){};
+  window.reserveStock=async function(sku,qty){
+    const avail=(inv[sku]||{qty:0}).qty;
+    if(avail<qty) return {success:false,reason:'insufficient_stock',available:avail};
+    return {success:true,available:avail-qty};
+  };
+  window.releaseStock=async function(){ return {success:true,released:0}; };
+  window.commitPickSession=async function(){ return {success:true}; };
+  window.releasePickSession=async function(){ return {success:true}; };
+  window.loadReservedMap=async function(){ reservedMap={}; };
+  window.upsertPackingQueueItem=async function(){};
+  window.deletePackingQueueItem=async function(){};
+  window.claimPackingTask=async function(taskId,picker){
+    const t=packingQueue.find(x=>x.id===taskId);
+    if(t && t.claimedBy && t.claimedBy!==picker) return {success:false,reason:'already_claimed',claimed_by:t.claimedBy};
+    return {success:true,claimed_by:picker,pack_start_time:Date.now(),pack_start_ts:ts()};
+  };
+  window.releasePackingClaim=async function(){ return {success:true}; };
+  window.loadOrders=async function(){};
+  window.saveOrderRow=async function(){ return true; };
+  window.loadPickerNames=async function(){ pickerNames=['Anita','Ramesh','Priya Nair']; };
+  window.loadExpectedShipments=async function(){};
+  window.saveExpectedShipmentRow=async function(){ return true; };
+  window.upsertHistoryRowRaw=async function(){ return true; };
+  window.persistShortCode=async function(){ return true; };
+  window.logOrderEvent=async function(){ return true; };
+  // Canned granular timeline for ORD-88213 so the Order Status page's
+  // scan-by-scan view has something real to show in preview mode.
+  window.loadOrderEvents=async function(orderId){
+    if(orderId!=='ORD-88213') return [];
+    return [
+      {event_type:'tote_scanned',actor:'Ramesh',detail:{toteId:'TOTE-03'},created_at:'2026-07-12T09:52:10.000Z'},
+      {event_type:'shelf_scanned',actor:'Ramesh',detail:{rack:'A',shelf:'2'},created_at:'2026-07-12T09:53:02.000Z'},
+      {event_type:'item_scanned',actor:'Ramesh',detail:{sku:SKUS[0].sku,qty:1,manual:false},created_at:'2026-07-12T09:53:14.000Z'},
+      {event_type:'shelf_scanned',actor:'Ramesh',detail:{rack:'A',shelf:'3'},created_at:'2026-07-12T09:55:40.000Z'},
+      {event_type:'item_scanned',actor:'Ramesh',detail:{sku:SKUS[1].sku,qty:1,manual:false},created_at:'2026-07-12T09:55:51.000Z'},
+      {event_type:'item_scanned',actor:'Ramesh',detail:{sku:SKUS[2].sku,qty:1,manual:true},created_at:'2026-07-12T09:58:30.000Z'},
+      {event_type:'pack_started',actor:'Priya Nair',detail:{taskId:'PCK-000456'},created_at:'2026-07-12T11:05:00.000Z'},
+      {event_type:'pack_item_verified',actor:'Priya Nair',detail:{sku:SKUS[0].sku},created_at:'2026-07-12T11:06:12.000Z'},
+      {event_type:'pack_item_verified',actor:'Priya Nair',detail:{sku:SKUS[1].sku},created_at:'2026-07-12T11:06:40.000Z'},
+      {event_type:'pack_item_verified',actor:'Priya Nair',detail:{sku:SKUS[2].sku},created_at:'2026-07-12T11:07:05.000Z'}
+    ];
+  };
 
-// Check for existing session on load
-async function initAuth(){
-  const {data:{session}} = await supa.auth.getSession();
-  if(session){
-    currentUser=session.user;
-    await loadUserProfile();
-    await onAuthSuccess();
-  } else {
-    document.getElementById('auth-screen').style.display='flex';
-    // Hide main app until logged in
-  }
-  // Listen for auth changes
-  supa.auth.onAuthStateChange(async(event,session)=>{
-    if(event==='SIGNED_IN'&&session&&!currentUser){
-      currentUser=session.user;
-      await loadUserProfile();
-      await onAuthSuccess();
-    } else if(event==='SIGNED_OUT'){
-      currentUser=null; currentProfile=null;
-    }
+  currentUser={id:'preview-user',email:'admin@epsworldwide.com'};
+  currentProfile={role:'admin',full_name:'Preview Admin',email:'admin@epsworldwide.com'};
+  document.getElementById('auth-screen').style.display='none';
+  const userMenu=document.getElementById('user-menu');
+  if(userMenu) userMenu.style.display='flex';
+  document.getElementById('user-menu-name').textContent='Preview';
+  document.getElementById('user-email-display').textContent=currentProfile.email;
+  const badge=document.getElementById('user-role-badge');
+  badge.textContent='ADMIN';
+  badge.style.background='var(--gold)';
+  document.getElementById('tab-audit').style.display='';
+  document.getElementById('tab-users').style.display='';
+  const mui=document.getElementById('manage-users-item');
+  if(mui) mui.style.display='flex';
+  applyRoleRestrictions();
+  await bootWMS();
+  let i=0;
+  SKUS.forEach(s=>{
+    i++;
+    const p=i%7;
+    const qty=p===0?0:p===1?2:p<4?Math.floor(Math.random()*15)+5:Math.floor(Math.random()*40)+15;
+    inv[s.sku]={qty,rack:s.rack,shelf:s.shelf};
   });
+  const S=SKUS; // shorthand for building sample line items below
+  history=[
+    // Inbound / GRN
+    {id:'GRN-000123',type:'grn',ts:'12 Jul, 09:14',asn:'ASN-4471',carrier:'Blue Dart',vehicle:'MH-04-AB-1234',cartons:12,
+     detail:'ASN: ASN-4471 · 6 SKUs · PASS:180 HOLD:0 REJ:0',
+     items:[
+       {sku:S[0].sku,name:S[0].sub,variant:S[0].variant,qty:60,qc:'PASS',bin:S[0].rack+'-'+S[0].shelf},
+       {sku:S[1].sku,name:S[1].sub,variant:S[1].variant,qty:60,qc:'PASS',bin:S[1].rack+'-'+S[1].shelf},
+       {sku:S[2].sku,name:S[2].sub,variant:S[2].variant,qty:60,qc:'PASS',bin:S[2].rack+'-'+S[2].shelf}
+     ]},
+    {id:'GRN-000124',type:'grn',ts:'13 Jul, 10:30',asn:'ASN-4472',carrier:'Delhivery',vehicle:'MH-12-CD-5566',cartons:5,
+     detail:'ASN: ASN-4472 · 3 SKUs · PASS:38 HOLD:4 REJ:0',
+     items:[
+       {sku:S[3].sku,name:S[3].sub,variant:S[3].variant,qty:20,qc:'PASS',bin:S[3].rack+'-'+S[3].shelf},
+       {sku:S[4].sku,name:S[4].sub,variant:S[4].variant,qty:18,qc:'PASS',bin:S[4].rack+'-'+S[4].shelf},
+       {sku:S[5].sku,name:S[5].sub,variant:S[5].variant,qty:4,qc:'HOLD',issue:'Damaged packaging',bin:S[5].rack+'-'+S[5].shelf}
+     ]},
+    // Picking
+    {id:'PCK-000456',type:'pick',ts:'12 Jul, 10:02',detail:'ORD-88213 · Single pick · Express · 3 SKUs · Picker: Ramesh · Tote TOTE-03',orderId:'ORD-88213',picker:'Ramesh',
+     items:[
+       {sku:S[0].sku,name:S[0].sub,variant:S[0].variant,qty:1,bin:S[0].rack+'-'+S[0].shelf},
+       {sku:S[1].sku,name:S[1].sub,variant:S[1].variant,qty:1,bin:S[1].rack+'-'+S[1].shelf},
+       {sku:S[2].sku,name:S[2].sub,variant:S[2].variant,qty:1,bin:S[2].rack+'-'+S[2].shelf}
+     ]},
+    {id:'PCK-000457',type:'pick',ts:'12 Jul, 12:18',detail:'ORD-88221 · Single pick · Standard · 2 SKUs · Picker: Anita · Tote TOTE-05',orderId:'ORD-88221',picker:'Anita',
+     items:[
+       {sku:S[3].sku,name:S[3].sub,variant:S[3].variant,qty:2,bin:S[3].rack+'-'+S[3].shelf},
+       {sku:S[4].sku,name:S[4].sub,variant:S[4].variant,qty:1,bin:S[4].rack+'-'+S[4].shelf}
+     ]},
+    // Packing (completed)
+    {id:'PKD-000901',type:'packed',ts:'12 Jul, 11:07',orderId:'ORD-88213',
+     detail:'ORD-88213 · 3 SKUs packed — ready for dispatch',
+     items:[
+       {sku:S[0].sku,name:S[0].sub,variant:S[0].variant,qty:1,bin:S[0].rack+'-'+S[0].shelf},
+       {sku:S[1].sku,name:S[1].sub,variant:S[1].variant,qty:1,bin:S[1].rack+'-'+S[1].shelf},
+       {sku:S[2].sku,name:S[2].sub,variant:S[2].variant,qty:1,bin:S[2].rack+'-'+S[2].shelf}
+     ],
+     packer:'Priya Nair',packStartTs:'12 Jul, 11:05',packStartTime:Date.now()-864000000,
+     packEndTs:'12 Jul, 11:09',packEndTime:Date.now()-863880000,packDuration:'4m 12s',packDurationSecs:252,
+     boxL:35,boxW:25,boxH:12,actualWeight:1.4,volWeight:2.1,chargeableWeight:2.1,packNotes:'Fragile — bubble wrapped'},
+    {id:'PKD-000902',type:'packed',ts:'12 Jul, 13:40',orderId:'ORD-88221',
+     detail:'ORD-88221 · 2 SKUs packed — ready for dispatch (mobile, scan-verified)',
+     items:[
+       {sku:S[3].sku,name:S[3].sub,variant:S[3].variant,qty:2,bin:S[3].rack+'-'+S[3].shelf},
+       {sku:S[4].sku,name:S[4].sub,variant:S[4].variant,qty:1,bin:S[4].rack+'-'+S[4].shelf}
+     ],
+     packer:'Anita',packStartTs:'12 Jul, 13:36',packStartTime:Date.now()-860000000,
+     packEndTs:'12 Jul, 13:41',packEndTime:Date.now()-859700000,packDuration:'5m 30s',packDurationSecs:330,
+     boxL:30,boxW:20,boxH:10,actualWeight:0.8,volWeight:1.2,chargeableWeight:1.2,packNotes:''},
+    // Dispatched
+    {id:'DSP-000789',type:'dispatched',ts:'12 Jul, 14:10',orderId:'ORD-88213',awb:'DL4471209',
+     recipientName:'Priya Nair',pincode:'400001',shippingMethod:'Express',courierPartner:'Delhivery',
+     boxL:35,boxW:25,boxH:12,actualWeight:1.4,volWeight:2.1,chargeableWeight:2.1,
+     packStartTs:'12 Jul, 11:05',packEndTs:'12 Jul, 11:09',packDuration:'4m 12s',
+     dispatchedAt:'12 Jul, 14:10',
+     detail:'AWB: DL4471209 · To: Priya Nair, 400001 · Shipping: Express · 3 SKUs',
+     items:[
+       {sku:S[0].sku,name:S[0].sub,variant:S[0].variant,qty:1,bin:S[0].rack+'-'+S[0].shelf},
+       {sku:S[1].sku,name:S[1].sub,variant:S[1].variant,qty:1,bin:S[1].rack+'-'+S[1].shelf},
+       {sku:S[2].sku,name:S[2].sub,variant:S[2].variant,qty:1,bin:S[2].rack+'-'+S[2].shelf}
+     ]},
+    {id:'DSP-000790',type:'dispatched',ts:'13 Jul, 09:20',orderId:'ORD-88221',awb:'BL5502113',
+     recipientName:'Kabir Anand',pincode:'110024',shippingMethod:'Standard',courierPartner:'Bluedart',
+     boxL:30,boxW:20,boxH:10,actualWeight:0.8,volWeight:1.2,chargeableWeight:1.2,
+     packStartTs:'12 Jul, 13:36',packEndTs:'12 Jul, 13:41',packDuration:'5m 30s',
+     dispatchedAt:'13 Jul, 09:20',
+     detail:'AWB: BL5502113 · To: Kabir Anand, 110024 · Shipping: Standard · 2 SKUs',
+     items:[
+       {sku:S[3].sku,name:S[3].sub,variant:S[3].variant,qty:2,bin:S[3].rack+'-'+S[3].shelf},
+       {sku:S[4].sku,name:S[4].sub,variant:S[4].variant,qty:1,bin:S[4].rack+'-'+S[4].shelf}
+     ]},
+    // Returns
+    {id:'RET-000234',type:'return',ts:'11 Jul, 16:20',detail:'AWB: BL1120044 · Customer Return · Grade A:2 B:1 C:0 · 2 units restocked'},
+    // Exception
+    {id:'EXC-000112',type:'exception',ts:'13 Jul, 08:44',category:'Stock mismatch',
+     detail:'Rack C Shelf 4 — system showed 6 units, physical count found 4. Flagged for cycle count.'}
+  ];
+  packingQueue=[
+    {id:'PCK-000501',orderId:'ORD-88240',priority:'Express',method:'Single',picker:'Anita',toteId:'TOTE-07',items:[
+      {sku:SKUS[0].sku,name:SKUS[0].sub,variant:SKUS[0].variant,qty:2,bin:SKUS[0].rack+'-'+SKUS[0].shelf},
+      {sku:SKUS[1].sku,name:SKUS[1].sub,variant:SKUS[1].variant,qty:1,bin:SKUS[1].rack+'-'+SKUS[1].shelf}
+    ],ts:'12 Jul, 13:10',status:'awaiting_packing'},
+    {id:'PCK-000502',orderId:'ORD-88241',priority:'Standard',method:'Single',picker:'Ramesh',toteId:'TOTE-02',items:[
+      {sku:SKUS[2].sku,name:SKUS[2].sub,variant:SKUS[2].variant,qty:3,bin:SKUS[2].rack+'-'+SKUS[2].shelf}
+    ],ts:'12 Jul, 13:25',status:'awaiting_packing'}
+  ];
+  orders=[
+    {id:'ORD-88213',customerName:'Priya Nair',address:'8 Marine Drive',pincode:'400001',phone:'9820011223',
+     priority:'Express',method:'Single',
+     items:[{sku:SKUS[0].sku,name:SKUS[0].sub,variant:SKUS[0].variant,qty:1,bin:SKUS[0].rack+'-'+SKUS[0].shelf},
+            {sku:SKUS[1].sku,name:SKUS[1].sub,variant:SKUS[1].variant,qty:1,bin:SKUS[1].rack+'-'+SKUS[1].shelf},
+            {sku:SKUS[2].sku,name:SKUS[2].sub,variant:SKUS[2].variant,qty:1,bin:SKUS[2].rack+'-'+SKUS[2].shelf}],
+     assignedPicker:'Ramesh',status:'picked',pickedTaskId:'PCK-000456',createdBy:'Preview Admin',
+     createdAt:'2026-07-12T09:30:00.000Z',assignedAt:'2026-07-12T09:45:00.000Z'},
+    {id:'ORD-88242',customerName:'Rahul Mehta',address:'12 MG Road',pincode:'560001',phone:'9876543210',
+     priority:'Express',method:'Single',
+     items:[{sku:SKUS[3].sku,name:SKUS[3].sub,variant:SKUS[3].variant,qty:2,bin:SKUS[3].rack+'-'+SKUS[3].shelf}],
+     assignedPicker:'Anita',status:'assigned',createdBy:'Preview Admin',createdAt:new Date().toISOString(),assignedAt:new Date().toISOString()},
+    {id:'ORD-88243',customerName:'Sana Iyer',address:'44 Anna Salai',pincode:'600002',phone:'9123456780',
+     priority:'Standard',method:'Single',
+     items:[{sku:SKUS[4].sku,name:SKUS[4].sub,variant:SKUS[4].variant,qty:1,bin:SKUS[4].rack+'-'+SKUS[4].shelf}],
+     assignedPicker:null,status:'unassigned',createdBy:'Preview Admin',createdAt:new Date().toISOString()},
+    {id:'ORD-88190',customerName:'Vikram Shah',address:'9 Residency Road',pincode:'560025',phone:'9812345670',
+     priority:'Standard',method:'Single',
+     items:[{sku:SKUS[6].sku,name:SKUS[6].sub,variant:SKUS[6].variant,qty:1,bin:SKUS[6].rack+'-'+SKUS[6].shelf}],
+     assignedPicker:null,status:'cancelled',createdBy:'Preview Admin',createdAt:new Date().toISOString()}
+  ];
+  expectedShipments=[
+    {id:'ASN-2026-0099',vendor:'CaratLane Central',carrier:'Blue Dart',expectedDate:'2026-07-16',
+     items:[{sku:SKUS[5].sku,name:SKUS[5].sub,variant:SKUS[5].variant,qty:20},{sku:SKUS[6].sku,name:SKUS[6].sub,variant:SKUS[6].variant,qty:10}],
+     status:'expected',createdBy:'Preview Admin',createdAt:new Date().toISOString()},
+    {id:'ASN-2026-0091',vendor:'CaratLane Central',carrier:'Delhivery',expectedDate:'2026-07-13',
+     items:[{sku:SKUS[3].sku,name:SKUS[3].sub,variant:SKUS[3].variant,qty:20},{sku:SKUS[4].sku,name:SKUS[4].sub,variant:SKUS[4].variant,qty:18},{sku:SKUS[5].sku,name:SKUS[5].sub,variant:SKUS[5].variant,qty:4}],
+     status:'received',createdBy:'Preview Admin',createdAt:new Date().toISOString(),
+     receivedAt:'2026-07-13T10:30:00.000Z',receivedSummary:{grnId:'GRN-000124'}}
+  ];
+  pickerNames=['Anita','Ramesh','Priya Nair'];
+  renderDash();renderInv();renderRack();renderReports();
+  nav('dashboard');
+  toast('Preview mode — sample data, fully offline, never touches your real Supabase project','w');
 }
-initAuth();
+previewBoot();
 </script>
 </body>
 </html>
