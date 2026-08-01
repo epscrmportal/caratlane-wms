@@ -1779,7 +1779,8 @@ async function startPacking(i){
   toast(`Packing started for ${task.orderId} — timer running`,'s');
 }
 let pmChecklist=null;
-function openPackModal(i){
+let pmToteConfirmed=true;
+function openPackModal(i, toteAlreadyVerified){
   _activePackIdx=i;
   const t=packingQueue[i];
   document.getElementById('pm-order-id').textContent=t.orderId;
@@ -1787,9 +1788,22 @@ function openPackModal(i){
   document.getElementById('pm-items-list').innerHTML=t.items.map(it=>`<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:0.5px solid var(--b)"><span>${it.sku} — ${it.variant||''}</span><span style="font-weight:600">×${it.qty}</span></div>`).join('')||'<div style="color:var(--t3)">No items</div>';
   document.getElementById('pm-tote-line').innerHTML=t.toteId?`<i class="ti ti-package"></i> Tote ${esc(t.toteId)}`:`<span style="color:var(--t3);font-weight:400">No tote recorded for this pick</span>`;
   pmChecklist=t.items.map(it=>({sku:it.sku,name:it.name,variant:it.variant,expectedQty:it.qty,scannedQty:0}));
-  document.getElementById('pm-checklist-wrap').style.display='block';
-  document.getElementById('pm-details-wrap').style.display='none';
-  renderPmChecklist();
+  // Gate: if this task has a tote on record and it hasn't already been
+  // verified (e.g. by scanning it to open this very task), the packer
+  // must scan the tote and have it confirmed against this order BEFORE
+  // any product scan is allowed to count.
+  pmToteConfirmed=!t.toteId||!!toteAlreadyVerified;
+  if(t.toteId && !pmToteConfirmed){
+    document.getElementById('pm-tote-gate-expected').textContent=t.toteId;
+    document.getElementById('pm-tote-gate-wrap').style.display='block';
+    document.getElementById('pm-checklist-wrap').style.display='none';
+    document.getElementById('pm-details-wrap').style.display='none';
+  } else {
+    document.getElementById('pm-tote-gate-wrap').style.display='none';
+    document.getElementById('pm-checklist-wrap').style.display='block';
+    document.getElementById('pm-details-wrap').style.display='none';
+    renderPmChecklist();
+  }
   // Clear fields
   ['pm-length','pm-width','pm-height','pm-actual-weight','pm-notes'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('pm-vol-result').style.display='none';
@@ -1804,7 +1818,7 @@ function openPackModal(i){
   },1000);
   const overlay=document.getElementById('pack-modal-overlay');
   overlay.style.display='flex';
-  enableBarcodeScanner('desktop-pack');
+  enableBarcodeScanner(pmToteConfirmed?'desktop-pack':'desktop-pack-tote-gate');
 }
 function renderPmChecklist(){
   const el=document.getElementById('pm-checklist');
@@ -1852,11 +1866,21 @@ function backToPmChecklist(){
   renderPmChecklist();
   enableBarcodeScanner('desktop-pack');
 }
+// Called from openPackingTaskByTote when the tote lookup already proved
+// this bag matches this order — jump straight past the gate.
+function unlockPmChecklistAfterToteGate(){
+  pmToteConfirmed=true;
+  document.getElementById('pm-tote-gate-wrap').style.display='none';
+  document.getElementById('pm-checklist-wrap').style.display='block';
+  renderPmChecklist();
+  enableBarcodeScanner('desktop-pack');
+}
 function closePackModal(){
   document.getElementById('pack-modal-overlay').style.display='none';
   if(_packElapsedTimer)clearInterval(_packElapsedTimer);
   _activePackIdx=null;
   pmChecklist=null;
+  pmToteConfirmed=true;
   disableBarcodeScanner();
 }
 function calcVolWeight(){
@@ -2840,10 +2864,17 @@ function renderMobilePackQueue(){
     queueWrap.style.display='none';
     activeWrap.style.display='block';
     if(mobilePackActive.stage==='details'){
+      document.getElementById('mp-pack-tote-gate-wrap').style.display='none';
       document.getElementById('mp-pack-checklist-wrap').style.display='none';
       document.getElementById('mp-pack-details-wrap').style.display='block';
       disableBarcodeScanner();
+    } else if(mobilePackActive.stage==='tote-gate'){
+      document.getElementById('mp-pack-tote-gate-wrap').style.display='block';
+      document.getElementById('mp-pack-checklist-wrap').style.display='none';
+      document.getElementById('mp-pack-details-wrap').style.display='none';
+      enableBarcodeScanner('mobile-pack-tote-gate');
     } else {
+      document.getElementById('mp-pack-tote-gate-wrap').style.display='none';
       document.getElementById('mp-pack-checklist-wrap').style.display='block';
       document.getElementById('mp-pack-details-wrap').style.display='none';
       renderMobilePackChecklist();
@@ -2874,7 +2905,7 @@ function renderMobilePackQueue(){
   }).join(''):'<div class="empty">No tasks awaiting packing</div>';
 }
 
-async function startMobilePack(i){
+async function startMobilePack(i, toteAlreadyVerified){
   const task=packingQueue[i];
   if(!task) return;
   if(!task.packStartTime){
@@ -2901,14 +2932,17 @@ async function startMobilePack(i){
     renderMobilePackQueue();
     return;
   }
+  const needsToteGate=!!task.toteId && !toteAlreadyVerified;
   mobilePackActive={
     taskIdx:i,
     task,
-    stage:'checklist',
+    stage: needsToteGate ? 'tote-gate' : 'checklist',
     checklist:task.items.map(it=>({sku:it.sku,name:it.name,variant:it.variant,bin:it.bin,expectedQty:it.qty,scannedQty:0}))
   };
   document.getElementById('mp-pack-order-label').textContent='Order '+task.orderId;
   document.getElementById('mp-pack-summary').textContent=`${task.items.length} SKU(s) · ${task.priority} · ${task.method}${task.toteId?' · Tote '+task.toteId:''}`;
+  const gateExpectedEl=document.getElementById('mp-pack-tote-gate-expected');
+  if(gateExpectedEl) gateExpectedEl.textContent=task.toteId||'';
   renderMobilePackQueue();
 }
 
@@ -4900,6 +4934,46 @@ async function addSKU(skuObj){
     return true;
   } catch(e){ console.error('addSKU error:',e); toast('SKU saved locally only','w'); return true; }
 }
+// ═══ ADD PRODUCT (assign a brand-new SKU to a rack/shelf) ═══
+function toggleAddProductForm(){
+  const f=document.getElementById('add-product-form');
+  if(!f) return;
+  const show=f.style.display==='none';
+  f.style.display=show?'block':'none';
+  if(show) populateAddProductRackShelf();
+}
+function populateAddProductRackShelf(){
+  const rackSel=document.getElementById('ap-rack');
+  const shelfSel=document.getElementById('ap-shelf');
+  const racks=Array.from({length:15},(_,i)=>String.fromCharCode(65+i)); // A–O
+  if(rackSel && !rackSel.options.length){
+    rackSel.innerHTML=racks.map(r=>`<option value="${r}">Rack ${r}</option>`).join('');
+  }
+  if(shelfSel && !shelfSel.options.length){
+    shelfSel.innerHTML=Array.from({length:SHELVES_PER_RACK},(_,i)=>i+1).map(s=>`<option value="${s}">Shelf ${s}</option>`).join('');
+  }
+}
+async function submitAddProduct(){
+  const sku=document.getElementById('ap-sku').value.trim().toUpperCase();
+  const cat=document.getElementById('ap-cat').value;
+  const name=document.getElementById('ap-name').value.trim();
+  const variant=document.getElementById('ap-variant').value.trim();
+  const rack=document.getElementById('ap-rack').value;
+  const shelf=document.getElementById('ap-shelf').value;
+  if(!sku||!cat||!name||!variant||!rack||!shelf){ toast('Please fill all fields','w'); return; }
+  if(!/^[A-Za-z0-9\-]+$/.test(sku)){ toast('SKU code — letters, numbers and hyphens only','w'); return; }
+  if(!rateLimit('addProduct',2000)){ toast('Please wait before adding another product','w'); return; }
+  const ok=await addSKU({sku,cat,sub:name,variant,rack,shelf});
+  if(ok){
+    ['ap-sku','ap-name','ap-variant'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+    toggleAddProductForm();
+    renderInv();
+    populateSkuSel('ib-sku');
+    populateSkuSel('exp-sku');
+    renderRack();
+    logAudit('SKU_CREATE','skus',sku,null,{cat,sub:name,variant,rack,shelf});
+  }
+}
 // ═══════════════════════════════════════════
 // LABEL PRINTER SYSTEM
 // ═══════════════════════════════════════════
@@ -5406,6 +5480,8 @@ function applyRoleRestrictions(){
   if(perms.canManageOrders) loadPickerNames();
   const expPanel=document.getElementById('exp-shipment-panel');
   if(expPanel) expPanel.style.display=perms.canReceive?'block':'none';
+  const addProdPanel=document.getElementById('add-product-panel');
+  if(addProdPanel) addProdPanel.style.display=perms.canEdit?'block':'none';
   applyTabVisibility();
   // Hide action buttons for viewer
   if(role==='viewer'){
@@ -5658,12 +5734,22 @@ let _barcodeActive=false;
 let _barcodeTarget=null; // 'inbound' | 'picking' | 'dispatch'
 
 function initBarcodeScanner(){
+  // Diagnostic: logs every keystroke the scanner listener sees, even if
+  // the scan doesn't end up producing a barcode. If a physical scan
+  // produces NOTHING in this log, the keystrokes aren't reaching the
+  // browser tab at all (focus/hardware issue) rather than an app bug —
+  // open DevTools Console (F12) right before scanning to check.
   document.addEventListener('keydown', e=>{
-    if(!_barcodeActive) return;
+    if(!_barcodeActive){
+      return;
+    }
+    console.log('[scanner] key event:', JSON.stringify(e.key), '| target:', _barcodeTarget, '| buffer before:', JSON.stringify(_barcodeBuffer), '| active element:', document.activeElement ? document.activeElement.tagName+(document.activeElement.id?'#'+document.activeElement.id:'') : 'none');
     // USB/BT scanners send chars very fast then Enter
     if(e.key==='Enter'){
       if(_barcodeBuffer.length>2){
         processBarcodeInput(_barcodeBuffer.trim());
+      } else if(_barcodeBuffer.length>0){
+        console.log('[scanner] buffer too short to process ('+_barcodeBuffer.length+' chars):', JSON.stringify(_barcodeBuffer));
       }
       _barcodeBuffer='';
       clearTimeout(_barcodeTimer);
@@ -5675,7 +5761,11 @@ function initBarcodeScanner(){
     clearTimeout(_barcodeTimer);
     // Auto-flush after 100ms (scanner done)
     _barcodeTimer=setTimeout(()=>{
-      if(_barcodeBuffer.length>2) processBarcodeInput(_barcodeBuffer.trim());
+      if(_barcodeBuffer.length>2){
+        processBarcodeInput(_barcodeBuffer.trim());
+      } else if(_barcodeBuffer.length>0){
+        console.log('[scanner] idle-flush: buffer too short to process ('+_barcodeBuffer.length+' chars):', JSON.stringify(_barcodeBuffer));
+      }
       _barcodeBuffer='';
     },100);
   });
@@ -5689,7 +5779,9 @@ function enableBarcodeScanner(target){
   const msgs={
     'packing-lookup':'Barcode scanner active — scan a tote bag to open its packing task',
     'mobile-pack-lookup':'Barcode scanner active — scan a tote bag to open its packing task',
-    'desktop-pack':'Barcode scanner active — scan items to verify against the order'
+    'desktop-pack':'Barcode scanner active — scan items to verify against the order',
+    'desktop-pack-tote-gate':'Barcode scanner active — scan the tote bag to confirm it before scanning items',
+    'mobile-pack-tote-gate':'Barcode scanner active — scan the tote bag to confirm it before scanning items'
   };
   toast(msgs[target]||'Barcode scanner active — scan a SKU barcode','s');
 }
@@ -5776,7 +5868,7 @@ async function openPackingTaskByTote(tote){
   if(t.claimedBy && t.claimedBy!==me){ toast(`Tote ${tote} — order ${t.orderId} is already being packed by ${t.claimedBy}`,'w'); return; }
   if(!t.packStartTime){ await startPacking(idx); }
   disableBarcodeScanner();
-  openPackModal(idx);
+  openPackModal(idx, true); // tote already verified by the scan that opened this task
 }
 async function openMobilePackingTaskByTote(tote){
   const idx=packingQueue.findIndex(t=>t.toteId===tote);
@@ -5785,7 +5877,7 @@ async function openMobilePackingTaskByTote(tote){
   const me=currentProfile?.full_name||'';
   if(t.claimedBy && t.claimedBy!==me){ toast(`Tote ${tote} — order ${t.orderId} is already being packed by ${t.claimedBy}`,'w'); mobileScanFeedback(false); return; }
   mobileScanFeedback(true);
-  await startMobilePack(idx);
+  await startMobilePack(idx, true); // tote already verified by the scan that opened this task
 }
 function handleToteScan(tote){
   if(_barcodeTarget==='picking'){
@@ -5810,6 +5902,16 @@ function handleToteScan(tote){
     } else {
       toast(`✓ Tote ${tote} confirmed for this task`,'s');
     }
+  } else if(_barcodeTarget==='desktop-pack-tote-gate'){
+    const activeTask=packingQueue[_activePackIdx];
+    const expected=activeTask?.toteId;
+    if(expected && expected===tote){
+      if(activeTask) logOrderEvent(activeTask.orderId,'tote_scanned',currentProfile?.full_name,{toteId:tote,stage:'pack_verify'});
+      toast(`✓ Tote ${tote} confirmed — now scan items to verify`,'s');
+      unlockPmChecklistAfterToteGate();
+    } else {
+      toast(`⚠ Wrong tote — this order was picked into ${expected}, you scanned ${tote}. Do not pack from this bag.`,'w');
+    }
   } else if(_barcodeTarget==='mobile-pack'){
     const expected=mobilePackActive?.task?.toteId;
     if(expected && expected!==tote){
@@ -5818,6 +5920,20 @@ function handleToteScan(tote){
     } else {
       toast(`✓ Tote ${tote} confirmed for this task`,'s');
       mobileScanFeedback(true);
+    }
+  } else if(_barcodeTarget==='mobile-pack-tote-gate'){
+    const expected=mobilePackActive?.task?.toteId;
+    if(expected && expected===tote){
+      mobileScanFeedback(true);
+      toast(`✓ Tote ${tote} confirmed — now scan items to verify`,'s');
+      if(mobilePackActive){
+        logOrderEvent(mobilePackActive.task.orderId,'tote_scanned',currentProfile?.full_name,{toteId:tote,stage:'pack_verify'});
+        mobilePackActive.stage='checklist';
+      }
+      renderMobilePackQueue();
+    } else {
+      mobileScanFeedback(false);
+      toast(`⚠ Wrong tote — this order was picked into ${expected}, you scanned ${tote}. Do not pack from this bag.`,'w');
     }
   } else {
     toast(`Tote barcode ${tote} scanned`,'s');
@@ -5894,6 +6010,9 @@ function processBarcodeInput(barcode){
     pmScanItem(sku);
   } else if(_barcodeTarget==='packing-lookup'||_barcodeTarget==='mobile-pack-lookup'){
     toast('Scan a tote bag barcode here, not a SKU','w');
+  } else if(_barcodeTarget==='desktop-pack-tote-gate'||_barcodeTarget==='mobile-pack-tote-gate'){
+    if(_barcodeTarget==='mobile-pack-tote-gate') mobileScanFeedback(false);
+    toast('Scan the tote bag first — items won\'t be counted until the tote is confirmed','w');
   }
   // Log the scan
   logAudit('BARCODE_SCAN','inventory',sku.sku,null,{sku:sku.sku,target:_barcodeTarget,barcode});
