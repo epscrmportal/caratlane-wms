@@ -1821,13 +1821,23 @@ function renderPmChecklist(){
   if(btn) btn.disabled=!allDone;
 }
 function pmScanItem(sku){
-  if(!pmChecklist) return;
-  const item=pmChecklist.find(i=>i.sku===sku.sku);
-  if(!item){ toast(sku.sku+' is not part of this order','w'); return; }
+  if(!pmChecklist){
+    console.warn('pmScanItem: scan received but no packing task is open (pmChecklist is null)');
+    toast('No packing task is open — click a task to open it, then scan','w');
+    return;
+  }
+  const scannedKey=(sku.sku||'').trim().toUpperCase();
+  const item=pmChecklist.find(i=>(i.sku||'').trim().toUpperCase()===scannedKey);
+  if(!item){
+    console.warn('pmScanItem: no match for',sku.sku,'in checklist',pmChecklist.map(i=>i.sku));
+    toast(`${sku.sku} (${sku.sub||''}) is not part of this order`,'w');
+    return;
+  }
   if(item.scannedQty>=item.expectedQty){ toast(sku.sku+' already fully verified','w'); return; }
   item.scannedQty+=1;
   const activeTask=packingQueue[_activePackIdx];
   if(activeTask) logOrderEvent(activeTask.orderId,'pack_item_verified',currentProfile?.full_name,{sku:sku.sku});
+  toast(`✓ ${sku.sku} verified (${item.scannedQty}/${item.expectedQty})`,'s');
   renderPmChecklist();
 }
 function proceedToPmDetails(){
@@ -2903,11 +2913,18 @@ async function startMobilePack(i){
 }
 
 function mobilePackScan(sku){
-  if(!mobilePackActive) return;
-  const item=mobilePackActive.checklist.find(i=>i.sku===sku.sku);
-  if(!item){
+  if(!mobilePackActive){
+    console.warn('mobilePackScan: scan received but no packing task is active');
     mobileScanFeedback(false);
-    toast(sku.sku+' is not part of this order','w');
+    toast('No packing task is open — tap Start packing first','w');
+    return;
+  }
+  const scannedKey=(sku.sku||'').trim().toUpperCase();
+  const item=mobilePackActive.checklist.find(i=>(i.sku||'').trim().toUpperCase()===scannedKey);
+  if(!item){
+    console.warn('mobilePackScan: no match for',sku.sku,'in checklist',mobilePackActive.checklist.map(i=>i.sku));
+    mobileScanFeedback(false);
+    toast(`${sku.sku} (${sku.sub||''}) is not part of this order`,'w');
     return;
   }
   if(item.scannedQty>=item.expectedQty){
@@ -5826,6 +5843,7 @@ function processBarcodeInput(barcode){
   }
   // Find matching SKU
   const sku=SKUS.find(s=>s.sku===barcode||s.sku.toUpperCase()===barcode.toUpperCase()||(s.shortCode!=null&&String(s.shortCode).padStart(4,'0')===barcode));
+  console.log('Barcode "'+barcode+'" resolved to:', sku?sku.sku+' (code '+sku.shortCode+')':'NOT FOUND — no SKU or short code matches this barcode');
   if(!sku){
     if(_barcodeTarget==='mobile-pick'||_barcodeTarget==='mobile-pack'){ mobileScanFeedback(false); }
     toast('Unknown barcode: '+barcode,'w');
