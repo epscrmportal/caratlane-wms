@@ -699,8 +699,8 @@ function loadExpectedIntoGRN(){
   if(!s) return;
   document.getElementById('ib-asn').value=s.id;
   ibItems=s.items.map(it=>{
-    const full=SKUS.find(x=>x.sku===it.sku);
-    return {sku:it.sku,name:it.name,variant:it.variant,qc:'PASS',issue:'',qty:it.qty,bin:full?`${full.rack}-${full.shelf}`:'',binOverridden:false};
+    const loc=liveLoc(it.sku);
+    return {sku:it.sku,name:it.name,variant:it.variant,qc:'PASS',issue:'',qty:it.qty,bin:(loc.rack&&loc.shelf)?`${loc.rack}-${loc.shelf}`:'',binOverridden:false};
   });
   renderIbItemsList();
   toast(`Loaded ${s.items.length} expected item(s) from ${s.id} — adjust quantities/QC to match what actually arrived`,'s');
@@ -798,7 +798,8 @@ function addIbItem(){
   const qty=parseInt(document.getElementById('ib-qty').value)||1;
   const binOverride=document.getElementById('ib-bin-override').value.trim();
   const s=SKUS.find(x=>x.sku===sku);
-  const defaultBin=`${s.rack}-${s.shelf}`;
+  const sLoc=liveLoc(sku);
+  const defaultBin=`${sLoc.rack}-${sLoc.shelf}`;
   const bin=binOverride||defaultBin;
   ibItems.push({sku,name:s.sub,variant:s.variant,qc,issue,qty,bin,binOverridden:!!binOverride});
   renderIbItemsList();
@@ -1281,7 +1282,7 @@ function addOrderItem(){
   if(!validateQty(qty)){toast('Invalid quantity','w');return;}
   const existing=ordItemsList.find(it=>it.sku===sku);
   if(existing){ existing.qty+=qty; } else {
-    ordItemsList.push({sku,name:s.sub,variant:s.variant,qty,bin:`${s.rack}-${s.shelf}`});
+    ordItemsList.push({sku,name:s.sub,variant:s.variant,qty,bin:`${liveLoc(s.sku).rack}-${liveLoc(s.sku).shelf}`});
   }
   renderOrdItemsList();
 }
@@ -1432,7 +1433,7 @@ function processOrdersCSV(text){
     if(grouped[oid].skip) continue;
     const existingItem=grouped[oid].items.find(it=>it.sku===skuCode);
     if(existingItem){ existingItem.qty+=qty; } else {
-      grouped[oid].items.push({sku:skuCode,name:skuObj.sub,variant:skuObj.variant,qty,bin:`${skuObj.rack}-${skuObj.shelf}`});
+      grouped[oid].items.push({sku:skuCode,name:skuObj.sub,variant:skuObj.variant,qty,bin:`${liveLoc(skuCode).rack}-${liveLoc(skuCode).shelf}`});
     }
   }
   const draftOrders=Object.values(grouped).filter(o=>!o.skip);
@@ -1657,7 +1658,7 @@ async function addPkItem(){
     return;
   }
   if(already){ already.qty+=qty; } else {
-    pkItemsList.push({sku,name:s.sub,variant:s.variant,qty,bin:`${s.rack}-${s.shelf}`});
+    pkItemsList.push({sku,name:s.sub,variant:s.variant,qty,bin:`${liveLoc(s.sku).rack}-${liveLoc(s.sku).shelf}`});
   }
   renderPkItemsList();
   renderPkChecklist();
@@ -1680,7 +1681,7 @@ async function pkScanAdd(sku){
     return;
   }
   if(already){ already.qty+=1; } else {
-    pkItemsList.push({sku:sku.sku,name:sku.sub,variant:sku.variant,qty:1,bin:`${sku.rack}-${sku.shelf}`});
+    pkItemsList.push({sku:sku.sku,name:sku.sub,variant:sku.variant,qty:1,bin:`${liveLoc(sku.sku).rack}-${liveLoc(sku.sku).shelf}`});
   }
   renderPkItemsList();
   renderPkChecklist();
@@ -2350,13 +2351,16 @@ function startInventoryCount(){
     status:'in-progress'
   };
   
-  SKUS.forEach(s=>currentCount.counts[s.sku]={
-    systemQty:(inv[s.sku]||{qty:0}).qty,
-    physicalQty:0,
-    counted:false,
-    rack:s.rack,
-    shelf:s.shelf,
-    category:s.category
+  SKUS.forEach(s=>{
+    const loc=liveLoc(s.sku);
+    currentCount.counts[s.sku]={
+      systemQty:(inv[s.sku]||{qty:0}).qty,
+      physicalQty:0,
+      counted:false,
+      rack:loc.rack,
+      shelf:loc.shelf,
+      category:s.category
+    };
   });
   
   document.getElementById('ic-status').textContent='In Progress';
@@ -2386,7 +2390,7 @@ function renderCountList(){
     if(filterType==='counted'&&!c.counted)return false;
     if(filterType==='uncounted'&&c.counted)return false;
     if(filterType==='discrepancy'&&c.physicalQty===c.systemQty)return false;
-    if(filterType.startsWith('rack:')&&s.rack!==filterType.slice(5))return false;
+    if(filterType.startsWith('rack:')&&c.rack!==filterType.slice(5))return false;
     return true;
   });
   
@@ -2401,7 +2405,7 @@ function renderCountList(){
     return `<div style="padding:10px;background:var(--s2);border-radius:6px;margin-bottom:8px;border-left:4px solid ${count.counted?'var(--st)':'var(--wt)'}">
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px;font-size:11px">
         <div><strong>${s.sku}</strong><br><span style="color:var(--t2);font-size:10px">${s.sub}</span></div>
-        <div><span style="color:var(--t2);font-size:10px">Rack ${s.rack} / Shelf ${s.shelf}</span><br><span style="font-weight:600">${s.category}</span></div>
+        <div><span style="color:var(--t2);font-size:10px">Rack ${count.rack} / Shelf ${count.shelf}</span><br><span style="font-weight:600">${s.category}</span></div>
         <div style="text-align:right"><span class="pill ${statusClass}" style="font-size:9px">${status}</span></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:8px;font-size:10px">
@@ -2494,9 +2498,9 @@ function updateCountSummary(){
   // Rack analysis — dynamic across whichever of the 15 racks (A–O)
   // currently have SKUs placed on them, instead of assuming only A/B.
   setDisplay('ic-rack-analysis','block');
-  const racksInUse=[...new Set(SKUS.map(s=>s.rack))].sort();
+  const racksInUse=[...new Set(SKUS.map(s=>currentCount.counts[s.sku]?currentCount.counts[s.sku].rack:liveLoc(s.sku).rack))].sort();
   const rackAnalysisHTML=racksInUse.map(r=>{
-    const data=SKUS.filter(s=>s.rack===r).map(s=>currentCount.counts[s.sku]).filter(Boolean);
+    const data=SKUS.filter(s=>(currentCount.counts[s.sku]?currentCount.counts[s.sku].rack:liveLoc(s.sku).rack)===r).map(s=>currentCount.counts[s.sku]).filter(Boolean);
     const sysQty=data.reduce((a,c)=>a+c.systemQty,0);
     const physQty=data.reduce((a,c)=>a+c.physicalQty,0);
     const variance=physQty-sysQty;
@@ -2748,7 +2752,7 @@ async function mobilePickAddScan(sku){
   }
   const existing=mobilePickSession.items.find(i=>i.sku===sku.sku);
   if(existing){ existing.qty+=1; existing.avail=res.available; } else {
-    mobilePickSession.items.push({sku:sku.sku,name:sku.sub,variant:sku.variant,qty:1,bin:`${sku.rack}-${sku.shelf}`,avail:res.available});
+    mobilePickSession.items.push({sku:sku.sku,name:sku.sub,variant:sku.variant,qty:1,bin:`${liveLoc(sku.sku).rack}-${liveLoc(sku.sku).shelf}`,avail:res.available});
   }
   renderMobilePickSession();
   renderMpPickChecklist();
@@ -3748,11 +3752,11 @@ function renderAllRackUtil(){
     // Only real shelves 1–SHELVES_PER_RACK — items still tagged with
     // a higher shelf number are leftover data, not a real location,
     // so they're excluded here (and flagged on the Rack View page).
-    const itemsOnRack=SKUS.filter(s=>s.rack===r&&parseInt(s.shelf)<=SHELVES_PER_RACK);
+    const itemsOnRack=SKUS.filter(s=>{const loc=liveLoc(s.sku);return loc.rack===r&&parseInt(loc.shelf)<=SHELVES_PER_RACK;});
     const shelves={};
     for(let i=1;i<=SHELVES_PER_RACK;i++) shelves[i]={total:0,occupied:0};
     itemsOnRack.forEach(s=>{
-      const shelf=parseInt(s.shelf);
+      const shelf=parseInt(liveLoc(s.sku).shelf);
       shelves[shelf].total++;
       if((inv[s.sku]||{qty:0}).qty>0)shelves[shelf].occupied++;
     });
@@ -3981,8 +3985,27 @@ function getShelfLocations(){
 // SKUs currently sitting on a shelf number that doesn't exist on a
 // real 6-shelf rack — left over from before the 15-rack layout. These
 // need manual reassignment once the consignment/relocation happens.
+// Where a SKU actually lives right now. The `skus` table only stores each
+// product's ORIGINAL/default rack-shelf; once stock is relocated (bin
+// edit on Inventory, a corrected GRN, etc.) the live location lives in
+// the `inventory` table instead. Anything that needs to know where to
+// physically find stock — Rack View, picking, shelf-scan verification,
+// shelf labels, cycle counts, reports — must go through this helper
+// rather than reading s.rack/s.shelf directly, or it'll show/enforce
+// the item's original placement instead of where it actually is.
+function liveLoc(sku){
+  const i2=inv[sku];
+  const s=SKUS.find(x=>x.sku===sku);
+  return {
+    rack:(i2&&i2.rack!=null)?i2.rack:(s?s.rack:undefined),
+    shelf:(i2&&i2.shelf!=null)?i2.shelf:(s?s.shelf:undefined)
+  };
+}
 function getUnplacedSKUs(){
-  return SKUS.filter(s=>{
+  return SKUS.map(s=>{
+    const loc=liveLoc(s.sku);
+    return {...s, rack:loc.rack, shelf:loc.shelf};
+  }).filter(s=>{
     const n=parseInt(s.shelf);
     return !isNaN(n)&&n>SHELVES_PER_RACK;
   });
@@ -3994,9 +4017,10 @@ function renderRack(){
   RACK_LETTERS.forEach(r=>byRack[r]={});
   SKUS.forEach(s=>{
     const qty=(inv[s.sku]||{qty:0}).qty;
-    if(!byRack[s.rack]) byRack[s.rack]={};
-    if(!byRack[s.rack][s.shelf]) byRack[s.rack][s.shelf]=[];
-    byRack[s.rack][s.shelf].push({...s,qty});
+    const loc=liveLoc(s.sku);
+    if(!byRack[loc.rack]) byRack[loc.rack]={};
+    if(!byRack[loc.rack][loc.shelf]) byRack[loc.rack][loc.shelf]=[];
+    byRack[loc.rack][loc.shelf].push({...s,qty,rack:loc.rack,shelf:loc.shelf});
   });
   const rackHTML=RACK_LETTERS.map(r=>{
     const data=byRack[r]||{};
@@ -4471,9 +4495,10 @@ function renderReports(){
     <div class="tw"><table><thead><tr><th>SKU</th><th>Item</th><th>Variant</th><th>Rack</th><th>Shelf</th><th>Qty</th><th>Status</th></tr></thead><tbody>
     ${SKUS.map(s=>{
       const q=(inv[s.sku]||{qty:0}).qty;
+      const loc=liveLoc(s.sku);
       const st=q<=0?'Out':q<=3?'Low':'OK';
       const stColor=q<=0?'var(--dt)':q<=3?'var(--wt)':'var(--st)';
-      return `<tr><td class="mono" style="font-size:10px">${s.sku}</td><td style="font-size:10px">${s.sub}</td><td style="font-size:10px">${s.variant}</td><td style="text-align:center">${s.rack}</td><td style="text-align:center">${s.shelf}</td><td style="text-align:center;font-weight:700">${q}</td><td><span style="font-size:10px;font-weight:600;color:${stColor}">${st}</span></td></tr>`;
+      return `<tr><td class="mono" style="font-size:10px">${s.sku}</td><td style="font-size:10px">${s.sub}</td><td style="font-size:10px">${s.variant}</td><td style="text-align:center">${loc.rack}</td><td style="text-align:center">${loc.shelf}</td><td style="text-align:center;font-weight:700">${q}</td><td><span style="font-size:10px;font-weight:600;color:${stColor}">${st}</span></td></tr>`;
     }).join('')}
     </tbody></table></div>`;
 
@@ -4564,8 +4589,9 @@ function downloadWeeklyCSV(){
   csv+=`SKU,Item Name,Variant,Rack,Shelf,Qty,Status\n`;
   SKUS.forEach(s=>{
     const q=(inv[s.sku]||{qty:0}).qty;
+    const loc=liveLoc(s.sku);
     const st=q<=0?'Out of Stock':q<=3?'Low Stock':'In Stock';
-    csv+=`"${s.sku}","${s.sub}","${s.variant}",${s.rack},${s.shelf},${q},"${st}"\n`;
+    csv+=`"${s.sku}","${s.sub}","${s.variant}",${loc.rack},${loc.shelf},${q},"${st}"\n`;
   });
 
   downloadCSV(`CaratLane_Weekly_MIS_${weekStr}.csv`,csv);
@@ -4625,8 +4651,9 @@ function downloadMonthlyMasterCSV(){
   csv+=`SKU,Item Name,Variant,Rack,Shelf,Qty,Status\n`;
   SKUS.forEach(s=>{
     const q=(inv[s.sku]||{qty:0}).qty;
+    const loc=liveLoc(s.sku);
     const st=q<=0?'Out of Stock':q<=3?'Low Stock':'In Stock';
-    csv+=`"${s.sku}","${esc(s.sub)}","${esc(s.variant)}",${s.rack},${s.shelf},${q},"${st}"\n`;
+    csv+=`"${s.sku}","${esc(s.sub)}","${esc(s.variant)}",${loc.rack},${loc.shelf},${q},"${st}"\n`;
   });
   const totalUnitsNow=SKUS.reduce((a,s)=>a+((inv[s.sku]||{qty:0}).qty),0);
   csv+=`TOTAL UNITS IN STOCK (as of generation):,${totalUnitsNow}\n`;
@@ -5074,7 +5101,7 @@ function renderShelfLabelGrid(){
   grid.innerHTML=locs.map(loc=>{
     const key=loc.rack+'-'+loc.shelf;
     const selected=_shelfLblSelected.has(key);
-    const itemsHere=SKUS.filter(s=>s.rack===loc.rack&&s.shelf===loc.shelf);
+    const itemsHere=SKUS.filter(s=>{const sl=liveLoc(s.sku);return sl.rack===loc.rack&&sl.shelf===loc.shelf;});
     const summary=itemsHere.length?`${itemsHere.length} SKU(s) here`:'Empty';
     const svgId='bc-loc-'+key.replace(/[^a-zA-Z0-9]/g,'_');
     return `<div class="lbl-card${selected?' selected':''}" onclick="toggleShelfLabelSelect('${key}')" id="shelf-lbl-card-${key}">
@@ -5303,7 +5330,7 @@ function printSelectedShelfLabels(){
       bcDataURI='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(svgStr)));
     } catch(e){ console.warn('Shelf label barcode error:',e); }
     document.body.removeChild(tmpSvg);
-    const itemsHere=SKUS.filter(s=>s.rack===loc.rack&&s.shelf===loc.shelf);
+    const itemsHere=SKUS.filter(s=>{const sl=liveLoc(s.sku);return sl.rack===loc.rack&&sl.shelf===loc.shelf;});
     const itemNames=itemsHere.length?itemsHere[0].sub+(itemsHere.length>1?` +${itemsHere.length-1} more`:''):'Unassigned — no items yet';
     return `<div class="label">
       <div class="lbl-name">Rack ${esc(loc.rack)} · Shelf ${esc(loc.shelf)}</div>
@@ -5855,7 +5882,7 @@ function clearConfirmedShelf(){
 function handleShelfLocationScan(loc){
   confirmedShelf=loc;
   updateShelfLocationBadge();
-  const itemsHere=SKUS.filter(s=>s.rack===loc.rack&&s.shelf===loc.shelf).map(s=>({...s,qty:(inv[s.sku]||{qty:0}).qty}));
+  const itemsHere=SKUS.filter(s=>{const sl=liveLoc(s.sku);return sl.rack===loc.rack&&sl.shelf===loc.shelf;}).map(s=>({...s,qty:(inv[s.sku]||{qty:0}).qty}));
   const totalQty=itemsHere.reduce((a,s)=>a+s.qty,0);
   if(_barcodeTarget==='mobile-pick'||_barcodeTarget==='mobile-pack'){ mobileScanFeedback(true); }
   if(_barcodeTarget==='picking' && activeOrder){
@@ -6004,10 +6031,11 @@ function processBarcodeInput(barcode){
   // must actually belong to that shelf — otherwise flag it instead of
   // silently picking from the wrong location.
   if((_barcodeTarget==='picking'||_barcodeTarget==='mobile-pick') && confirmedShelf){
-    if(sku.rack!==confirmedShelf.rack || sku.shelf!==confirmedShelf.shelf){
+    const skuLoc=liveLoc(sku.sku);
+    if(skuLoc.rack!==confirmedShelf.rack || skuLoc.shelf!==confirmedShelf.shelf){
       if(_barcodeTarget==='mobile-pick'){ mobileScanFeedback(false); }
-      toast(`⚠ Location mismatch — ${sku.sku} belongs on Rack ${sku.rack} Shelf ${sku.shelf}, but you're confirmed at Rack ${confirmedShelf.rack} Shelf ${confirmedShelf.shelf}. Scan that shelf's label first.`,'w');
-      logAudit('LOCATION_MISMATCH','inventory',sku.sku,null,{scannedAt:confirmedShelf,expected:{rack:sku.rack,shelf:sku.shelf}});
+      toast(`⚠ Location mismatch — ${sku.sku} belongs on Rack ${skuLoc.rack} Shelf ${skuLoc.shelf}, but you're confirmed at Rack ${confirmedShelf.rack} Shelf ${confirmedShelf.shelf}. Scan that shelf's label first.`,'w');
+      logAudit('LOCATION_MISMATCH','inventory',sku.sku,null,{scannedAt:confirmedShelf,expected:{rack:skuLoc.rack,shelf:skuLoc.shelf}});
       return;
     }
   }
