@@ -1,4 +1,3 @@
-
 let SKUS=[
   {sku:"UNI-GS-M-34",cat:"Uniform",sub:"Grey Sweater- Male",variant:"Size 34",rack:"A",shelf:"1"},
   {sku:"UNI-GS-M-36",cat:"Uniform",sub:"Grey Sweater- Male",variant:"Size 36",rack:"A",shelf:"1"},
@@ -205,6 +204,8 @@ async function loadHist(){
         packDuration:r.pack_duration, packDurationSecs:r.pack_duration_secs,
         boxL:r.box_l, boxW:r.box_w, boxH:r.box_h,
         actualWeight:r.actual_weight, volWeight:r.vol_weight, chargeableWeight:r.chargeable_weight,
+        dispatchWeight:r.dispatch_weight,
+        packMaterials:r.pack_materials||[],
         packNotes:r.pack_notes, packedId:r.packed_id, category:r.category, grn:r.grn,
         items:r.items||[], photo:r.photo||null
       }));
@@ -224,6 +225,39 @@ async function loadHist(){
     try{const s=localStorage.getItem('cl_wms_hist2');if(s)history=JSON.parse(s);}catch(e2){}
   }
 }
+function historyRecordToRow(h){
+  return {
+    id:h.id, type:h.type, ts:h.ts, detail:h.detail||null,
+    order_id:h.orderId||null, awb:h.awb||null, recipient_name:h.recipientName||null,
+    address:h.address||null, pincode:h.pincode||null, phone:h.phone||null,
+    shipping_method:h.shippingMethod||null, courier_partner:h.courierPartner||null, dispatched_at:h.dispatchedAt||null,
+    pack_start_ts:h.packStartTs||null, pack_start_time:h.packStartTime||null,
+    pack_end_ts:h.packEndTs||null, pack_end_time:h.packEndTime||null,
+    pack_duration:h.packDuration||null, pack_duration_secs:h.packDurationSecs||null,
+    box_l:h.boxL||null, box_w:h.boxW||null, box_h:h.boxH||null,
+    actual_weight:h.actualWeight||null, vol_weight:h.volWeight||null, chargeable_weight:h.chargeableWeight||null,
+    dispatch_weight:h.dispatchWeight||null,
+    pack_materials:h.packMaterials||null,
+    pack_notes:h.packNotes||null, packed_id:h.packedId||null, category:h.category||null,
+    grn:h.grn||null, items:h.items||[], photo:h.photo||null, packer:h.packer||null
+  };
+}
+// Upsert a specific history record (not necessarily the last one in the
+// array) — needed when an earlier record (e.g. the "packed" entry) gets
+// mutated in place, such as when dispatch marks it type='dispatched'.
+// Without this, only the newest array entry would ever sync to the DB
+// and the mutated older record's changes would be lost on next reload.
+async function saveHistRecord(h){
+  if(!h) return;
+  if(typeof supabase === 'undefined' || !supa) return;
+  try {
+    const row=historyRecordToRow(h);
+    const {error} = await supa.from('history').upsert(row, {onConflict:'id'});
+    if(error) throw error;
+  } catch(e) {
+    console.error('saveHistRecord error:', JSON.stringify(e), e?.message, e?.code);
+  }
+}
 async function saveHist(){
   setSyncStatus('syncing');
   localStorage.setItem('cl_wms_hist2', JSON.stringify(history)); // always save locally first
@@ -232,19 +266,7 @@ async function saveHist(){
     // Save last history entry to DB (upsert)
     const h = history[history.length-1];
     if(!h) { setSyncStatus('ok'); return; }
-    const row = {
-      id:h.id, type:h.type, ts:h.ts, detail:h.detail||null,
-      order_id:h.orderId||null, awb:h.awb||null, recipient_name:h.recipientName||null,
-      address:h.address||null, pincode:h.pincode||null, phone:h.phone||null,
-      shipping_method:h.shippingMethod||null, courier_partner:h.courierPartner||null, dispatched_at:h.dispatchedAt||null,
-      pack_start_ts:h.packStartTs||null, pack_start_time:h.packStartTime||null,
-      pack_end_ts:h.packEndTs||null, pack_end_time:h.packEndTime||null,
-      pack_duration:h.packDuration||null, pack_duration_secs:h.packDurationSecs||null,
-      box_l:h.boxL||null, box_w:h.boxW||null, box_h:h.boxH||null,
-      actual_weight:h.actualWeight||null, vol_weight:h.volWeight||null, chargeable_weight:h.chargeableWeight||null,
-      pack_notes:h.packNotes||null, packed_id:h.packedId||null, category:h.category||null,
-      grn:h.grn||null, items:h.items||[], photo:h.photo||null, packer:h.packer||null
-    };
+    const row = historyRecordToRow(h);
     // If type=dispatched, update existing record instead of insert
     const {error} = await supa.from('history').upsert(row, {onConflict:'id'});
     if(error) throw error;
@@ -643,16 +665,23 @@ function addExpItem(){
   const s=SKUS.find(x=>x.sku===sku);
   if(!s) return;
   if(!validateQty(qty)){toast('Invalid quantity','w');return;}
-  const existing=expItemsList.find(it=>it.sku===sku);
-  if(existing){ existing.qty+=qty; } else {
-    expItemsList.push({sku,name:s.sub,variant:s.variant,qty});
-  }
+  // Each add is its own line — a SKU arriving across multiple boxes
+  // should show as multiple separate entries, not one merged quantity.
+  // Just warn so the person adding knows this SKU already has entries.
+  const dupeCount=expItemsList.filter(it=>it.sku===sku).length;
+  if(dupeCount>0){ toast(`${sku} already has ${dupeCount} entry${dupeCount>1?'ies':''} — adding as a separate box/entry`,'w'); }
+  expItemsList.push({sku,name:s.sub,variant:s.variant,qty});
   renderExpItemsList();
+}
+function updateExpItemQty(i,val){
+  const qty=parseInt(val)||1;
+  if(!validateQty(qty)){toast('Invalid quantity','w');renderExpItemsList();return;}
+  expItemsList[i].qty=qty;
 }
 function renderExpItemsList(){
   const el=document.getElementById('exp-items-list');
   if(!el) return;
-  el.innerHTML=expItemsList.length?`<div class="tw"><table><thead><tr><th>SKU</th><th>Item</th><th>Expected Qty</th><th></th></tr></thead><tbody>${expItemsList.map((item,i)=>`<tr><td class="mono">${item.sku}</td><td style="font-size:11px">${esc(item.name)} — ${esc(item.variant)}</td><td>${item.qty}</td><td><button class="btn-sm btn-danger" onclick="removeExpItem(${i})"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table></div>`:'';
+  el.innerHTML=expItemsList.length?`<div class="tw"><table><thead><tr><th>SKU</th><th>Item</th><th>Expected Qty</th><th></th></tr></thead><tbody>${expItemsList.map((item,i)=>`<tr><td class="mono">${item.sku}</td><td style="font-size:11px">${esc(item.name)} — ${esc(item.variant)}</td><td><input type="number" min="1" value="${item.qty}" style="width:64px;font-size:11px" onchange="updateExpItemQty(${i},this.value)"></td><td><button class="btn-sm btn-danger" onclick="removeExpItem(${i})"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table></div>`:'';
 }
 function removeExpItem(i){
   expItemsList.splice(i,1);
@@ -1130,14 +1159,14 @@ function printDispatch(dispatchId){
       </div>
 
       <h3 style="margin-top:24px;border-bottom:2px solid #B8860B;padding-bottom:8px;color:#B8860B">📦 Box & Weight Details</h3>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:14px 0">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:14px 0">
         <div style="border:1px solid #ddd;padding:12px;border-radius:4px;text-align:center">
           <div style="font-size:11px;color:#666;font-weight:bold;text-transform:uppercase;margin-bottom:6px">Box Dimensions</div>
           <div style="font-size:20px;font-weight:bold">${dispatch.boxL&&dispatch.boxW&&dispatch.boxH?dispatch.boxL+'×'+dispatch.boxW+'×'+dispatch.boxH+' cm':'—'}</div>
           <div style="font-size:10px;color:#999;margin-top:4px">L × W × H (centimetres)</div>
         </div>
         <div style="border:1px solid #ddd;padding:12px;border-radius:4px;text-align:center">
-          <div style="font-size:11px;color:#666;font-weight:bold;text-transform:uppercase;margin-bottom:6px">Actual Weight</div>
+          <div style="font-size:11px;color:#666;font-weight:bold;text-transform:uppercase;margin-bottom:6px">Actual Weight (Packing)</div>
           <div style="font-size:20px;font-weight:bold">${dispatch.actualWeight?dispatch.actualWeight+' kg':'—'}</div>
           <div style="font-size:10px;color:#999;margin-top:4px">Physical scale weight</div>
         </div>
@@ -1145,6 +1174,15 @@ function printDispatch(dispatchId){
           <div style="font-size:11px;color:#666;font-weight:bold;text-transform:uppercase;margin-bottom:6px">Volumetric Weight</div>
           <div style="font-size:20px;font-weight:bold;color:#1565c0">${dispatch.volWeight?dispatch.volWeight+' kg':'—'}</div>
           <div style="font-size:10px;color:#999;margin-top:4px">(L×W×H) ÷ 5000</div>
+        </div>
+        <div style="border:1px solid #ddd;padding:12px;border-radius:4px;text-align:center">
+          <div style="font-size:11px;color:#666;font-weight:bold;text-transform:uppercase;margin-bottom:6px">Weight at Dispatch</div>
+          <div style="font-size:20px;font-weight:bold;color:#B8860B">${dispatch.dispatchWeight?dispatch.dispatchWeight+' kg':'—'}</div>
+          <div style="font-size:10px;color:#999;margin-top:4px">Re-weighed at courier handover</div>
+        </div>
+        <div style="border:1px solid #ddd;padding:12px;border-radius:4px;text-align:center;grid-column:span 4">
+          <div style="font-size:11px;color:#666;font-weight:bold;text-transform:uppercase;margin-bottom:6px">Packaging Material Used</div>
+          <div style="font-size:16px;font-weight:bold">${dispatch.packMaterials&&dispatch.packMaterials.length?esc(dispatch.packMaterials.join(', ')):'—'}</div>
         </div>
       </div>
       <div style="border:2px solid #B8860B;padding:12px 16px;border-radius:6px;background:#fffbf0;margin-bottom:14px;display:flex;align-items:center;gap:16px">
@@ -1807,6 +1845,7 @@ function openPackModal(i, toteAlreadyVerified){
   }
   // Clear fields
   ['pm-length','pm-width','pm-height','pm-actual-weight','pm-notes'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  document.querySelectorAll('.pm-material-cb').forEach(cb=>{cb.checked=false;});
   document.getElementById('pm-vol-result').style.display='none';
   // Start elapsed counter
   if(_packElapsedTimer)clearInterval(_packElapsedTimer);
@@ -1912,6 +1951,8 @@ function confirmPackWithDetails(){
   if(!validateDimension(L)||!validateDimension(W)||!validateDimension(H)){toast('Invalid dimensions — max 999cm','w');return;}
   if(!actual){toast('Please enter actual weight','w');return;}
   if(!validateWeight(actual)){toast('Invalid weight — must be between 0.01 and 999 kg','w');return;}
+  const packMaterials=Array.from(document.querySelectorAll('.pm-material-cb:checked')).map(cb=>cb.value);
+  if(!packMaterials.length){toast('Select at least one packaging material used','w');return;}
   if(!rateLimit('pack',2000)){toast('Please wait before submitting again','w');return;}
   const vol=parseFloat(((L*W*H)/5000).toFixed(2));
   const chargeable=Math.max(actual,vol);
@@ -1932,6 +1973,7 @@ function confirmPackWithDetails(){
     packDuration:durationStr,packDurationSecs:durationSecs,
     boxL:L,boxW:W,boxH:H,
     actualWeight:actual,volWeight:vol,chargeableWeight:chargeable,
+    packMaterials:packMaterials,
     packNotes:notes
   };
   history.push(packedObj);
@@ -1993,6 +2035,8 @@ function printPackingSlip(historyId){
       <div><b>Packed on:</b> ${esc(p.packEndTs||p.ts||'—')}</div>
       <div><b>Box dimensions:</b> ${dims}</div>
       <div><b>Chargeable weight:</b> ${p.chargeableWeight?p.chargeableWeight+' kg':'—'}</div>
+      <div><b>Packaging material:</b> ${p.packMaterials&&p.packMaterials.length?esc(p.packMaterials.join(', ')):'—'}</div>
+      <div><b>Actual weight:</b> ${p.actualWeight?p.actualWeight+' kg':'—'}</div>
     </div>
     <table><thead><tr><th>SKU</th><th>Item</th><th>Variant</th><th>Qty</th></tr></thead><tbody>
       ${items.map(it=>`<tr><td>${esc(it.sku)}</td><td>${esc(it.name||'')}</td><td>${esc(it.variant||'')}</td><td style="text-align:center">${it.qty}</td></tr>`).join('')}
@@ -2018,12 +2062,13 @@ function renderPackedOrdersList(){
     const itemCount=(p.items&&p.items.length)?p.items.length:0;
     const hasDims=p.boxL&&p.boxW&&p.boxH;
     const dimsStr=hasDims?`${p.boxL}×${p.boxW}×${p.boxH}cm · ${p.chargeableWeight}kg chargeable`:'Dims not captured';
+    const matStr=p.packMaterials&&p.packMaterials.length?p.packMaterials.join(', '):'';
     const durStr=p.packDuration?`Packed in ${p.packDuration}`:'';
     return `<div class="hist-entry" style="cursor:pointer">
       <div class="hist-head" onclick="selectDispatchOrder('${p.id}')"><span class="hist-id">${p.id}</span><span class="pill p-info">Awaiting AWB</span></div>
       <div class="hist-body" onclick="selectDispatchOrder('${p.id}')">
         <div>${p.ts} · Order: <strong>${p.orderId}</strong> · ${itemCount} SKU(s)</div>
-        <div style="font-size:10px;color:var(--t2);margin-top:2px">📦 ${dimsStr}${durStr?' · ⏱ '+durStr:''}</div>
+        <div style="font-size:10px;color:var(--t2);margin-top:2px">📦 ${dimsStr}${matStr?' · '+matStr:''}${durStr?' · ⏱ '+durStr:''}</div>
       </div>
       <button class="btn-sm" onclick="event.stopPropagation();printPackingSlip('${p.id}')" style="margin-top:6px"><i class="ti ti-printer"></i>Print slip</button>
     </div>`;
@@ -2123,6 +2168,7 @@ function loadDispatchOrder(){
   document.getElementById('disp-shipping').value='Standard Road';
   document.getElementById('disp-courier').value='';
   document.getElementById('disp-awb').value='';
+  document.getElementById('disp-weight').value='';
 }
 function confirmCourierDispatch(){
   const pkdId=document.getElementById('disp-order-select').value;
@@ -2133,10 +2179,13 @@ function confirmCourierDispatch(){
   const shipping=document.getElementById('disp-shipping').value;
   const courier=document.getElementById('disp-courier').value.trim();
   const awb=document.getElementById('disp-awb').value.trim();
+  const dispatchWeight=parseFloat(document.getElementById('disp-weight').value)||0;
   if(!pkdId||!name||!addr||!pin||!phone||!courier||!awb){toast('Please fill all fields including courier partner and AWB number','w');return;}
   if(!validateAWB(awb)){toast('Invalid AWB — letters, numbers and hyphens only (4-30 chars)','w');return;}
   if(!validatePincode(pin)){toast('Invalid pincode — must be 6 digits','w');return;}
   if(!validatePhone(phone)){toast('Invalid phone number','w');return;}
+  if(!dispatchWeight){toast('Please enter the final weight at dispatch','w');return;}
+  if(!validateWeight(dispatchWeight)){toast('Invalid weight — must be between 0.01 and 999 kg','w');return;}
   if(!rateLimit('dispatch',3000)){toast('Please wait before submitting again','w');return;}
   const packed=history.find(h=>h.id===pkdId);
   const items=packed.items||[];
@@ -2151,12 +2200,18 @@ function confirmCourierDispatch(){
   packed.phone=phone;
   packed.shippingMethod=shipping;
   packed.courierPartner=courier;
+  packed.dispatchWeight=dispatchWeight;
+  // This mutates an EARLIER history record (the "packed" entry), not the
+  // newest one — saveHist() below only syncs the newest array entry, so
+  // this record needs its own explicit save or the dispatch info (AWB,
+  // courier, weight, etc.) would be lost on next reload.
+  saveHistRecord(packed);
   // Add dispatch record
-  history.push({id:did,type:'dispatch',ts:ts(),detail:`AWB: ${awb} · Courier: ${courier} · To: ${name}, ${pin} · Shipping: ${shipping} · Phone: ${phone} · ${items.length} SKUs`,packedId:pkdId});
+  history.push({id:did,type:'dispatch',ts:ts(),detail:`AWB: ${awb} · Courier: ${courier} · To: ${name}, ${pin} · Shipping: ${shipping} · Phone: ${phone} · Weight: ${dispatchWeight}kg · ${items.length} SKUs`,packedId:pkdId});
   saveHist();
   renderDispatchPage();
   document.getElementById('disp-search-order').value='';
-  toast(`Dispatch ${did} confirmed · AWB ${awb} assigned to ${name}`,'s');
+  toast(`Dispatch ${did} confirmed · AWB ${awb} assigned to ${name} · ${dispatchWeight}kg`,'s');
 }
 function renderDispatchCompletedLog(){
   const el=document.getElementById('disp-dispatch-log');
@@ -2168,6 +2223,7 @@ function renderDispatchCompletedLog(){
     const actualW=d.actualWeight?`${d.actualWeight} kg`:'—';
     const volW=d.volWeight?`${d.volWeight} kg`:'—';
     const chargeW=d.chargeableWeight?`<strong>${d.chargeableWeight} kg</strong>`:'—';
+    const dispatchW=d.dispatchWeight?`${d.dispatchWeight} kg`:'—';
     const packDur=d.packDuration||'—';
     const packStart=d.packStartTs||'—';
     const packEnd=d.packEndTs||'—';
@@ -2185,6 +2241,7 @@ function renderDispatchCompletedLog(){
           <div style="background:var(--s2);border-radius:4px;padding:5px 8px;font-size:10px"><div style="color:var(--t3)">Actual wt</div><div style="font-weight:600">${actualW}</div></div>
           <div style="background:var(--s2);border-radius:4px;padding:5px 8px;font-size:10px"><div style="color:var(--t3)">Vol. wt</div><div style="font-weight:600;color:var(--it)">${volW}</div></div>
           <div style="background:var(--gold);border-radius:4px;padding:5px 8px;font-size:10px"><div style="color:rgba(255,255,255,0.7)">Chargeable</div><div style="font-weight:700;color:#fff">${chargeW}</div></div>
+          <div style="background:var(--s2);border-radius:4px;padding:5px 8px;font-size:10px"><div style="color:var(--t3)">Dispatch wt</div><div style="font-weight:600">${dispatchW}</div></div>
           <div style="background:var(--s2);border-radius:4px;padding:5px 8px;font-size:10px"><div style="color:var(--t3)">Pack start</div><div style="font-weight:600">${packStart}</div></div>
           <div style="background:var(--s2);border-radius:4px;padding:5px 8px;font-size:10px"><div style="color:var(--t3)">Pack end</div><div style="font-weight:600">${packEnd}</div></div>
           <div style="background:var(--sbg);border-radius:4px;padding:5px 8px;font-size:10px"><div style="color:var(--st)">Duration</div><div style="font-weight:700;color:var(--st)">${packDur}</div></div>
@@ -3009,6 +3066,7 @@ function proceedToMobilePackDetails(){
   document.getElementById('mp-pack-details-wrap').style.display='block';
   disableBarcodeScanner();
   ['mp-length','mp-width','mp-height','mp-actual-weight','mp-notes'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
+  document.querySelectorAll('.mp-material-cb').forEach(cb=>{cb.checked=false;});
   document.getElementById('mp-vol-result').style.display='none';
 }
 
@@ -3046,6 +3104,8 @@ function completeMobilePack(){
   if(!validateDimension(L)||!validateDimension(W)||!validateDimension(H)){toast('Invalid dimensions — max 999cm','w');return;}
   if(!actual){toast('Enter actual weight','w');return;}
   if(!validateWeight(actual)){toast('Invalid weight — must be between 0.01 and 999 kg','w');return;}
+  const packMaterials=Array.from(document.querySelectorAll('.mp-material-cb:checked')).map(cb=>cb.value);
+  if(!packMaterials.length){toast('Select at least one packaging material used','w');return;}
   if(!rateLimit('mobile-pack',2000)){toast('Please wait before submitting again','w');return;}
   const vol=parseFloat(((L*W*H)/5000).toFixed(2));
   const chargeable=Math.max(actual,vol);
@@ -3066,6 +3126,7 @@ function completeMobilePack(){
     packDuration:durationStr,packDurationSecs:durationSecs,
     boxL:L,boxW:W,boxH:H,
     actualWeight:actual,volWeight:vol,chargeableWeight:chargeable,
+    packMaterials:packMaterials,
     packNotes:notes
   });
   saveHist();
@@ -3077,6 +3138,7 @@ function completeMobilePack(){
       pack_duration:h.packDuration||null,pack_duration_secs:h.packDurationSecs||null,
       box_l:h.boxL||null,box_w:h.boxW||null,box_h:h.boxH||null,
       actual_weight:h.actualWeight||null,vol_weight:h.volWeight||null,chargeable_weight:h.chargeableWeight||null,
+      pack_materials:h.packMaterials||null,
       pack_notes:h.packNotes||null,items:h.items||[],packer:h.packer||null};
     queueOfflineAction('mobile_pack_complete',{historyRow:row,taskId:t.id,orderId:t.orderId,chargeable},`Pack complete · ${t.orderId}`);
     toast(`Offline — Order ${t.orderId} packed in ${durationStr}, queued to sync (${chargeable}kg chargeable)`,'w');
@@ -4034,7 +4096,24 @@ function renderRack(){
     // Each rack is its own single bay (physically 1 rack = 1 bay, 6
     // shelves) — no splitting into Bay 1/Bay 2 columns.
     return `<div class="stitle" style="margin-top:14px">Rack ${r} <span style="font-weight:400;color:var(--t3);font-size:11px">— ${keys.length}/${SHELVES_PER_RACK} shelves in use</span></div>
-      <div class="rack-wrap"><div class="rack-card"><div class="rack-head"><span style="font-size:12px;font-weight:600">Rack ${r}</span><span style="font-size:10px;color:var(--t2)">${keys.length} shelves</span></div>${keys.map(sh=>{const items=data[sh];const tot=items.reduce((a,i)=>a+i.qty,0);const held=items.reduce((a,i)=>a+(reservedMap[i.sku]||0),0);const mx=items.length*10;const pct=Math.min(100,Math.round(tot/mx*100));const bc=pct===0?'bar-out':pct<30?'bar-low':'bar-ok';const lbl=items[0].sub.replace(/ - .*/,'').replace(/- .*/,'').trim();return`<div class="rack-row"><span class="shelf-l">${r}${sh}</span><div><div style="font-size:11px;font-weight:600;margin-bottom:3px">${lbl}</div><div class="bar-bg"><div class="bar-f ${bc}" style="width:${pct}%"></div></div></div><span class="qty-r">${tot}u${held>0?`<div style="font-size:9px;color:var(--wt);font-weight:600">${held} held</div>`:''}</span></div>`;}).join('')}</div></div>`;
+      <div class="rack-wrap"><div class="rack-card"><div class="rack-head"><span style="font-size:12px;font-weight:600">Rack ${r}</span><span style="font-size:10px;color:var(--t2)">${keys.length} shelves</span></div>${keys.map(sh=>{
+        const items=data[sh];
+        // A shelf can hold more than one SKU. Each gets its own row with
+        // its own name/qty/bar — never blend several SKUs' quantities
+        // into one number under a single item's name (that previously
+        // made a shelf look like it held way more of one product than
+        // it actually did).
+        return items.map((it,idx)=>{
+          const held=reservedMap[it.sku]||0;
+          const mx=10;
+          const pct=Math.min(100,Math.round(it.qty/mx*100));
+          const bc=pct===0?'bar-out':pct<30?'bar-low':'bar-ok';
+          const lbl=it.sub.replace(/ - .*/,'').replace(/- .*/,'').trim();
+          const shelfLabel=idx===0?`${r}${sh}`:'';
+          const nameSuffix=items.length>1?` <span style="color:var(--t3);font-weight:400">(${esc(it.sku)})</span>`:'';
+          return`<div class="rack-row"><span class="shelf-l">${shelfLabel}</span><div><div style="font-size:11px;font-weight:600;margin-bottom:3px">${lbl}${nameSuffix}</div><div class="bar-bg"><div class="bar-f ${bc}" style="width:${pct}%"></div></div></div><span class="qty-r">${it.qty}u${held>0?`<div style="font-size:9px;color:var(--wt);font-weight:600">${held} held</div>`:''}</span></div>`;
+        }).join('');
+      }).join('')}</div></div>`;
   }).join('');
   const unplaced=getUnplacedSKUs();
   const unplacedHTML=unplaced.length?`<div class="sep" style="margin:16px 0"></div>
@@ -5519,7 +5598,7 @@ async function onAuthSuccess(){
 // "users" is governed separately by canManageUsers (set in onAuthSuccess).
 const ROLE_TABS = {
   admin: null,
-  supervisor: ['dashboard','inbound','picking','packing','orders','dispatch','mobile','returns','inventory','orderstatus','reports','sop','audit'],
+  supervisor: ['dashboard','inbound','picking','packing','orders','dispatch','mobile','returns','inventory','orderstatus','reports','sop','audit','labels'],
   picker: ['picking','mobile'],
   packer: ['packing','mobile'],
   viewer: null
