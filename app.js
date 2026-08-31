@@ -864,16 +864,18 @@ function addIbItem(){
   const bin=binOverride||defaultBin;
   // If this SKU is already in the list at the same bin with the same QC
   // result (e.g. it was pre-loaded from the expected shipment, or it was
-  // already scanned once), tally the qty onto that line instead of
-  // adding a second confusing row for the same item — this is where
-  // you confirm/verify the actual received count, not log separate boxes.
+  // already scanned once), this "add" is you confirming/correcting the
+  // actual physical count — SET the line's qty to what you just entered,
+  // don't sum it on top of the pre-loaded/previous value (that would
+  // silently inflate the count instead of verifying it).
   const existing=ibItems.find(it=>it.sku===sku && it.qc===qc && it.bin===bin);
   if(existing){
-    existing.qty+=qty;
+    const oldQty=existing.qty;
+    existing.qty=qty;
     if(issue) existing.issue=issue;
     renderIbItemsList();
     document.getElementById('ib-bin-override').value='';
-    toast(`${sku} already in this shipment at ${bin} — qty updated to ${existing.qty}`, 's');
+    toast(`${sku} at ${bin} — quantity confirmed as ${qty}${oldQty!==qty?` (was ${oldQty})`:''}`, 's');
     return;
   }
   ibItems.push({sku,name:s.sub,variant:s.variant,qc,issue,qty,bin,binOverridden:!!binOverride});
