@@ -2578,7 +2578,10 @@ function loadExpectedIntoGRN(){
   document.getElementById('ib-asn').value=s.id;
   ibItems=s.items.map(it=>{
     const loc=liveLoc(it.sku);
-    return {sku:it.sku,name:it.name,variant:it.variant,qc:'PASS',issue:'',qty:it.qty,bin:(loc.rack&&loc.shelf)?`${loc.rack}-${loc.shelf}`:'',binOverridden:false};
+    // Not yet physically verified — this is just the expected qty
+    // pre-filled as a starting point, so the first real "Add" against
+    // this line shouldn't trigger the already-counted confirmation.
+    return {sku:it.sku,name:it.name,variant:it.variant,qc:'PASS',issue:'',qty:it.qty,bin:(loc.rack&&loc.shelf)?`${loc.rack}-${loc.shelf}`:'',binOverridden:false,counted:false};
   });
   renderIbItemsList();
   toast(`Loaded ${s.items.length} expected item(s) from ${s.id} — adjust quantities/QC to match what actually arrived`,'s');
@@ -2679,6 +2682,16 @@ function addIbItem(){
   const sLoc=liveLoc(sku);
   const defaultBin=`${sLoc.rack}-${sLoc.shelf}`;
   const bin=binOverride||defaultBin;
+  // If an expected shipment is loaded, catch someone receiving a SKU that
+  // wasn't actually on that ASN (e.g. picked the wrong size by mistake)
+  // before it silently gets added.
+  const expId=document.getElementById('ib-load-expected')?document.getElementById('ib-load-expected').value:'';
+  if(expId){
+    const expShip=expectedShipments.find(x=>x.id===expId);
+    if(expShip && !expShip.items.some(it=>it.sku===sku)){
+      if(!confirm(`${sku} is not part of expected shipment ${expId}. Add it anyway?`)) return;
+    }
+  }
   // If this SKU is already in the list at the same bin with the same QC
   // result (e.g. it was pre-loaded from the expected shipment, or it was
   // already scanned once), this "add" is you confirming/correcting the
@@ -2687,22 +2700,27 @@ function addIbItem(){
   // silently inflate the count instead of verifying it).
   const existing=ibItems.find(it=>it.sku===sku && it.qc===qc && it.bin===bin);
   if(existing){
+    // Once a line has actually been counted once, re-adding it is
+    // unusual enough to double-check — could be a duplicate scan, or a
+    // real correction. Either way, don't silently overwrite it again.
+    if(existing.counted && !confirm(`${sku} at ${bin} has already been counted (qty: ${existing.qty}). Update it again?`)) return;
     const oldQty=existing.qty;
     existing.qty=qty;
+    existing.counted=true;
     if(issue) existing.issue=issue;
     renderIbItemsList();
     document.getElementById('ib-bin-override').value='';
     toast(`${sku} at ${bin} — quantity confirmed as ${qty}${oldQty!==qty?` (was ${oldQty})`:''}`, 's');
     return;
   }
-  ibItems.push({sku,name:s.sub,variant:s.variant,qc,issue,qty,bin,binOverridden:!!binOverride});
+  ibItems.push({sku,name:s.sub,variant:s.variant,qc,issue,qty,bin,binOverridden:!!binOverride,counted:true});
   renderIbItemsList();
   document.getElementById('ib-bin-override').value='';
   toast(`Added ${sku} to ${bin}${binOverride?' (manual assignment)':' (auto-assigned)'}`, 's');
 }
 function renderIbItemsList(){
   const el=document.getElementById('ib-items-list');
-  el.innerHTML=ibItems.length?`<div class="tw"><table><thead><tr><th>SKU</th><th>Item</th><th>BIN</th><th>QC</th><th>Issue</th><th>Qty</th><th></th></tr></thead><tbody>${ibItems.map((item,i)=>`<tr><td class="mono">${item.sku}</td><td style="font-size:11px">${item.name}</td><td style="font-weight:600;color:var(--gold)">${item.bin}${item.binOverridden?' ⚠':'(auto)'}</td><td><span class="pill ${item.qc==='PASS'?'p-pass':item.qc==='HOLD'?'p-hold':'p-out'}">${item.qc}</span></td><td style="font-size:10px;color:var(--t2)">${item.issue||'—'}</td><td>${item.qty}</td><td><button class="btn-sm btn-danger" onclick="removeIbItem(${i})"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table></div>`:'';
+  el.innerHTML=ibItems.length?`<div class="tw"><table><thead><tr><th>SKU</th><th>Item</th><th>BIN</th><th>QC</th><th>Issue</th><th>Qty</th><th>Status</th><th></th></tr></thead><tbody>${ibItems.map((item,i)=>`<tr><td class="mono">${item.sku}</td><td style="font-size:11px">${item.name}</td><td style="font-weight:600;color:var(--gold)">${item.bin}${item.binOverridden?' ⚠':'(auto)'}</td><td><span class="pill ${item.qc==='PASS'?'p-pass':item.qc==='HOLD'?'p-hold':'p-out'}">${item.qc}</span></td><td style="font-size:10px;color:var(--t2)">${item.issue||'—'}</td><td>${item.qty}</td><td>${item.counted?'<span class="pill p-pass"><i class="ti ti-check"></i> Counted</span>':'<span class="pill p-hold">Not yet counted</span>'}</td><td><button class="btn-sm btn-danger" onclick="removeIbItem(${i})"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table></div>`:'';
 }
 function removeIbItem(i){ibItems.splice(i,1);renderIbItemsList();}
 function createGRN(){
