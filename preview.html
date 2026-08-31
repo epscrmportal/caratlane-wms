@@ -1899,7 +1899,6 @@ let SKUS=[
   {sku:"VM-RS",cat:"VM",sub:"Ring Sizer",variant:"Ring Sizer",rack:"B",shelf:"4"},
   {sku:"VM-RR",cat:"VM",sub:"Ring Rod",variant:"Ring Rod",rack:"B",shelf:"4"},
   {sku:"VM-BS",cat:"VM",sub:"Bangle Sizer",variant:"Bangle Sizer",rack:"B",shelf:"4"},
-  {sku:"RS-RS",cat:"Ring Sizer",sub:"Ring Sizer",variant:"Ring Sizer",rack:"B",shelf:"5"},
 ];
 
 let inv={},history=[],ibItems=[],pkItemsList=[],rtItemsList=[],packingQueue=[],inventoryCounts=[],currentCount={},costParams={
@@ -3561,12 +3560,19 @@ function renderPkChecklist(){
 async function addPkItem(){
   if(!activeOrder){ toast('Start a pick from an assigned order first','w'); return; }
   if(!pkToteId){ toast('Scan a tote bag barcode first — items need to go in the right tote','w'); return; }
+  if(!confirmedShelf){ toast('Scan the shelf location label before confirming an item — tote → shelf → item','w'); return; }
   const sku=document.getElementById('pk-sku').value;
   const cond=document.getElementById('pk-cond').value;
   const qty=parseInt(document.getElementById('pk-qty').value)||1;
   const s=SKUS.find(x=>x.sku===sku);
   const expected=activeOrder.items.find(it=>it.sku===sku);
   if(!expected){ toast(sku+' is not part of this order','w'); return; }
+  const skuLoc=liveLoc(sku);
+  if(skuLoc.rack!==confirmedShelf.rack || skuLoc.shelf!==confirmedShelf.shelf){
+    toast(`⚠ Location mismatch — ${sku} belongs on Rack ${skuLoc.rack} Shelf ${skuLoc.shelf}, but you're confirmed at Rack ${confirmedShelf.rack} Shelf ${confirmedShelf.shelf}. Scan that shelf's label first.`,'w');
+    logAudit('LOCATION_MISMATCH','inventory',sku,null,{scannedAt:confirmedShelf,expected:{rack:skuLoc.rack,shelf:skuLoc.shelf}});
+    return;
+  }
   if(cond==='defective'){toast(`${sku} flagged DEFECTIVE — item moved to HOLD zone. Raise defect report. (SOP §2.5)`,'w');return;}
   if(!validateQty(qty)){toast('Invalid quantity','w');return;}
   const already=pkItemsList.find(it=>it.sku===sku);
@@ -7847,6 +7853,17 @@ function clearConfirmedShelf(){
   updateShelfLocationBadge();
 }
 function handleShelfLocationScan(loc){
+  // Enforce strict scan order: tote must be scanned before a shelf
+  // label is accepted, so we always know tote -> shelf -> item.
+  if(_barcodeTarget==='picking' && !pkToteId){
+    toast('Scan the tote bag barcode first, then the shelf label','w');
+    return;
+  }
+  if(_barcodeTarget==='mobile-pick' && !(mobilePickSession && mobilePickSession.toteId)){
+    mobileScanFeedback(false);
+    toast('Scan the tote bag barcode first, then the shelf label','w');
+    return;
+  }
   confirmedShelf=loc;
   updateShelfLocationBadge();
   const itemsHere=SKUS.filter(s=>{const sl=liveLoc(s.sku);return sl.rack===loc.rack&&sl.shelf===loc.shelf;}).map(s=>({...s,qty:(inv[s.sku]||{qty:0}).qty}));
@@ -7994,10 +8011,15 @@ function processBarcodeInput(barcode){
     toast('Unknown barcode: '+barcode,'w');
     return;
   }
-  // If a shelf has been confirmed for a picking flow, the scanned item
-  // must actually belong to that shelf — otherwise flag it instead of
-  // silently picking from the wrong location.
-  if((_barcodeTarget==='picking'||_barcodeTarget==='mobile-pick') && confirmedShelf){
+  // Strict scan order for picking flows: tote -> shelf -> item. A shelf
+  // must be confirmed before any item scan is accepted, and the item
+  // must actually belong to that confirmed shelf.
+  if(_barcodeTarget==='picking'||_barcodeTarget==='mobile-pick'){
+    if(!confirmedShelf){
+      if(_barcodeTarget==='mobile-pick'){ mobileScanFeedback(false); }
+      toast('Scan the shelf location label before scanning an item — tote → shelf → item','w');
+      return;
+    }
     const skuLoc=liveLoc(sku.sku);
     if(skuLoc.rack!==confirmedShelf.rack || skuLoc.shelf!==confirmedShelf.shelf){
       if(_barcodeTarget==='mobile-pick'){ mobileScanFeedback(false); }
