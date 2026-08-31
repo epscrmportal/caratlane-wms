@@ -621,6 +621,38 @@ function renderDash(){
   const re=document.getElementById('dash-recent');
   const rec=history.slice(-5).reverse();
   re.innerHTML=rec.length?rec.map(h=>`<div class="hist-entry"><div class="hist-head"><span class="hist-id">${h.id}</span><span class="pill ${h.type==='dispatch'?'p-low':h.type==='return'?'p-info':'p-ok'}">${h.type}</span></div><div class="hist-body">${h.ts} · ${esc(h.detail||'')}</div></div>`).join(''):'<div class="empty">No recent activity</div>';
+  renderDashRackSummary();
+}
+// Compact rack-occupancy glance on the Dashboard, so anyone landing there
+// (including supervisors, who don't otherwise default to Rack View) can
+// see shelf usage without switching tabs. Click a tile to jump to the
+// full Rack View for details.
+function renderDashRackSummary(){
+  const el=document.getElementById('dash-rack-summary');
+  if(!el || typeof RACK_LETTERS==='undefined') return;
+  const byRack={};
+  RACK_LETTERS.forEach(r=>byRack[r]={shelves:new Set(),qty:0});
+  SKUS.forEach(s=>{
+    const qty=(inv[s.sku]||{qty:0}).qty;
+    // Match Rack View: a shelf only counts as "in use" if it actually
+    // has stock — a SKU's catalog home with zero units isn't a real
+    // placement.
+    if(qty<=0) return;
+    const loc=liveLoc(s.sku);
+    if(!byRack[loc.rack]) return;
+    byRack[loc.rack].shelves.add(loc.shelf);
+    byRack[loc.rack].qty+=qty;
+  });
+  el.innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px">${RACK_LETTERS.map(r=>{
+    const d=byRack[r];
+    const used=Array.from(d.shelves).filter(sh=>+sh<=SHELVES_PER_RACK).length;
+    const empty=used===0;
+    return `<div onclick="nav('rack')" style="cursor:pointer;background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:8px;text-align:center">
+      <div style="font-size:13px;font-weight:700">${r}</div>
+      <div style="font-size:10px;color:${empty?'var(--t3)':'var(--t2)'};margin-top:2px">${used}/${SHELVES_PER_RACK} shelves</div>
+      <div style="font-size:10px;color:var(--t2)">${d.qty}u</div>
+    </div>`;
+  }).join('')}</div>`;
 }
 
 // INBOUND
@@ -830,6 +862,20 @@ function addIbItem(){
   const sLoc=liveLoc(sku);
   const defaultBin=`${sLoc.rack}-${sLoc.shelf}`;
   const bin=binOverride||defaultBin;
+  // If this SKU is already in the list at the same bin with the same QC
+  // result (e.g. it was pre-loaded from the expected shipment, or it was
+  // already scanned once), tally the qty onto that line instead of
+  // adding a second confusing row for the same item — this is where
+  // you confirm/verify the actual received count, not log separate boxes.
+  const existing=ibItems.find(it=>it.sku===sku && it.qc===qc && it.bin===bin);
+  if(existing){
+    existing.qty+=qty;
+    if(issue) existing.issue=issue;
+    renderIbItemsList();
+    document.getElementById('ib-bin-override').value='';
+    toast(`${sku} already in this shipment at ${bin} — qty updated to ${existing.qty}`, 's');
+    return;
+  }
   ibItems.push({sku,name:s.sub,variant:s.variant,qc,issue,qty,bin,binOverridden:!!binOverride});
   renderIbItemsList();
   document.getElementById('ib-bin-override').value='';
@@ -4079,6 +4125,11 @@ function renderRack(){
   RACK_LETTERS.forEach(r=>byRack[r]={});
   SKUS.forEach(s=>{
     const qty=(inv[s.sku]||{qty:0}).qty;
+    // Only show a SKU as occupying a shelf if it actually has stock there.
+    // Every SKU has a "home" rack/shelf baked into the catalog since
+    // creation requires one, but a catalog home with zero units isn't a
+    // real placement — showing it made empty shelves look occupied.
+    if(qty<=0) return;
     const loc=liveLoc(s.sku);
     if(!byRack[loc.rack]) byRack[loc.rack]={};
     if(!byRack[loc.rack][loc.shelf]) byRack[loc.rack][loc.shelf]=[];
@@ -5598,7 +5649,7 @@ async function onAuthSuccess(){
 // "users" is governed separately by canManageUsers (set in onAuthSuccess).
 const ROLE_TABS = {
   admin: null,
-  supervisor: ['dashboard','inbound','picking','packing','orders','dispatch','mobile','returns','inventory','orderstatus','reports','sop','audit','labels'],
+  supervisor: ['dashboard','inbound','picking','packing','orders','dispatch','mobile','returns','inventory','rack','orderstatus','reports','sop','audit','labels'],
   picker: ['picking','mobile'],
   packer: ['packing','mobile'],
   viewer: null
