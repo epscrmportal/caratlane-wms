@@ -6005,7 +6005,9 @@ async function saveEditPrice(sku){
   if(oldPrice===newPrice){ _priceEditingSku=null; renderInv(); return; }
   s.price=newPrice;
   try{
-    const {error}=await supa.from('skus').update({price:newPrice}).eq('sku',sku);
+    // upsert (not update) — if the skus table row for this SKU doesn't
+    // exist yet in the DB, update() would silently affect 0 rows.
+    const {error}=await supa.from('skus').upsert({sku,cat:s.cat,sub:s.sub,variant:s.variant,rack:s.rack,shelf:s.shelf,short_code:s.shortCode,price:newPrice},{onConflict:'sku'});
     if(error) throw error;
   }catch(e){ console.error('saveEditPrice failed:',e.message||e); toast('Price updated locally only — connection issue','w'); }
   logAudit('PRICE_UPDATE','skus',sku,{price:oldPrice},{price:newPrice});
