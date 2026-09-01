@@ -942,7 +942,7 @@ tr:hover td{background:var(--s2)}
 <div id="page-inventory" class="page">
   <div class="tb">
     <div class="sw"><i class="ti ti-search"></i><input type="text" id="inv-q" placeholder="Search SKU, item, category…" oninput="renderInv()"></div>
-    <select id="inv-cat" onchange="renderInv()"><option value="">All categories</option><option value="Uniform">Uniform</option><option value="VM">VM</option><option value="Ring Sizer">Ring Sizer</option></select>
+    <select id="inv-cat" onchange="renderInv()"><option value="">All categories</option><option value="Uniform">Uniform</option><option value="VM">VM</option></select>
     <select id="inv-st" onchange="renderInv()"><option value="">All status</option><option value="ok">In stock</option><option value="low">Low stock</option><option value="out">Out of stock</option></select>
     <button onclick="exportCSV()"><i class="ti ti-download"></i>Export CSV</button>
   </div>
@@ -956,7 +956,6 @@ tr:hover td{background:var(--s2)}
           <select id="ap-cat">
             <option value="Uniform">Uniform</option>
             <option value="VM">VM</option>
-            <option value="Ring Sizer">Ring Sizer</option>
           </select>
         </div>
       </div>
@@ -968,6 +967,9 @@ tr:hover td{background:var(--s2)}
         <div class="frow"><label for="ap-rack">Rack</label><select id="ap-rack"></select></div>
         <div class="frow"><label for="ap-shelf">Shelf</label><select id="ap-shelf"></select></div>
       </div>
+      <div class="fg2">
+        <div class="frow"><label for="ap-price">Unit price (₹)</label><input type="number" id="ap-price" placeholder="e.g. 995" min="0" step="0.01"></div>
+      </div>
       <div style="display:flex;gap:8px;margin-top:4px">
         <button class="btn-primary" onclick="submitAddProduct()"><i class="ti ti-check"></i>Add product</button>
         <button class="btn-sm" onclick="toggleAddProductForm()">Cancel</button>
@@ -975,7 +977,7 @@ tr:hover td{background:var(--s2)}
     </div>
   </div>
   <div class="tw">
-    <table><thead><tr><th>SKU</th><th>Category</th><th>Item</th><th>Variant</th><th>BIN (FIFO)</th><th>Qty</th><th>Status</th><th></th></tr></thead>
+    <table><thead><tr><th>SKU</th><th>Category</th><th>Item</th><th>Variant</th><th>BIN (FIFO)</th><th>Qty</th><th>Price</th><th>Status</th><th></th></tr></thead>
     <tbody id="inv-tbody"></tbody></table>
   </div>
   <div style="font-size:11px;color:var(--t2);margin-top:6px" id="inv-ct"></div>
@@ -1816,91 +1818,90 @@ function setSyncStatus(state) {
 </script>
 <script>
 let SKUS=[
-  {sku:"UNI-GS-M-34",cat:"Uniform",sub:"Grey Sweater- Male",variant:"Size 34",rack:"A",shelf:"1"},
-  {sku:"UNI-GS-M-36",cat:"Uniform",sub:"Grey Sweater- Male",variant:"Size 36",rack:"A",shelf:"1"},
-  {sku:"UNI-GS-M-38",cat:"Uniform",sub:"Grey Sweater- Male",variant:"Size 38",rack:"A",shelf:"1"},
-  {sku:"UNI-GS-M-42",cat:"Uniform",sub:"Grey Sweater- Male",variant:"Size 42",rack:"A",shelf:"1"},
-  {sku:"UNI-GS-M-44",cat:"Uniform",sub:"Grey Sweater- Male",variant:"Size 44",rack:"A",shelf:"1"},
-  {sku:"UNI-GS-M-46",cat:"Uniform",sub:"Grey Sweater- Male",variant:"Size 46",rack:"A",shelf:"1"},
-  {sku:"UNI-GS-F-34",cat:"Uniform",sub:"Grey Sweater- Female",variant:"Size 34",rack:"A",shelf:"2"},
-  {sku:"UNI-GS-F-36",cat:"Uniform",sub:"Grey Sweater- Female",variant:"Size 36",rack:"A",shelf:"2"},
-  {sku:"UNI-GS-F-38",cat:"Uniform",sub:"Grey Sweater- Female",variant:"Size 38",rack:"A",shelf:"2"},
-  {sku:"UNI-GS-F-40",cat:"Uniform",sub:"Grey Sweater- Female",variant:"Size 40",rack:"A",shelf:"2"},
-  {sku:"UNI-GS-F-42",cat:"Uniform",sub:"Grey Sweater- Female",variant:"Size 42",rack:"A",shelf:"2"},
-  {sku:"UNI-GS-F-44",cat:"Uniform",sub:"Grey Sweater- Female",variant:"Size 44",rack:"A",shelf:"2"},
-  {sku:"UNI-GS-F-46",cat:"Uniform",sub:"Grey Sweater- Female",variant:"Size 46",rack:"A",shelf:"2"},
-  {sku:"UNI-MC-U-34",cat:"Uniform",sub:"Monte Carlo Sweater- Unisex",variant:"Size 34",rack:"A",shelf:"3"},
-  {sku:"UNI-MC-U-36",cat:"Uniform",sub:"Monte Carlo Sweater- Unisex",variant:"Size 36",rack:"A",shelf:"3"},
-  {sku:"UNI-MC-U-38",cat:"Uniform",sub:"Monte Carlo Sweater- Unisex",variant:"Size 38",rack:"A",shelf:"3"},
-  {sku:"UNI-MC-U-40",cat:"Uniform",sub:"Monte Carlo Sweater- Unisex",variant:"Size 40",rack:"A",shelf:"3"},
-  {sku:"UNI-MC-U-42",cat:"Uniform",sub:"Monte Carlo Sweater- Unisex",variant:"Size 42",rack:"A",shelf:"3"},
-  {sku:"UNI-MC-U-44",cat:"Uniform",sub:"Monte Carlo Sweater- Unisex",variant:"Size 44",rack:"A",shelf:"3"},
-  {sku:"UNI-BLZ-U",cat:"Uniform",sub:"Blazers - Unisex",variant:"Unstitched",rack:"A",shelf:"4"},
-  {sku:"UNI-JCT-U",cat:"Uniform",sub:"JC Trouser - Unisex",variant:"Unstitched",rack:"A",shelf:"4"},
-  {sku:"UNI-JCS-U",cat:"Uniform",sub:"JC Shirt - Unisex",variant:"Unstitched",rack:"A",shelf:"4"},
-  {sku:"UNI-TAH-U",cat:"Uniform",sub:"TAH Shirt - Unisex",variant:"Unstitched",rack:"A",shelf:"4"},
-  {sku:"UNI-HKS-M",cat:"Uniform",sub:"HK Shirt - Male",variant:"Unstitched",rack:"A",shelf:"5"},
-  {sku:"UNI-HKT-M",cat:"Uniform",sub:"HK Trouser - Male",variant:"Unstitched",rack:"A",shelf:"5"},
-  {sku:"UNI-HKK-F",cat:"Uniform",sub:"HK Kurta - Female",variant:"Unstitched",rack:"A",shelf:"5"},
-  {sku:"UNI-HKP-F",cat:"Uniform",sub:"HK Pyjama - Female",variant:"Unstitched",rack:"A",shelf:"5"},
-  {sku:"UNI-SH-M-6",cat:"Uniform",sub:"Shoes - Male",variant:"Size 6",rack:"A",shelf:"6"},
-  {sku:"UNI-SH-M-7",cat:"Uniform",sub:"Shoes - Male",variant:"Size 7",rack:"A",shelf:"6"},
-  {sku:"UNI-SH-M-8",cat:"Uniform",sub:"Shoes - Male",variant:"Size 8",rack:"A",shelf:"6"},
-  {sku:"UNI-SH-M-11",cat:"Uniform",sub:"Shoes - Male",variant:"Size 11",rack:"A",shelf:"6"},
-  {sku:"UNI-SH-M-12",cat:"Uniform",sub:"Shoes - Male",variant:"Size 12",rack:"A",shelf:"6"},
-  {sku:"UNI-SH-F-6",cat:"Uniform",sub:"Shoes - Female",variant:"Size 6",rack:"A",shelf:"7"},
-  {sku:"UNI-SH-F-7",cat:"Uniform",sub:"Shoes - Female",variant:"Size 7",rack:"A",shelf:"7"},
-  {sku:"UNI-SH-U-4",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 4",rack:"A",shelf:"7"},
-  {sku:"UNI-SH-U-5",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 5",rack:"A",shelf:"7"},
-  {sku:"UNI-SH-U-6",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 6",rack:"A",shelf:"7"},
-  {sku:"UNI-SH-U-7",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 7",rack:"A",shelf:"7"},
-  {sku:"UNI-SH-U-8",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 8",rack:"A",shelf:"7"},
-  {sku:"UNI-SH-U-9",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 9",rack:"A",shelf:"7"},
-  {sku:"UNI-SH-U-10",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 10",rack:"A",shelf:"7"},
-  {sku:"UNI-SH-U-11",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 11",rack:"A",shelf:"7"},
-  {sku:"UNI-SH-U-12",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 12",rack:"A",shelf:"7"},
-  {sku:"UNI-DN-M-30",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 30",rack:"A",shelf:"8"},
-  {sku:"UNI-DN-M-32",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 32",rack:"A",shelf:"8"},
-  {sku:"UNI-DN-M-34",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 34",rack:"A",shelf:"8"},
-  {sku:"UNI-DN-M-36",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 36",rack:"A",shelf:"8"},
-  {sku:"UNI-DN-M-38",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 38",rack:"A",shelf:"8"},
-  {sku:"UNI-DN-M-40",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 40",rack:"A",shelf:"8"},
-  {sku:"UNI-DN-M-42",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 42",rack:"A",shelf:"8"},
-  {sku:"UNI-DN-F-28",cat:"Uniform",sub:"Stitched Denim - Female",variant:"Size 28",rack:"A",shelf:"9"},
-  {sku:"UNI-DN-F-30",cat:"Uniform",sub:"Stitched Denim - Female",variant:"Size 30",rack:"A",shelf:"9"},
-  {sku:"UNI-DN-F-32",cat:"Uniform",sub:"Stitched Denim - Female",variant:"Size 32",rack:"A",shelf:"9"},
-  {sku:"UNI-DN-F-34",cat:"Uniform",sub:"Stitched Denim - Female",variant:"Size 34",rack:"A",shelf:"9"},
-  {sku:"UNI-DN-F-36",cat:"Uniform",sub:"Stitched Denim - Female",variant:"Size 36",rack:"A",shelf:"9"},
-  {sku:"UNI-DN-F-38",cat:"Uniform",sub:"Stitched Denim - Female",variant:"Size 38",rack:"A",shelf:"9"},
-  {sku:"UNI-SHT-M-38",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 38",rack:"A",shelf:"10"},
-  {sku:"UNI-SHT-M-40",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 40",rack:"A",shelf:"10"},
-  {sku:"UNI-SHT-M-42",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 42",rack:"A",shelf:"10"},
-  {sku:"UNI-SHT-M-44",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 44",rack:"A",shelf:"10"},
-  {sku:"UNI-SHT-M-46",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 46",rack:"A",shelf:"10"},
-  {sku:"UNI-SHT-M-48",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 48",rack:"A",shelf:"10"},
-  {sku:"UNI-SHT-M-50",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 50",rack:"A",shelf:"10"},
-  {sku:"UNI-SHT-M-52",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 52",rack:"A",shelf:"10"},
-  {sku:"UNI-SHT-M-54",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 54",rack:"A",shelf:"10"},
-  {sku:"UNI-SHT-F-XXS",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size XXS",rack:"A",shelf:"11"},
-  {sku:"UNI-SHT-F-XS",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size XS",rack:"A",shelf:"11"},
-  {sku:"UNI-SHT-F-S",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size S",rack:"A",shelf:"11"},
-  {sku:"UNI-SHT-F-M",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size M",rack:"A",shelf:"11"},
-  {sku:"UNI-SHT-F-L",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size L",rack:"A",shelf:"11"},
-  {sku:"UNI-SHT-F-XL",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size XL",rack:"A",shelf:"11"},
-  {sku:"UNI-SHT-F-XXL",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size XXL",rack:"A",shelf:"11"},
-  {sku:"UNI-SHT-F-XXXL",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size XXXL",rack:"A",shelf:"11"},
-  {sku:"VM-EG",cat:"VM",sub:"Eye glass",variant:"Eye glass",rack:"B",shelf:"1"},
-  {sku:"VM-EL",cat:"VM",sub:"Eye Loop",variant:"Eye Loop",rack:"B",shelf:"1"},
-  {sku:"VM-CB",cat:"VM",sub:"Chocolate bowl",variant:"Chocolate bowl",rack:"B",shelf:"2"},
-  {sku:"VM-CC",cat:"VM",sub:"Cleaning Cloth",variant:"Cleaning Cloth",rack:"B",shelf:"2"},
+  {sku:"UNI-GS-M-34",cat:"Uniform",sub:"Grey Sweater- Male",variant:"Size 34",rack:"A",shelf:"1",price:995},
+  {sku:"UNI-GS-M-36",cat:"Uniform",sub:"Grey Sweater- Male",variant:"Size 36",rack:"A",shelf:"1",price:995},
+  {sku:"UNI-GS-M-38",cat:"Uniform",sub:"Grey Sweater- Male",variant:"Size 38",rack:"A",shelf:"1",price:995},
+  {sku:"UNI-GS-M-42",cat:"Uniform",sub:"Grey Sweater- Male",variant:"Size 42",rack:"A",shelf:"1",price:995},
+  {sku:"UNI-GS-M-44",cat:"Uniform",sub:"Grey Sweater- Male",variant:"Size 44",rack:"A",shelf:"1",price:995},
+  {sku:"UNI-GS-M-46",cat:"Uniform",sub:"Grey Sweater- Male",variant:"Size 46",rack:"A",shelf:"1",price:995},
+  {sku:"UNI-GS-F-34",cat:"Uniform",sub:"Grey Sweater- Female",variant:"Size 34",rack:"A",shelf:"2",price:995},
+  {sku:"UNI-GS-F-36",cat:"Uniform",sub:"Grey Sweater- Female",variant:"Size 36",rack:"A",shelf:"2",price:995},
+  {sku:"UNI-GS-F-38",cat:"Uniform",sub:"Grey Sweater- Female",variant:"Size 38",rack:"A",shelf:"2",price:995},
+  {sku:"UNI-GS-F-40",cat:"Uniform",sub:"Grey Sweater- Female",variant:"Size 40",rack:"A",shelf:"2",price:995},
+  {sku:"UNI-GS-F-42",cat:"Uniform",sub:"Grey Sweater- Female",variant:"Size 42",rack:"A",shelf:"2",price:995},
+  {sku:"UNI-GS-F-44",cat:"Uniform",sub:"Grey Sweater- Female",variant:"Size 44",rack:"A",shelf:"2",price:995},
+  {sku:"UNI-GS-F-46",cat:"Uniform",sub:"Grey Sweater- Female",variant:"Size 46",rack:"A",shelf:"2",price:995},
+  {sku:"UNI-MC-U-34",cat:"Uniform",sub:"Monte Carlo Sweater- Unisex",variant:"Size 34",rack:"A",shelf:"3",price:1175},
+  {sku:"UNI-MC-U-36",cat:"Uniform",sub:"Monte Carlo Sweater- Unisex",variant:"Size 36",rack:"A",shelf:"3",price:1175},
+  {sku:"UNI-MC-U-38",cat:"Uniform",sub:"Monte Carlo Sweater- Unisex",variant:"Size 38",rack:"A",shelf:"3",price:1175},
+  {sku:"UNI-MC-U-40",cat:"Uniform",sub:"Monte Carlo Sweater- Unisex",variant:"Size 40",rack:"A",shelf:"3",price:1175},
+  {sku:"UNI-MC-U-42",cat:"Uniform",sub:"Monte Carlo Sweater- Unisex",variant:"Size 42",rack:"A",shelf:"3",price:1175},
+  {sku:"UNI-MC-U-44",cat:"Uniform",sub:"Monte Carlo Sweater- Unisex",variant:"Size 44",rack:"A",shelf:"3",price:1175},
+  {sku:"UNI-BLZ-U",cat:"Uniform",sub:"Blazers - Unisex",variant:"Unstitched",rack:"A",shelf:"4",price:1805},
+  {sku:"UNI-JCT-U",cat:"Uniform",sub:"JC Trouser - Unisex",variant:"Unstitched",rack:"A",shelf:"4",price:659.1},
+  {sku:"UNI-JCS-U",cat:"Uniform",sub:"JC Shirt - Unisex",variant:"Unstitched",rack:"A",shelf:"4",price:450},
+  {sku:"UNI-TAH-U",cat:"Uniform",sub:"TAH Shirt - Unisex",variant:"Unstitched",rack:"A",shelf:"4",price:450},
+  {sku:"UNI-HKS-M",cat:"Uniform",sub:"HK Shirt - Male",variant:"Unstitched",rack:"A",shelf:"5",price:425},
+  {sku:"UNI-HKT-M",cat:"Uniform",sub:"HK Trouser - Male",variant:"Unstitched",rack:"A",shelf:"5",price:440},
+  {sku:"UNI-HKK-F",cat:"Uniform",sub:"HK Kurta - Female",variant:"Unstitched",rack:"A",shelf:"5",price:510},
+  {sku:"UNI-HKP-F",cat:"Uniform",sub:"HK Pyjama - Female",variant:"Unstitched",rack:"A",shelf:"5",price:440},
+  {sku:"UNI-SH-M-6",cat:"Uniform",sub:"Shoes - Male",variant:"Size 6",rack:"A",shelf:"6",price:800},
+  {sku:"UNI-SH-M-7",cat:"Uniform",sub:"Shoes - Male",variant:"Size 7",rack:"A",shelf:"6",price:800},
+  {sku:"UNI-SH-M-8",cat:"Uniform",sub:"Shoes - Male",variant:"Size 8",rack:"A",shelf:"6",price:800},
+  {sku:"UNI-SH-M-11",cat:"Uniform",sub:"Shoes - Male",variant:"Size 11",rack:"A",shelf:"6",price:950},
+  {sku:"UNI-SH-M-12",cat:"Uniform",sub:"Shoes - Male",variant:"Size 12",rack:"A",shelf:"6",price:950},
+  {sku:"UNI-SH-F-6",cat:"Uniform",sub:"Shoes - Female",variant:"Size 6",rack:"A",shelf:"7",price:800},
+  {sku:"UNI-SH-F-7",cat:"Uniform",sub:"Shoes - Female",variant:"Size 7",rack:"A",shelf:"7",price:800},
+  {sku:"UNI-SH-U-4",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 4",rack:"A",shelf:"7",price:890},
+  {sku:"UNI-SH-U-5",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 5",rack:"A",shelf:"7",price:890},
+  {sku:"UNI-SH-U-6",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 6",rack:"A",shelf:"7",price:890},
+  {sku:"UNI-SH-U-7",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 7",rack:"A",shelf:"7",price:890},
+  {sku:"UNI-SH-U-8",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 8",rack:"A",shelf:"7",price:890},
+  {sku:"UNI-SH-U-9",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 9",rack:"A",shelf:"7",price:890},
+  {sku:"UNI-SH-U-10",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 10",rack:"A",shelf:"7",price:890},
+  {sku:"UNI-SH-U-11",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 11",rack:"A",shelf:"7",price:890},
+  {sku:"UNI-SH-U-12",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 12",rack:"A",shelf:"7",price:890},
+  {sku:"UNI-DN-M-30",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 30",rack:"A",shelf:"8",price:1400},
+  {sku:"UNI-DN-M-32",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 32",rack:"A",shelf:"8",price:1400},
+  {sku:"UNI-DN-M-34",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 34",rack:"A",shelf:"8",price:1400},
+  {sku:"UNI-DN-M-36",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 36",rack:"A",shelf:"8",price:1400},
+  {sku:"UNI-DN-M-38",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 38",rack:"A",shelf:"8",price:1400},
+  {sku:"UNI-DN-M-40",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 40",rack:"A",shelf:"8",price:1400},
+  {sku:"UNI-DN-M-42",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 42",rack:"A",shelf:"8",price:1400},
+  {sku:"UNI-DN-F-28",cat:"Uniform",sub:"Stitched Denim - Female",variant:"Size 28",rack:"A",shelf:"9",price:1400},
+  {sku:"UNI-DN-F-30",cat:"Uniform",sub:"Stitched Denim - Female",variant:"Size 30",rack:"A",shelf:"9",price:1400},
+  {sku:"UNI-DN-F-32",cat:"Uniform",sub:"Stitched Denim - Female",variant:"Size 32",rack:"A",shelf:"9",price:1400},
+  {sku:"UNI-DN-F-34",cat:"Uniform",sub:"Stitched Denim - Female",variant:"Size 34",rack:"A",shelf:"9",price:1400},
+  {sku:"UNI-DN-F-36",cat:"Uniform",sub:"Stitched Denim - Female",variant:"Size 36",rack:"A",shelf:"9",price:1400},
+  {sku:"UNI-DN-F-38",cat:"Uniform",sub:"Stitched Denim - Female",variant:"Size 38",rack:"A",shelf:"9",price:1400},
+  {sku:"UNI-SHT-M-38",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 38",rack:"A",shelf:"10",price:760},
+  {sku:"UNI-SHT-M-40",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 40",rack:"A",shelf:"10",price:760},
+  {sku:"UNI-SHT-M-42",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 42",rack:"A",shelf:"10",price:760},
+  {sku:"UNI-SHT-M-44",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 44",rack:"A",shelf:"10",price:760},
+  {sku:"UNI-SHT-M-46",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 46",rack:"A",shelf:"10",price:760},
+  {sku:"UNI-SHT-M-48",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 48",rack:"A",shelf:"10",price:760},
+  {sku:"UNI-SHT-M-50",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 50",rack:"A",shelf:"10",price:760},
+  {sku:"UNI-SHT-M-52",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 52",rack:"A",shelf:"10",price:760},
+  {sku:"UNI-SHT-M-54",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 54",rack:"A",shelf:"10",price:760},
+  {sku:"UNI-SHT-F-XXS",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size XXS",rack:"A",shelf:"11",price:760},
+  {sku:"UNI-SHT-F-XS",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size XS",rack:"A",shelf:"11",price:760},
+  {sku:"UNI-SHT-F-S",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size S",rack:"A",shelf:"11",price:760},
+  {sku:"UNI-SHT-F-M",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size M",rack:"A",shelf:"11",price:760},
+  {sku:"UNI-SHT-F-L",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size L",rack:"A",shelf:"11",price:760},
+  {sku:"UNI-SHT-F-XL",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size XL",rack:"A",shelf:"11",price:760},
+  {sku:"UNI-SHT-F-XXL",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size XXL",rack:"A",shelf:"11",price:760},
+  {sku:"UNI-SHT-F-XXXL",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size XXXL",rack:"A",shelf:"11",price:760},
+  {sku:"VM-EG",cat:"VM",sub:"Eye glass",variant:"Eye glass",rack:"B",shelf:"1",price:325},
+  {sku:"VM-EL",cat:"VM",sub:"Eye Loop",variant:"Eye Loop",rack:"B",shelf:"1",price:1100},
+  {sku:"VM-CB",cat:"VM",sub:"Chocolate bowl",variant:"Chocolate bowl",rack:"B",shelf:"2",price:395},
+  {sku:"VM-CC",cat:"VM",sub:"Cleaning Cloth",variant:"Cleaning Cloth",rack:"B",shelf:"2",price:125},
   {sku:"VM-IS",cat:"VM",sub:"Ipad Stand",variant:"Ipad Stand",rack:"B",shelf:"3"},
-  {sku:"VM-IC-9",cat:"VM",sub:"Ipad Cover",variant:"9th Generation",rack:"B",shelf:"3"},
-  {sku:"VM-IC-10",cat:"VM",sub:"Ipad Cover",variant:"10th Generation",rack:"B",shelf:"3"},
+  {sku:"VM-IC-9",cat:"VM",sub:"Ipad Cover",variant:"9th Generation",rack:"B",shelf:"3",price:275},
+  {sku:"VM-IC-10",cat:"VM",sub:"Ipad Cover",variant:"10th Generation",rack:"B",shelf:"3",price:300},
   {sku:"VM-RS",cat:"VM",sub:"Ring Sizer",variant:"Ring Sizer",rack:"B",shelf:"4"},
-  {sku:"VM-RR",cat:"VM",sub:"Ring Rod",variant:"Ring Rod",rack:"B",shelf:"4"},
-  {sku:"VM-BS",cat:"VM",sub:"Bangle Sizer",variant:"Bangle Sizer",rack:"B",shelf:"4"},
+  {sku:"VM-RR",cat:"VM",sub:"Ring Rod",variant:"Ring Rod",rack:"B",shelf:"4",price:350},
+  {sku:"VM-BS",cat:"VM",sub:"Bangle Sizer",variant:"Bangle Sizer",rack:"B",shelf:"4",price:990},
 ];
-
 let inv={},history=[],ibItems=[],pkItemsList=[],rtItemsList=[],packingQueue=[],inventoryCounts=[],currentCount={},costParams={
   receivingCostPerGrn:500,
   pickCostPerOrder:50,
@@ -3413,7 +3414,7 @@ function renderOrdersBoard(){
   if(!orders.length){ el.innerHTML='<div class="empty">No orders yet</div>'; return; }
   const canManage=getPerms().canManageOrders;
   const statusPill={unassigned:'p-hold',assigned:'p-info',picked:'p-out',cancelled:'p-hold'};
-  el.innerHTML=`<div class="tw"><table><thead><tr><th>Order ID</th><th>Customer</th><th>Priority</th><th>Items</th><th>Status</th><th>Assigned To</th>${canManage?'<th>Action</th>':''}</tr></thead><tbody>${orders.map(o=>{
+  el.innerHTML=`<div class="tw"><table><thead><tr><th>Order ID</th><th>Customer</th><th>Priority</th><th>Items</th><th>Status</th><th>Assigned To</th>${canManage?'<th>Invoice</th><th>Action</th>':''}</tr></thead><tbody>${orders.map(o=>{
     let action='';
     if(canManage && o.status==='unassigned'){
       const opts=pickerNames.length?pickerNames.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join(''):'<option value="">No pickers registered</option>';
@@ -3421,7 +3422,8 @@ function renderOrdersBoard(){
     } else if(canManage && o.status==='assigned'){
       action=`<button class="btn-sm btn-danger" onclick="unassignOrder('${esc(o.id)}')">Unassign</button>`;
     }
-    return `<tr${o.status==='cancelled'?' style="opacity:0.5"':''}><td class="mono">${esc(o.id)}</td><td style="font-size:11px">${esc(o.customerName||'—')}</td><td><span class="pill ${o.priority==='Express'?'p-out':o.priority==='Standard'?'p-info':'p-hold'}">${o.priority}</span></td><td>${o.items.length} SKU(s)</td><td><span class="pill ${statusPill[o.status]||'p-info'}">${o.status}</span></td><td style="font-size:11px">${o.assignedPicker?esc(o.assignedPicker):'—'}${o.status==='picked'&&o.pickedTaskId?` <span style="color:var(--t3)">(${esc(o.pickedTaskId)})</span>`:''}</td>${canManage?`<td>${action}</td>`:''}</tr>`;
+    const invoiceCell=canManage?`<td><button class="btn-sm" onclick="printProformaInvoice('${esc(o.id)}')" title="Print Proforma Invoice"><i class="ti ti-file-invoice"></i></button></td>`:'';
+    return `<tr${o.status==='cancelled'?' style="opacity:0.5"':''}><td class="mono">${esc(o.id)}</td><td style="font-size:11px">${esc(o.customerName||'—')}</td><td><span class="pill ${o.priority==='Express'?'p-out':o.priority==='Standard'?'p-info':'p-hold'}">${o.priority}</span></td><td>${o.items.length} SKU(s)</td><td><span class="pill ${statusPill[o.status]||'p-info'}">${o.status}</span></td><td style="font-size:11px">${o.assignedPicker?esc(o.assignedPicker):'—'}${o.status==='picked'&&o.pickedTaskId?` <span style="color:var(--t3)">(${esc(o.pickedTaskId)})</span>`:''}</td>${canManage?`${invoiceCell}<td>${action}</td>`:''}</tr>`;
   }).join('')}</tbody></table></div>`;
   renderOrderAgingAlert();
 }
@@ -3943,6 +3945,77 @@ function printPackingSlip(historyId){
   printWindow.focus();
   setTimeout(()=>printWindow.print(),300);
 }
+function printProformaInvoice(orderId){
+  const o=orders.find(x=>x.id===orderId);
+  if(!o){ toast('Order not found','w'); return; }
+  const printWindow=window.open('','PFI_'+orderId,'width=850,height=1000');
+  if(!printWindow){ toast('Please allow popups to print','w'); return; }
+  const items=o.items||[];
+  let subtotal=0;
+  let hasMissingPrice=false;
+  const rows=items.map(it=>{
+    const s=SKUS.find(x=>x.sku===it.sku);
+    const price=s&&s.price!=null?s.price:null;
+    if(price==null) hasMissingPrice=true;
+    const lineTotal=price!=null?price*(it.qty||0):null;
+    if(lineTotal!=null) subtotal+=lineTotal;
+    return `<tr><td>${esc(it.sku)}</td><td>${esc(it.name||'')}</td><td>${esc(it.variant||'')}</td><td style="text-align:center">${it.qty}</td><td style="text-align:right">${price!=null?'₹'+price.toFixed(2):'—'}</td><td style="text-align:right">${lineTotal!=null?'₹'+lineTotal.toFixed(2):'—'}</td></tr>`;
+  }).join('');
+  printWindow.document.write(`
+    <!DOCTYPE html><html><head><title>Proforma Invoice — ${esc(o.id)}</title>
+    <style>
+      body{font-family:Arial,sans-serif;margin:20px;color:#333}
+      .header{border-bottom:3px solid #000;padding-bottom:12px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:flex-end}
+      .company{font-size:18px;font-weight:bold}
+      .subtitle{font-size:11px;color:#666;margin-top:2px}
+      .orderid{font-size:22px;font-weight:bold;text-align:right}
+      .meta{display:grid;grid-template-columns:1fr 1fr;gap:6px 20px;margin:14px 0;font-size:12px}
+      .meta b{color:#000}
+      table{width:100%;border-collapse:collapse;margin-top:10px}
+      th{background:#f0f0f0;padding:8px;text-align:left;border:1px solid #ccc;font-size:11px}
+      td{padding:9px 8px;border:1px solid #ccc;font-size:12px}
+      .totals{margin-top:10px;font-size:13px;text-align:right}
+      .totals .grand{font-size:16px;font-weight:bold;margin-top:4px}
+      .note{margin-top:14px;font-size:10.5px;color:#888;border-top:1px solid #ccc;padding-top:8px}
+      .sign{margin-top:50px;display:grid;grid-template-columns:1fr 1fr;gap:30px}
+      .sign div{border-top:1px solid #000;padding-top:6px;text-align:center;font-size:11px}
+      .footer{margin-top:30px;font-size:10px;color:#999;text-align:center}
+    </style></head><body>
+    <div class="header">
+      <div>
+        <div class="company">CaratLane WMS — Proforma Invoice</div>
+        <div class="subtitle">EPS Worldwide Integrated Logistics</div>
+      </div>
+      <div class="orderid">${esc(o.id)}</div>
+    </div>
+    <div class="meta">
+      <div><b>Customer:</b> ${esc(o.customerName||'—')}</div>
+      <div><b>Priority:</b> ${esc(o.priority||'—')}</div>
+      <div><b>Address:</b> ${esc(o.address||'—')}</div>
+      <div><b>Pincode / Phone:</b> ${esc(o.pincode||'—')} / ${esc(o.phone||'—')}</div>
+      <div><b>Status:</b> ${esc(o.status||'—')}</div>
+      <div><b>Created:</b> ${esc(o.createdAt||'—')}</div>
+    </div>
+    <table><thead><tr><th>SKU</th><th>Item</th><th>Variant</th><th>Qty</th><th>Unit Price</th><th>Line Total</th></tr></thead><tbody>
+      ${rows}
+    </tbody></table>
+    <div class="totals">
+      <div>Total items: <strong>${items.reduce((a,it)=>a+(it.qty||0),0)}</strong> across ${items.length} SKU(s)</div>
+      <div class="grand">Estimated Subtotal: ₹${subtotal.toFixed(2)}${hasMissingPrice?' *':''}</div>
+    </div>
+    ${hasMissingPrice?'<div class="note">* One or more items do not have a unit price set in the catalog yet — those lines are excluded from the subtotal above. Add a price in Inventory to include them.</div>':''}
+    <div class="note">This is a Proforma Invoice for estimation purposes only — prices exclude taxes and are not a final tax invoice or demand for payment.</div>
+    <div class="sign">
+      <div>Prepared by</div>
+      <div>Authorized signatory</div>
+    </div>
+    <div class="footer">Printed ${new Date().toLocaleString('en-IN')} · CaratLane WMS</div>
+    </body></html>
+  `);
+  printWindow.document.close();
+  printWindow.focus();
+  setTimeout(()=>printWindow.print(),300);
+}
 function renderPackedOrdersList(){
   const el=document.getElementById('dispatch-packed-list');
   if(!el){console.log('ERROR: dispatch-packed-list element not found');return;}
@@ -3959,7 +4032,10 @@ function renderPackedOrdersList(){
         <div>${p.ts} · Order: <strong>${p.orderId}</strong> · ${itemCount} SKU(s)</div>
         <div style="font-size:10px;color:var(--t2);margin-top:2px">📦 ${dimsStr}${matStr?' · '+matStr:''}${durStr?' · ⏱ '+durStr:''}</div>
       </div>
-      <button class="btn-sm" onclick="event.stopPropagation();printPackingSlip('${p.id}')" style="margin-top:6px"><i class="ti ti-printer"></i>Print slip</button>
+      <div style="display:flex;gap:6px;margin-top:6px">
+        <button class="btn-sm" onclick="event.stopPropagation();printPackingSlip('${p.id}')"><i class="ti ti-printer"></i>Print slip</button>
+        <button class="btn-sm" onclick="event.stopPropagation();printProformaInvoice('${p.orderId}')"><i class="ti ti-file-invoice"></i>Proforma Invoice</button>
+      </div>
     </div>`;
   }).join(''):'<div class="empty">No packed orders yet — create and pack orders first</div>';
 }
@@ -5832,6 +5908,7 @@ async function renderInvVersionHistory(){
 }
 let reservedMap={};
 let _binEditingSku=null;
+let _priceEditingSku=null;
 async function loadReservedMap(){
   try{
     const {data,error}=await supa.rpc('get_active_reservations');
@@ -5858,8 +5935,12 @@ function renderInv(){
     const binCell=_binEditingSku===s.sku
       ?`<div style="display:flex;gap:4px;align-items:center"><select id="bin-edit-rack-${s.sku}" style="font-size:11px;padding:2px 4px;width:54px">${RACK_LETTERS.map(r=>`<option value="${r}" ${r===i2.rack?'selected':''}>${r}</option>`).join('')}</select><select id="bin-edit-shelf-${s.sku}" style="font-size:11px;padding:2px 4px;width:48px">${Array.from({length:SHELVES_PER_RACK},(_,i)=>i+1).map(n=>`<option value="${n}" ${String(n)===String(i2.shelf)?'selected':''}>${n}</option>`).join('')}</select><button class="btn-sm" style="padding:2px 6px" onclick="saveEditBin('${s.sku}')" title="Save"><i class="ti ti-check"></i></button><button class="btn-sm btn-danger" style="padding:2px 6px" onclick="cancelEditBin()" title="Cancel"><i class="ti ti-x"></i></button></div>`
       :`<span style="font-size:11px;font-weight:500">${i2.rack}-${i2.shelf}</span>${canEditBin?` <button class="btn-sm" style="padding:1px 5px;margin-left:4px" onclick="startEditBin('${s.sku}')" title="Edit bin location"><i class="ti ti-edit" style="font-size:11px"></i></button>`:''}`;
+    const priceCell=_priceEditingSku===s.sku
+      ?`<div style="display:flex;gap:4px;align-items:center"><input type="number" id="price-edit-${s.sku}" value="${s.price!=null?s.price:''}" min="0" step="0.01" style="font-size:11px;padding:2px 4px;width:70px"><button class="btn-sm" style="padding:2px 6px" onclick="saveEditPrice('${s.sku}')" title="Save"><i class="ti ti-check"></i></button><button class="btn-sm btn-danger" style="padding:2px 6px" onclick="cancelEditPrice()" title="Cancel"><i class="ti ti-x"></i></button></div>`
+      :`<span style="font-size:11px;font-weight:500">${s.price!=null?'₹'+s.price:'—'}</span>${canEditBin?` <button class="btn-sm" style="padding:1px 5px;margin-left:4px" onclick="startEditPrice('${s.sku}')" title="Edit unit price"><i class="ti ti-edit" style="font-size:11px"></i></button>`:''}`;
     return`<tr><td class="mono">${s.sku}</td><td><span class="pill p-info">${s.cat}</span></td><td style="font-weight:600;font-size:12px">${s.sub}</td><td style="color:var(--t2);font-size:11px">${s.variant}</td><td>${binCell}</td>
     <td><div class="qc"><button class="qb" onclick="adjQ('${s.sku}',-1)">−</button><span class="qv">${i2.qty}</span><button class="qb" onclick="adjQ('${s.sku}',1)">+</button></div>${held>0?`<div style="font-size:9.5px;color:var(--wt);margin-top:2px;font-weight:600">${held} held by pickers</div>`:''}</td>
+    <td>${priceCell}</td>
     <td>${stPill(i2.qty)}</td>
     <td><button class="btn-sm" onclick="quickDisp('${s.sku}','${s.sub.replace(/'/g,"\\'").replace(/"/g,'&quot;')}','${s.variant.replace(/'/g,"\\'")}',${i2.qty})" ${i2.qty<=0?'disabled':''}><i class="ti ti-send"></i></button></td></tr>`;
   }).join('');
@@ -5899,6 +5980,38 @@ async function saveEditBin(sku){
   renderInv();
   renderRack();
   toast(`${sku} moved to bin ${newRack}-${newShelf}`,'s');
+}
+function startEditPrice(sku){
+  if(!getPerms().canEdit){ toast('You do not have permission to edit prices','w'); return; }
+  _priceEditingSku=sku;
+  renderInv();
+}
+function cancelEditPrice(){
+  _priceEditingSku=null;
+  renderInv();
+}
+async function saveEditPrice(sku){
+  const priceEl=document.getElementById('price-edit-'+sku);
+  if(!priceEl) return;
+  const raw=priceEl.value.trim();
+  const s=SKUS.find(x=>x.sku===sku);
+  if(!s) return;
+  let newPrice=null;
+  if(raw!==''){
+    newPrice=parseFloat(raw);
+    if(isNaN(newPrice)||newPrice<0){ toast('Price must be a valid non-negative number','w'); return; }
+  }
+  const oldPrice=s.price!=null?s.price:null;
+  if(oldPrice===newPrice){ _priceEditingSku=null; renderInv(); return; }
+  s.price=newPrice;
+  try{
+    const {error}=await supa.from('skus').update({price:newPrice}).eq('sku',sku);
+    if(error) throw error;
+  }catch(e){ console.error('saveEditPrice failed:',e.message||e); toast('Price updated locally only — connection issue','w'); }
+  logAudit('PRICE_UPDATE','skus',sku,{price:oldPrice},{price:newPrice});
+  _priceEditingSku=null;
+  renderInv();
+  toast(`${sku} price set to ${newPrice!=null?'₹'+newPrice:'—'}`,'s');
 }
 function quickDisp(sku,name,variant,avail){addToCart(sku,name,variant,avail);nav('dispatch');}
 function exportCSV(){
@@ -6914,7 +7027,7 @@ async function loadSKUsFromDB(){
     if(typeof supabase==='undefined'||!supa) return;
     const {data,error}=await supa.from('skus').select('*').order('cat').order('sub').order('variant');
     if(error||!data||!data.length) return; // fallback to hardcoded
-    SKUS=data.map(r=>({sku:r.sku,cat:r.cat,sub:r.sub,variant:r.variant,rack:r.rack,shelf:r.shelf,shortCode:(r.short_code!=null?r.short_code:null)}));
+    SKUS=data.map(r=>({sku:r.sku,cat:r.cat,sub:r.sub,variant:r.variant,rack:r.rack,shelf:r.shelf,shortCode:(r.short_code!=null?r.short_code:null),price:(r.price!=null?parseFloat(r.price):null)}));
     console.log('✓ SKUs loaded from DB:',SKUS.length);
   } catch(e){ console.warn('SKU DB load failed, using hardcoded list'); }
 }
@@ -6995,18 +7108,24 @@ async function submitAddProduct(){
   const variant=document.getElementById('ap-variant').value.trim();
   const rack=document.getElementById('ap-rack').value;
   const shelf=document.getElementById('ap-shelf').value;
+  const priceRaw=document.getElementById('ap-price')?document.getElementById('ap-price').value.trim():'';
   if(!sku||!cat||!name||!variant||!rack||!shelf){ toast('Please fill all fields','w'); return; }
   if(!/^[A-Za-z0-9\-]+$/.test(sku)){ toast('SKU code — letters, numbers and hyphens only','w'); return; }
+  let price=null;
+  if(priceRaw!==''){
+    price=parseFloat(priceRaw);
+    if(isNaN(price)||price<0){ toast('Unit price must be a valid non-negative number','w'); return; }
+  }
   if(!rateLimit('addProduct',2000)){ toast('Please wait before adding another product','w'); return; }
-  const ok=await addSKU({sku,cat,sub:name,variant,rack,shelf});
+  const ok=await addSKU({sku,cat,sub:name,variant,rack,shelf,price});
   if(ok){
-    ['ap-sku','ap-name','ap-variant'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+    ['ap-sku','ap-name','ap-variant','ap-price'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
     toggleAddProductForm();
     renderInv();
     populateSkuSel('ib-sku');
     populateSkuSel('exp-sku');
     renderRack();
-    logAudit('SKU_CREATE','skus',sku,null,{cat,sub:name,variant,rack,shelf});
+    logAudit('SKU_CREATE','skus',sku,null,{cat,sub:name,variant,rack,shelf,price});
   }
 }
 // ═══════════════════════════════════════════
