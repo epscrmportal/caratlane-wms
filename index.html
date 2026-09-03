@@ -1171,6 +1171,15 @@ tr:hover td{background:var(--s2)}
 
 <!-- ═══ FINANCE & CAPACITY ═══ -->
 <div id="page-finance" class="page">
+  <div class="stitle" style="display:flex;align-items:center;gap:8px;justify-content:space-between;flex-wrap:wrap">
+    <span><i class="ti ti-receipt-2"></i> Monthly Billing (CaratLane contract)</span>
+    <div style="display:flex;gap:6px;align-items:center">
+      <select id="bill-month-select" onchange="renderMonthlyBilling()" style="font-size:11px;padding:4px 8px;border:0.5px solid var(--b);border-radius:4px"></select>
+      <button class="btn-sm" onclick="printMonthlyBill()"><i class="ti ti-printer"></i>Print Bill</button>
+    </div>
+  </div>
+  <div id="monthly-billing-summary" style="margin-bottom:12px"></div>
+  <div class="sep"></div>
   <div class="fg2" style="margin-bottom:12px">
     <div><div class="stitle">Cost & Profitability Summary</div><div id="cost-summary"></div></div>
     <div><div class="stitle">Cost per operation</div><div id="cost-per-op"></div></div>
@@ -1909,7 +1918,14 @@ let inv={},history=[],ibItems=[],pkItemsList=[],rtItemsList=[],packingQueue=[],i
   dispatchCostPerOrder:100,
   storageCostPerSku:2,
   damageLoss:0,
-  returnProcessingCost:75
+  returnProcessingCost:75,
+  // CaratLane contract billing rates — used by the Monthly Billing panel,
+  // separate from the rough internal cost-tracking numbers above.
+  monthlyStorageFlat:45000,
+  unloadingPerBox:8,
+  verificationPerBox:10,
+  grnCreationCharge:200,
+  binPutawayPerUnit:5
 };
 
 // ═══ CLOUD STORAGE — SUPABASE ═══
@@ -2024,7 +2040,8 @@ async function loadHist(){
         dispatchWeight:r.dispatch_weight,
         packMaterials:r.pack_materials||[],
         packNotes:r.pack_notes, packedId:r.packed_id, category:r.category, grn:r.grn,
-        items:r.items||[], photo:r.photo||null
+        items:r.items||[], photo:r.photo||null, packer:r.packer||null,
+        asn:r.asn||null, carrier:r.carrier||null, vehicle:r.vehicle||null, cartons:(r.cartons!=null?r.cartons:null)
       }));
       // Also load packing queue
       const {data:pq} = await supa.from('packing_queue').select('*').order('created_at',{ascending:true});
@@ -2056,7 +2073,8 @@ function historyRecordToRow(h){
     dispatch_weight:h.dispatchWeight||null,
     pack_materials:h.packMaterials||null,
     pack_notes:h.packNotes||null, packed_id:h.packedId||null, category:h.category||null,
-    grn:h.grn||null, items:h.items||[], photo:h.photo||null, packer:h.packer||null
+    grn:h.grn||null, items:h.items||[], photo:h.photo||null, packer:h.packer||null,
+    asn:h.asn||null, carrier:h.carrier||null, vehicle:h.vehicle||null, cartons:(h.cartons!=null?h.cartons:null)
   };
 }
 // Upsert a specific history record (not necessarily the last one in the
@@ -2633,6 +2651,21 @@ function renderExpShipmentsBoard(){
     return `<tr><td class="mono">${esc(s.id)}</td><td style="font-size:11px">${esc(s.vendor||'—')}</td><td>${s.items.length} SKU(s)</td><td><span class="pill ${statusPill[s.status]||'p-info'}">${s.status}</span></td><td>${tally}</td><td><button class="btn-sm" onclick="printTallySheet('${esc(s.id)}')"><i class="ti ti-printer"></i>Print</button></td></tr>`;
   }).join('')}</tbody></table></div>`;
 }
+function pdfDownloadSnippet(filename,orientation){
+  orientation=orientation||'portrait';
+  return `
+    <div class="no-print" id="pdf-dl-bar" style="position:fixed;top:10px;right:10px;z-index:9999">
+      <button onclick="downloadAsPdf()" style="padding:8px 16px;background:#B8860B;color:#fff;border:none;border-radius:20px;cursor:pointer;font-weight:700;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,.25)">⬇ Download PDF</button>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"><\/script>
+    <script>
+      function downloadAsPdf(){
+        var el=document.getElementById('pdf-content')||document.body;
+        html2pdf().set({margin:8,filename:'${filename}',image:{type:'jpeg',quality:0.98},html2canvas:{scale:2,useCORS:true},jsPDF:{unit:'mm',format:'a4',orientation:'${orientation}'},pagebreak:{mode:['avoid-all','css','legacy']}}).from(el).save();
+      }
+    <\/script>
+  `;
+}
 function printTallySheet(asnId){
   const s=expectedShipments.find(x=>x.id===asnId);
   if(!s){toast('Shipment not found','w');return;}
@@ -2652,7 +2685,9 @@ function printTallySheet(asnId){
       .tick{width:60px;text-align:center}
       .sign{margin-top:40px;display:grid;grid-template-columns:1fr 1fr;gap:30px}
       .sign div{border-top:1px solid #000;padding-top:6px;text-align:center;font-size:11px}
+      @media print{.no-print{display:none}}
     </style></head><body>
+    <div id="pdf-content">
     <div class="header">
       <div class="company">CaratLane WMS — Inbound Tally Sheet</div>
       <div class="subtitle">EPS Worldwide Integrated Logistics</div>
@@ -2666,6 +2701,8 @@ function printTallySheet(asnId){
       <div>Received by (name &amp; signature)</div>
       <div>Verified by (supervisor)</div>
     </div>
+    </div>
+    ${pdfDownloadSnippet('TallySheet-'+asnId+'.pdf')}
     </body></html>
   `);
   printWindow.document.close();
@@ -2731,7 +2768,9 @@ function createGRN(){
   const asn=document.getElementById('ib-asn').value.trim();
   const carrier=document.getElementById('ib-carrier').value.trim();
   const vehicle=document.getElementById('ib-vehicle').value.trim();
-  const cartons=document.getElementById('ib-cartons').value.trim();
+  const cartonsRaw=document.getElementById('ib-cartons').value.trim();
+  const cartons=cartonsRaw?parseInt(cartonsRaw)||0:0;
+  if(!cartons){ toast('Enter the number of cartons/boxes received — needed for billing','w'); return; }
   const gid=newId('GRN');
   ibItems.forEach(item=>{
     if(item.qc==='PASS'){
@@ -2746,7 +2785,7 @@ function createGRN(){
   const pass=ibItems.filter(i=>i.qc==='PASS').reduce((a,i)=>a+i.qty,0);
   const hold=ibItems.filter(i=>i.qc==='HOLD').reduce((a,i)=>a+i.qty,0);
   const rej=ibItems.filter(i=>i.qc==='REJECT').reduce((a,i)=>a+i.qty,0);
-  history.push({id:gid,type:'grn',ts:ts(),detail:`ASN: ${asn||'N/A'} · ${ibItems.length} SKUs · PASS:${pass} HOLD:${hold} REJ:${rej}`,items:[...ibItems],asn,carrier,vehicle,cartons});
+  history.push({id:gid,type:'grn',ts:ts(),detail:`ASN: ${asn||'N/A'} · ${cartons} carton(s) · ${ibItems.length} SKUs · PASS:${pass} HOLD:${hold} REJ:${rej}`,items:[...ibItems],asn,carrier,vehicle,cartons});
   saveInv();saveHist();
   const recon=asn?reconcileAgainstExpected(asn, ibItems):null;
   ibItems=[];renderIbItemsList();renderIbLog();updateNotificationBadge();
@@ -2814,11 +2853,12 @@ function printGRN(grnId){
       </style>
     </head>
     <body>
+      <div id="pdf-content">
       <div class="header">
         <div class="company">CaratLane WMS</div>
         <div class="subtitle">EPS Worldwide Integrated Logistics, Mumbai</div>
       </div>
-      
+
       <div class="grn-title">Goods Receipt Note (GRN)</div>
       
       <div class="info-grid">
@@ -2909,6 +2949,8 @@ function printGRN(grnId){
         <p>This GRN was generated by CaratLane WMS on ${new Date().toLocaleString()}</p>
         <p style="margin-top:10px">SOP Reference: EPS-WH-SOP-001 v1.0 | Section 1: Inbound Receiving</p>
       </div>
+      </div>
+      ${pdfDownloadSnippet('GRN-'+grnId+'.pdf')}
     </body>
     </html>
   `);
@@ -2955,14 +2997,17 @@ function printDispatch(dispatchId){
         @media print{
           body{margin:0;padding:10mm}
         }
+        .no-print{display:block}
+        @media print{.no-print{display:none}}
       </style>
     </head>
     <body>
+      <div id="pdf-content">
       <div class="header">
         <div class="company">CaratLane WMS</div>
         <div class="subtitle">EPS Worldwide Integrated Logistics, Mumbai</div>
       </div>
-      
+
       <div class="dispatch-title">Dispatch Note</div>
       
       <div class="awb-box">
@@ -3111,6 +3156,8 @@ function printDispatch(dispatchId){
         <p>This Dispatch Note was generated by CaratLane WMS on ${new Date().toLocaleString()}</p>
         <p style="margin-top:10px">SOP Reference: EPS-WH-SOP-001 v1.0 | Section 3: Packing & Dispatch</p>
       </div>
+      </div>
+      ${pdfDownloadSnippet('Dispatch-'+dispatchId+'.pdf')}
     </body>
     </html>
   `);
@@ -3909,7 +3956,9 @@ function printPackingSlip(historyId){
       .sign{margin-top:50px;display:grid;grid-template-columns:1fr 1fr;gap:30px}
       .sign div{border-top:1px solid #000;padding-top:6px;text-align:center;font-size:11px}
       .footer{margin-top:30px;font-size:10px;color:#999;text-align:center}
+      @media print{.no-print{display:none}}
     </style></head><body>
+    <div id="pdf-content">
     <div class="header">
       <div>
         <div class="company">CaratLane WMS — Packing Slip</div>
@@ -3939,6 +3988,8 @@ function printPackingSlip(historyId){
       <div>Dispatch handover / courier signature</div>
     </div>
     <div class="footer">Printed ${new Date().toLocaleString('en-IN')} · CaratLane WMS</div>
+    </div>
+    ${pdfDownloadSnippet('PackingSlip-'+(p.orderId||historyId)+'.pdf')}
     </body></html>
   `);
   printWindow.document.close();
@@ -3980,7 +4031,9 @@ function printProformaInvoice(orderId){
       .sign{margin-top:50px;display:grid;grid-template-columns:1fr 1fr;gap:30px}
       .sign div{border-top:1px solid #000;padding-top:6px;text-align:center;font-size:11px}
       .footer{margin-top:30px;font-size:10px;color:#999;text-align:center}
+      @media print{.no-print{display:none}}
     </style></head><body>
+    <div id="pdf-content">
     <div class="header">
       <div>
         <div class="company">CaratLane WMS — Proforma Invoice</div>
@@ -4010,6 +4063,8 @@ function printProformaInvoice(orderId){
       <div>Authorized signatory</div>
     </div>
     <div class="footer">Printed ${new Date().toLocaleString('en-IN')} · CaratLane WMS</div>
+    </div>
+    ${pdfDownloadSnippet('ProformaInvoice-'+o.id+'.pdf')}
     </body></html>
   `);
   printWindow.document.close();
@@ -5422,8 +5477,9 @@ function printCountReport(){
     .variance-pos{color:green}
     .variance-neg{color:red}
     .summary{margin:20px 0;padding:15px;background:#f9f9f9;border-radius:4px}
-    @media print{body{margin:0}}
+    @media print{body{margin:0}.no-print{display:none}}
   </style></head><body>
+    <div id="pdf-content">
     <div class="header"><div class="company">CaratLane WMS</div><div style="font-size:12px;color:#666">Inventory Count Report</div></div>
     <div class="title">Monthly Inventory Count Report</div>
     <div class="info">
@@ -5466,8 +5522,10 @@ function printCountReport(){
         <div><strong>Verified By:</strong><br><br>_______________<br>${currentCount.verifier}</div>
       </div>
     </div>
+    </div>
+    ${pdfDownloadSnippet('CountReport-'+(currentCount.id||currentCount.month)+'.pdf')}
   </body></html>`;
-  
+
   const win=window.open('','COUNT_'+currentCount.id,'width=900,height=1000');
   if(!win){toast('Allow popups to print','w');return;}
   win.document.write(printContent);
@@ -5598,6 +5656,7 @@ function renderFinance(){
   renderAllRackUtil();
   renderCostInputs();
   renderCapacityAlerts();
+  renderMonthlyBilling();
 }
 function renderSpaceUtil(){
   const el=document.getElementById('space-util-section');
@@ -5817,6 +5876,12 @@ function renderCostInputs(){
       <div><label for="cost-dispatch" style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Dispatch revenue/order (₹)</label><input type="number" id="cost-dispatch" value="${costParams.dispatchCostPerOrder}" onchange="updateCost('dispatchCostPerOrder',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
       <div><label for="cost-storage" style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Storage cost/SKU/month (₹)</label><input type="number" id="cost-storage" value="${costParams.storageCostPerSku}" onchange="updateCost('storageCostPerSku',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
       <div><label for="cost-return" style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Return processing (₹)</label><input type="number" id="cost-return" value="${costParams.returnProcessingCost}" onchange="updateCost('returnProcessingCost',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
+      <div style="font-size:11px;font-weight:700;color:var(--t2);margin-top:6px;padding-top:6px;border-top:1px solid var(--b)">CaratLane contract billing rates</div>
+      <div><label for="cost-mstorage" style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Monthly storage charge (₹, flat)</label><input type="number" id="cost-mstorage" value="${costParams.monthlyStorageFlat}" onchange="updateCost('monthlyStorageFlat',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
+      <div><label for="cost-unload" style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Unloading & receiving (₹/box)</label><input type="number" id="cost-unload" value="${costParams.unloadingPerBox}" onchange="updateCost('unloadingPerBox',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
+      <div><label for="cost-verify" style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Inventory verification (₹/box)</label><input type="number" id="cost-verify" value="${costParams.verificationPerBox}" onchange="updateCost('verificationPerBox',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
+      <div><label for="cost-grncharge" style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">GRN creation charge (₹/GRN)</label><input type="number" id="cost-grncharge" value="${costParams.grnCreationCharge}" onchange="updateCost('grnCreationCharge',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
+      <div><label for="cost-putaway" style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Bin putaway charge (₹/unit)</label><input type="number" id="cost-putaway" value="${costParams.binPutawayPerUnit}" onchange="updateCost('binPutawayPerUnit',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
       <button onclick="renderFinance()" style="width:100%;padding:8px;background:var(--gold);color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:11px">Recalculate</button>
     </div>
   `;
@@ -5844,6 +5909,129 @@ function renderCapacityAlerts(){
   const unplaced=getUnplacedSKUs();
   if(unplaced.length)alerts.push({type:'warn',msg:`⚠️ ${unplaced.length} item(s) tagged with an invalid shelf number — need reassignment (see Rack View)`});
   el.innerHTML=alerts.length?alerts.map(a=>`<div class="warn-box" style="background:${a.type==='high'?'var(--dbg)':'var(--wbg)'};color:${a.type==='high'?'var(--dt)':'var(--wt)'}"><i class="ti ti-alert-triangle"></i>${a.msg}</div>`).join(''):'<div class="empty">All capacity metrics normal ✓</div>';
+}
+function computeMonthlyBill(monthStr){
+  const mh=getMonthHistory(monthStr);
+  const grns=mh.filter(h=>h.type==='grn');
+  const totalBoxes=grns.reduce((a,g)=>a+(g.cartons||0),0);
+  const totalUnits=grns.reduce((a,g)=>a+(g.items||[]).reduce((b,i)=>b+(i.qty||0),0),0);
+  const grnCount=grns.length;
+  const storage=costParams.monthlyStorageFlat||0;
+  const unloading=totalBoxes*(costParams.unloadingPerBox||0);
+  const verification=totalBoxes*(costParams.verificationPerBox||0);
+  const grnCharges=grnCount*(costParams.grnCreationCharge||0);
+  const putaway=totalUnits*(costParams.binPutawayPerUnit||0);
+  const total=storage+unloading+verification+grnCharges+putaway;
+  return {monthStr,grnCount,totalBoxes,totalUnits,storage,unloading,verification,grnCharges,putaway,total,grns};
+}
+function populateBillMonthSelector(){
+  const sel=document.getElementById('bill-month-select');
+  if(!sel)return;
+  const prevVal=sel.value;
+  const months=new Set();
+  const now=new Date();
+  for(let i=0;i<12;i++){
+    const d=new Date(now.getFullYear(),now.getMonth()-i,1);
+    months.add(getMonthKey(d));
+  }
+  history.forEach(h=>{ if(h.ts){const t=parseDisplayTs(h.ts); if(t>0){const d=new Date(t); months.add(getMonthKey(d));} } });
+  const sorted=[...months].sort().reverse();
+  const thisMonth=getMonthKey(now);
+  sel.innerHTML=sorted.map(m=>{
+    const [y,mm]=m.split('-').map(Number);
+    const label=new Date(y,mm-1,1).toLocaleDateString('en-IN',{month:'long',year:'numeric'});
+    return `<option value="${m}"${m===thisMonth?' selected':''}>${label}${m===thisMonth?' (This month)':''}</option>`;
+  }).join('');
+  if(prevVal&&sorted.includes(prevVal))sel.value=prevVal;
+}
+function renderMonthlyBilling(){
+  const el=document.getElementById('monthly-billing-summary');
+  if(!el)return;
+  populateBillMonthSelector();
+  const sel=document.getElementById('bill-month-select');
+  const monthStr=sel?sel.value:getMonthKey(new Date());
+  if(!monthStr){el.innerHTML='<div class="empty">No data yet</div>';return;}
+  const bill=computeMonthlyBill(monthStr);
+  const [y,mm]=monthStr.split('-').map(Number);
+  const label=new Date(y,mm-1,1).toLocaleDateString('en-IN',{month:'long',year:'numeric'});
+  const rows=[
+    ['Warehouse storage (flat)','—',`₹${bill.storage.toLocaleString('en-IN')}`],
+    [`Unloading & receiving (₹${costParams.unloadingPerBox}/box)`,`${bill.totalBoxes} box(es)`,`₹${bill.unloading.toLocaleString('en-IN')}`],
+    [`Inventory verification (₹${costParams.verificationPerBox}/box)`,`${bill.totalBoxes} box(es)`,`₹${bill.verification.toLocaleString('en-IN')}`],
+    [`GRN creation (₹${costParams.grnCreationCharge}/GRN)`,`${bill.grnCount} GRN(s)`,`₹${bill.grnCharges.toLocaleString('en-IN')}`],
+    [`Bin putaway (₹${costParams.binPutawayPerUnit}/unit)`,`${bill.totalUnits} unit(s)`,`₹${bill.putaway.toLocaleString('en-IN')}`],
+  ];
+  el.innerHTML=`
+    <div style="font-size:12px;font-weight:600;color:var(--t2);margin-bottom:8px">${esc(label)}</div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr><th style="text-align:left;padding:6px;border-bottom:1px solid var(--b);color:var(--t2)">Charge</th><th style="text-align:left;padding:6px;border-bottom:1px solid var(--b);color:var(--t2)">Basis</th><th style="text-align:right;padding:6px;border-bottom:1px solid var(--b);color:var(--t2)">Amount</th></tr></thead>
+      <tbody>
+        ${rows.map(r=>`<tr><td style="padding:6px;border-bottom:1px solid var(--b)">${r[0]}</td><td style="padding:6px;border-bottom:1px solid var(--b);color:var(--t2)">${r[1]}</td><td style="padding:6px;border-bottom:1px solid var(--b);text-align:right">${r[2]}</td></tr>`).join('')}
+      </tbody>
+      <tfoot><tr><td colspan="2" style="padding:8px 6px;font-weight:700">Total</td><td style="padding:8px 6px;text-align:right;font-weight:700;font-size:14px">₹${bill.total.toLocaleString('en-IN')}</td></tr></tfoot>
+    </table>
+    ${bill.grnCount===0?'<div style="font-size:11px;color:var(--t2);margin-top:8px">No GRNs recorded this month — only the flat storage charge applies.</div>':''}
+  `;
+}
+function printMonthlyBill(){
+  const sel=document.getElementById('bill-month-select');
+  const monthStr=sel?sel.value:getMonthKey(new Date());
+  if(!monthStr){toast('No month selected','w');return;}
+  const bill=computeMonthlyBill(monthStr);
+  const [y,mm]=monthStr.split('-').map(Number);
+  const label=new Date(y,mm-1,1).toLocaleDateString('en-IN',{month:'long',year:'numeric'});
+  const printWindow=window.open('','MBILL_'+monthStr,'width=850,height=1000');
+  if(!printWindow){ toast('Please allow popups to print','w'); return; }
+  const rows=[
+    ['Warehouse storage (flat monthly charge)','—',bill.storage],
+    [`Unloading & receiving`,`${bill.totalBoxes} box(es) × ₹${costParams.unloadingPerBox}`,bill.unloading],
+    [`Inventory verification count`,`${bill.totalBoxes} box(es) × ₹${costParams.verificationPerBox}`,bill.verification],
+    [`GRN creation charges`,`${bill.grnCount} GRN(s) × ₹${costParams.grnCreationCharge}`,bill.grnCharges],
+    [`Bin putaway charges`,`${bill.totalUnits} unit(s) × ₹${costParams.binPutawayPerUnit}`,bill.putaway],
+  ];
+  printWindow.document.write(`
+    <!DOCTYPE html><html><head><title>Monthly Bill — ${esc(label)}</title>
+    <style>
+      body{font-family:Arial,sans-serif;margin:20px;color:#333}
+      .header{border-bottom:3px solid #000;padding-bottom:12px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:flex-end}
+      .company{font-size:18px;font-weight:bold}
+      .subtitle{font-size:11px;color:#666;margin-top:2px}
+      .period{font-size:22px;font-weight:bold;text-align:right}
+      table{width:100%;border-collapse:collapse;margin-top:14px}
+      th{background:#f0f0f0;padding:8px;text-align:left;border:1px solid #ccc;font-size:11px}
+      td{padding:9px 8px;border:1px solid #ccc;font-size:12px}
+      .totals{margin-top:10px;font-size:16px;text-align:right;font-weight:bold}
+      .note{margin-top:14px;font-size:10.5px;color:#888;border-top:1px solid #ccc;padding-top:8px}
+      .sign{margin-top:50px;display:grid;grid-template-columns:1fr 1fr;gap:30px}
+      .sign div{border-top:1px solid #000;padding-top:6px;text-align:center;font-size:11px}
+      .footer{margin-top:30px;font-size:10px;color:#999;text-align:center}
+      @media print{.no-print{display:none}}
+    </style></head><body>
+    <div id="pdf-content">
+    <div class="header">
+      <div>
+        <div class="company">CaratLane WMS — Monthly Warehouse Bill</div>
+        <div class="subtitle">EPS Worldwide Integrated Logistics</div>
+      </div>
+      <div class="period">${esc(label)}</div>
+    </div>
+    <table><thead><tr><th>Charge</th><th>Basis</th><th style="text-align:right">Amount</th></tr></thead><tbody>
+      ${rows.map(r=>`<tr><td>${esc(r[0])}</td><td style="color:#666">${esc(r[1])}</td><td style="text-align:right">₹${r[2].toLocaleString('en-IN')}</td></tr>`).join('')}
+    </tbody></table>
+    <div class="totals">Total Payable: ₹${bill.total.toLocaleString('en-IN')}</div>
+    <div class="note">Bill generated from ${bill.grnCount} GRN(s) recorded in ${esc(label)}. Excludes taxes. For contract billing purposes only.</div>
+    <div class="sign">
+      <div>Prepared by</div>
+      <div>Authorized signatory</div>
+    </div>
+    <div class="footer">Printed ${new Date().toLocaleString('en-IN')} · CaratLane WMS</div>
+    </div>
+    ${pdfDownloadSnippet('MonthlyBill-'+monthStr+'.pdf')}
+    </body></html>
+  `);
+  printWindow.document.close();
+  printWindow.focus();
+  setTimeout(()=>printWindow.print(),300);
 }
 
 function addRtItem(){
@@ -6788,8 +6976,9 @@ function printWeeklyReport(){
     .sig{border-top:1px solid #000;padding-top:8px;text-align:center;font-size:11px}
     .footer{margin-top:20px;border-top:1px solid #ddd;padding-top:10px;font-size:10px;color:#999;text-align:center}
     .tag-ok{color:#2e7d32;font-weight:bold}.tag-low{color:#e65100;font-weight:bold}.tag-out{color:#c62828;font-weight:bold}
-    @media print{body{padding:8mm}@page{margin:12mm}}
+    @media print{body{padding:8mm}@page{margin:12mm}.no-print{display:none}}
   </style></head><body>
+  <div id="pdf-content">
   <div class="header">
     <div><div class="co">CaratLane (A Tanishq Partnership)</div><div class="sub">EPS Worldwide Integrated Logistics, Mumbai &nbsp;|&nbsp; SOP Ref: EPS-WH-SOP-001 v1.0 §6</div></div>
     <div style="text-align:right;font-size:11px;color:#666">Generated: ${new Date().toLocaleString('en-IN')}<br>Due: Monday 10:00 AM</div>
@@ -6830,6 +7019,8 @@ function printWeeklyReport(){
     <div class="sig">Acknowledged By (CaratLane)<br><br>Name: _______________<br>Date: _______________</div>
   </div>
   <div class="footer">CaratLane WMS · EPS Worldwide Integrated Logistics Mumbai · SOP EPS-WH-SOP-001 v1.0 · Weekly MIS due every Monday by 10:00 AM</div>
+  </div>
+  ${pdfDownloadSnippet('WeeklyMIS-'+weekStr+'.pdf','landscape')}
   </body></html>`);
   pw.document.close();pw.focus();
   setTimeout(()=>pw.print(),600);
