@@ -1925,7 +1925,11 @@ let inv={},history=[],ibItems=[],pkItemsList=[],rtItemsList=[],packingQueue=[],i
   unloadingPerBox:8,
   verificationPerBox:10,
   grnCreationCharge:200,
-  binPutawayPerUnit:5
+  binPutawayPerUnit:5,
+  packagingChargePerOrder:75,
+  // Contract start date — the first month is prorated (billed only for the
+  // days from this date to month-end) instead of the full flat charge.
+  contractStartDate:'2026-08-15'
 };
 
 // ═══ CLOUD STORAGE — SUPABASE ═══
@@ -5776,6 +5780,7 @@ function renderCostPerOp(){
         <div><span style="color:var(--t2)">Picking (per order):</span> <span style="font-weight:600">₹${costParams.pickCostPerOrder}</span></div>
         <div><span style="color:var(--t2)">Packing (per order):</span> <span style="font-weight:600">₹${costParams.packCostPerOrder}</span></div>
         <div><span style="color:var(--t2)">Dispatch (per order):</span> <span style="font-weight:600">₹${costParams.dispatchCostPerOrder}</span></div>
+        <div><span style="color:var(--t2)">Packaging (per order):</span> <span style="font-weight:600">₹${costParams.packagingChargePerOrder}</span></div>
         <div style="border-top:0.5px solid var(--b);padding-top:6px;margin-top:6px"><span style="color:var(--t2)">Return processing:</span> <span style="font-weight:600">₹${costParams.returnProcessingCost}</span></div>
       </div>
       <div style="font-size:10px;color:var(--t3);padding:6px;background:var(--s3);border-radius:4px">Edit values in "Cost input parameters" section below</div>
@@ -5886,12 +5891,18 @@ function renderCostInputs(){
       <div><label for="cost-verify" style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Inventory verification (₹/box)</label><input type="number" id="cost-verify" value="${costParams.verificationPerBox}" onchange="updateCost('verificationPerBox',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
       <div><label for="cost-grncharge" style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">GRN creation charge (₹/GRN)</label><input type="number" id="cost-grncharge" value="${costParams.grnCreationCharge}" onchange="updateCost('grnCreationCharge',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
       <div><label for="cost-putaway" style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Bin putaway charge (₹/unit)</label><input type="number" id="cost-putaway" value="${costParams.binPutawayPerUnit}" onchange="updateCost('binPutawayPerUnit',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
+      <div><label for="cost-packaging" style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Packaging charge (₹/order)</label><input type="number" id="cost-packaging" value="${costParams.packagingChargePerOrder}" onchange="updateCost('packagingChargePerOrder',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
+      <div><label for="cost-contract-start" style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Contract start date</label><input type="date" id="cost-contract-start" value="${costParams.contractStartDate}" onchange="updateCost('contractStartDate',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"><div style="font-size:10px;color:var(--t3);margin-top:2px">Storage is prorated for the first month if it starts mid-month</div></div>
       <button onclick="renderFinance()" style="width:100%;padding:8px;background:var(--gold);color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:11px">Recalculate</button>
     </div>
   `;
 }
 function updateCost(param,val){
-  costParams[param]=parseInt(val)||0;
+  if(param==='contractStartDate'){
+    costParams[param]=val;
+  } else {
+    costParams[param]=parseInt(val)||0;
+  }
   renderFinance();
   toast(`Updated ${param}`,'s');
 }
@@ -5920,13 +5931,33 @@ function computeMonthlyBill(monthStr){
   const totalBoxes=grns.reduce((a,g)=>a+(g.cartons||0),0);
   const totalUnits=grns.reduce((a,g)=>a+(g.items||[]).reduce((b,i)=>b+(i.qty||0),0),0);
   const grnCount=grns.length;
-  const storage=costParams.monthlyStorageFlat||0;
+  const dispatches=mh.filter(h=>h.type==='dispatched');
+  const orderCount=dispatches.length;
+
+  // The contract's first month is billed at half the flat storage rate
+  // (agreed since the contract started mid-month) — every month after
+  // that is billed in full; any month before the start date is ₹0.
+  let storage=costParams.monthlyStorageFlat||0;
+  let storageNote='';
+  if(costParams.contractStartDate){
+    const contractMonth=costParams.contractStartDate.slice(0,7); // 'YYYY-MM'
+    if(monthStr===contractMonth){
+      storage=Math.round((costParams.monthlyStorageFlat||0)/2);
+      const d=new Date(costParams.contractStartDate+'T00:00:00');
+      storageNote=`Prorated — contract started ${d.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})} (half month)`;
+    } else if(monthStr<contractMonth){
+      storage=0;
+      storageNote='Before contract start date';
+    }
+  }
+
   const unloading=totalBoxes*(costParams.unloadingPerBox||0);
   const verification=totalBoxes*(costParams.verificationPerBox||0);
   const grnCharges=grnCount*(costParams.grnCreationCharge||0);
   const putaway=totalUnits*(costParams.binPutawayPerUnit||0);
-  const total=storage+unloading+verification+grnCharges+putaway;
-  return {monthStr,grnCount,totalBoxes,totalUnits,storage,unloading,verification,grnCharges,putaway,total,grns};
+  const packagingCharges=orderCount*(costParams.packagingChargePerOrder||0);
+  const total=storage+unloading+verification+grnCharges+putaway+packagingCharges;
+  return {monthStr,grnCount,totalBoxes,totalUnits,orderCount,storage,storageNote,unloading,verification,grnCharges,putaway,packagingCharges,total,grns};
 }
 function populateBillMonthSelector(){
   const sel=document.getElementById('bill-month-select');
@@ -5959,11 +5990,12 @@ function renderMonthlyBilling(){
   const [y,mm]=monthStr.split('-').map(Number);
   const label=new Date(y,mm-1,1).toLocaleDateString('en-IN',{month:'long',year:'numeric'});
   const rows=[
-    ['Warehouse storage (flat)','—',`₹${bill.storage.toLocaleString('en-IN')}`],
+    [`Warehouse storage${bill.storageNote?' (prorated)':' (flat)'}`,bill.storageNote||'—',`₹${bill.storage.toLocaleString('en-IN')}`],
     [`Unloading & receiving (₹${costParams.unloadingPerBox}/box)`,`${bill.totalBoxes} box(es)`,`₹${bill.unloading.toLocaleString('en-IN')}`],
     [`Inventory verification (₹${costParams.verificationPerBox}/box)`,`${bill.totalBoxes} box(es)`,`₹${bill.verification.toLocaleString('en-IN')}`],
     [`GRN creation (₹${costParams.grnCreationCharge}/GRN)`,`${bill.grnCount} GRN(s)`,`₹${bill.grnCharges.toLocaleString('en-IN')}`],
     [`Bin putaway (₹${costParams.binPutawayPerUnit}/unit)`,`${bill.totalUnits} unit(s)`,`₹${bill.putaway.toLocaleString('en-IN')}`],
+    [`Packaging (₹${costParams.packagingChargePerOrder}/order)`,`${bill.orderCount} order(s)`,`₹${bill.packagingCharges.toLocaleString('en-IN')}`],
   ];
   el.innerHTML=`
     <div style="font-size:12px;font-weight:600;color:var(--t2);margin-bottom:8px">${esc(label)}</div>
@@ -5987,11 +6019,12 @@ function printMonthlyBill(){
   const printWindow=window.open('','MBILL_'+monthStr,'width=850,height=1000');
   if(!printWindow){ toast('Please allow popups to print','w'); return; }
   const rows=[
-    ['Warehouse storage (flat monthly charge)','—',bill.storage],
+    [`Warehouse storage${bill.storageNote?' (prorated)':' (flat monthly charge)'}`,bill.storageNote||'—',bill.storage],
     [`Unloading & receiving`,`${bill.totalBoxes} box(es) × ₹${costParams.unloadingPerBox}`,bill.unloading],
     [`Inventory verification count`,`${bill.totalBoxes} box(es) × ₹${costParams.verificationPerBox}`,bill.verification],
     [`GRN creation charges`,`${bill.grnCount} GRN(s) × ₹${costParams.grnCreationCharge}`,bill.grnCharges],
     [`Bin putaway charges`,`${bill.totalUnits} unit(s) × ₹${costParams.binPutawayPerUnit}`,bill.putaway],
+    [`Packaging charges`,`${bill.orderCount} order(s) × ₹${costParams.packagingChargePerOrder}`,bill.packagingCharges],
   ];
   printWindow.document.write(`
     <!DOCTYPE html><html><head><title>Monthly Bill — ${esc(label)}</title>
