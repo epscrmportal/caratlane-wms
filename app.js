@@ -829,9 +829,13 @@ function pdfDownloadSnippet(filename,orientation){
     <div class="no-print" id="pdf-dl-bar" style="position:fixed;top:10px;right:10px;z-index:9999">
       <button onclick="downloadAsPdf()" style="padding:8px 16px;background:#B8860B;color:#fff;border:none;border-radius:20px;cursor:pointer;font-weight:700;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,.25)">⬇ Download PDF</button>
     </div>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"><\/script>
+    <script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"><\/script>
     <script>
       function downloadAsPdf(){
+        if(typeof html2pdf==='undefined'){
+          alert('PDF library failed to load — check your internet connection and try again, or use your browser\\'s Print > Save as PDF option instead.');
+          return;
+        }
         var el=document.getElementById('pdf-content')||document.body;
         html2pdf().set({margin:8,filename:'${filename}',image:{type:'jpeg',quality:0.98},html2canvas:{scale:2,useCORS:true},jsPDF:{unit:'mm',format:'a4',orientation:'${orientation}'},pagebreak:{mode:['avoid-all','css','legacy']}}).from(el).save();
       }
