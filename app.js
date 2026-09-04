@@ -42,6 +42,7 @@ let SKUS=[
   {sku:"UNI-SH-U-10",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 10",rack:"A",shelf:"7",price:890},
   {sku:"UNI-SH-U-11",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 11",rack:"A",shelf:"7",price:890},
   {sku:"UNI-SH-U-12",cat:"Uniform",sub:"Shoes - Unisex",variant:"Size 12",rack:"A",shelf:"7",price:890},
+  {sku:"UNI-DN-M-28",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 28",rack:"A",shelf:"8",price:1400},
   {sku:"UNI-DN-M-30",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 30",rack:"A",shelf:"8",price:1400},
   {sku:"UNI-DN-M-32",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 32",rack:"A",shelf:"8",price:1400},
   {sku:"UNI-DN-M-34",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 34",rack:"A",shelf:"8",price:1400},
@@ -49,6 +50,10 @@ let SKUS=[
   {sku:"UNI-DN-M-38",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 38",rack:"A",shelf:"8",price:1400},
   {sku:"UNI-DN-M-40",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 40",rack:"A",shelf:"8",price:1400},
   {sku:"UNI-DN-M-42",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 42",rack:"A",shelf:"8",price:1400},
+  {sku:"UNI-DN-M-44",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 44",rack:"A",shelf:"8",price:1400},
+  {sku:"UNI-DN-M-46",cat:"Uniform",sub:"Stitched Denim - Male",variant:"Size 46",rack:"A",shelf:"8",price:1400},
+  {sku:"UNI-DN-F-24",cat:"Uniform",sub:"Stitched Denim - Female",variant:"Size 24",rack:"A",shelf:"9",price:1400},
+  {sku:"UNI-DN-F-26",cat:"Uniform",sub:"Stitched Denim - Female",variant:"Size 26",rack:"A",shelf:"9",price:1400},
   {sku:"UNI-DN-F-28",cat:"Uniform",sub:"Stitched Denim - Female",variant:"Size 28",rack:"A",shelf:"9",price:1400},
   {sku:"UNI-DN-F-30",cat:"Uniform",sub:"Stitched Denim - Female",variant:"Size 30",rack:"A",shelf:"9",price:1400},
   {sku:"UNI-DN-F-32",cat:"Uniform",sub:"Stitched Denim - Female",variant:"Size 32",rack:"A",shelf:"9",price:1400},
@@ -4808,7 +4813,7 @@ function populateWeekSelector(){
   }
   // Add weeks from history
   history.forEach(h=>{
-    if(h.ts){try{const d=new Date(h.ts);if(!isNaN(d))weeks.add(getWeekKey(d));}catch(e){}}
+    if(h.ts){const t=parseDisplayTs(h.ts);if(t>0)weeks.add(getWeekKey(new Date(t)));}
   });
   const sorted=[...weeks].sort().reverse();
   const thisWeek=getWeekKey(now);
@@ -4822,9 +4827,11 @@ function populateWeekSelector(){
 }
 function getWeekHistory(weekStr){
   const {start,end}=getWeekBounds(weekStr);
+  const s=start.getTime(),e=end.getTime();
   return history.filter(h=>{
     if(!h.ts)return false;
-    try{const d=new Date(h.ts);return !isNaN(d)&&d>=start&&d<=end;}catch(e){return false;}
+    const t=parseDisplayTs(h.ts);
+    return t>0&&t>=s&&t<=e;
   });
 }
 
@@ -6013,7 +6020,7 @@ async function onAuthSuccess(){
 // "users" is governed separately by canManageUsers (set in onAuthSuccess).
 const ROLE_TABS = {
   admin: null,
-  supervisor: ['dashboard','inbound','picking','packing','orders','dispatch','mobile','returns','inventory','rack','orderstatus','reports','sop','audit','labels'],
+  supervisor: ['dashboard','inbound','picking','packing','orders','dispatch','mobile','returns','inventory','rack','orderstatus','reports','sop','audit','labels','analytics','finance'],
   picker: ['picking','mobile'],
   packer: ['packing','mobile'],
   viewer: null
