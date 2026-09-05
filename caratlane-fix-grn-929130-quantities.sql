@@ -39,11 +39,10 @@ set items = (
 )
 where id = 'VMChn8252026';
 
--- 4) Backfill the carrier onto the GRN itself (it was captured on the
---    expected shipment as CRITICALOG but never saved onto the GRN record
---    due to the missing-column bug). Cartons is left blank since that
---    number was never captured anywhere for this historical GRN — edit
---    the line below with the real number if you know it, or leave as is.
+-- 4) Backfill the carrier, ASN, and carton count onto the GRN itself (these
+--    were captured on the expected shipment / at receiving time but never
+--    saved onto the GRN record due to the missing-column bug). Carton count
+--    confirmed as 6.
 update history
 set carrier = 'CRITICALOG', asn = 'VMChn8252026', cartons = 6
 where id = 'GRN-929130';
