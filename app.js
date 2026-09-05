@@ -359,7 +359,7 @@ function nav(tab){
   // Hard-enforce role tab access — sidebar hiding alone is cosmetic since
   // some buttons (e.g. quickDisp) call nav() directly, bypassing the sidebar.
   const _role=currentProfile?.role;
-  const _allowed=(typeof ROLE_TABS!=='undefined'&&ROLE_TABS.hasOwnProperty(_role))?ROLE_TABS[_role]:null;
+  const _allowed=(typeof ROLE_TABS!=='undefined'&&ROLE_TABS.hasOwnProperty(_role))?ROLE_TABS[_role]:['dashboard'];
   if(_allowed!==null && tab!=='users' && !_allowed.includes(tab)){
     toast('You do not have access to that page','w');
     return;
@@ -6042,7 +6042,11 @@ const ROLE_TABS = {
 };
 function applyTabVisibility(){
   const role=currentProfile?.role;
-  const allowed=ROLE_TABS.hasOwnProperty(role)?ROLE_TABS[role]:null;
+  // An unrecognized/missing role (e.g. a login with no user_profiles row
+  // yet) must default to LEAST privilege, not unrestricted — null here
+  // means "no restriction," which is only correct for roles that
+  // explicitly opt into it (admin, viewer), never as a fallback.
+  const allowed=ROLE_TABS.hasOwnProperty(role)?ROLE_TABS[role]:['dashboard'];
   document.querySelectorAll('.ntab').forEach(t=>{
     const tab=t.dataset.tab;
     if(tab==='users') return; // handled separately by canManageUsers
