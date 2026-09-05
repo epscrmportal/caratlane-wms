@@ -1696,6 +1696,7 @@ tr:hover td{background:var(--s2)}
         <option value="picker">Picker</option>
         <option value="packer">Packer</option>
         <option value="viewer">Viewer</option>
+        <option value="packaging_viewer">Packaging Viewer</option>
       </select>
       <select id="audit-filter-action" onchange="renderAuditLog()" style="padding:6px;border:0.5px solid var(--b);border-radius:6px;background:var(--s2);color:var(--t);font-size:11px">
         <option value="">All actions</option>
@@ -1736,6 +1737,7 @@ tr:hover td{background:var(--s2)}
           <option value="packer">Packer</option>
           <option value="supervisor">Supervisor</option>
           <option value="viewer">Viewer (CaratLane)</option>
+          <option value="packaging_viewer">Packaging Viewer (view-only)</option>
           <option value="admin">Admin</option>
         </select>
       </div>
@@ -2180,6 +2182,14 @@ function getSt(q){return q<=0?'out':q<=3?'low':'ok';}
 function stPill(q){const s=getSt(q);return s==='out'?'<span class="pill p-out">Out</span>':s==='low'?'<span class="pill p-low">Low</span>':'<span class="pill p-ok">In stock</span>';}
 
 function nav(tab){
+  // Hard-enforce role tab access — sidebar hiding alone is cosmetic since
+  // some buttons (e.g. quickDisp) call nav() directly, bypassing the sidebar.
+  const _role=currentProfile?.role;
+  const _allowed=(typeof ROLE_TABS!=='undefined'&&ROLE_TABS.hasOwnProperty(_role))?ROLE_TABS[_role]:null;
+  if(_allowed!==null && tab!=='users' && !_allowed.includes(tab)){
+    toast('You do not have access to that page','w');
+    return;
+  }
   document.querySelectorAll('.ntab').forEach(t=>t.classList.toggle('active',t.dataset.tab===tab));
   document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.id==='page-'+tab));
   updateNotificationBadge();
@@ -6169,14 +6179,15 @@ function renderInv(){
       ?`<div style="display:flex;gap:4px;align-items:center"><input type="number" id="price-edit-${s.sku}" value="${s.price!=null?s.price:''}" min="0" step="0.01" style="font-size:11px;padding:2px 4px;width:70px"><button class="btn-sm" style="padding:2px 6px" onclick="saveEditPrice('${s.sku}')" title="Save"><i class="ti ti-check"></i></button><button class="btn-sm btn-danger" style="padding:2px 6px" onclick="cancelEditPrice()" title="Cancel"><i class="ti ti-x"></i></button></div>`
       :`<span style="font-size:11px;font-weight:500">${s.price!=null?'₹'+s.price:'—'}</span>${canEditBin?` <button class="btn-sm" style="padding:1px 5px;margin-left:4px" onclick="startEditPrice('${s.sku}')" title="Edit unit price"><i class="ti ti-edit" style="font-size:11px"></i></button>`:''}`;
     return`<tr><td class="mono">${s.sku}</td><td><span class="pill p-info">${s.cat}</span></td><td style="font-weight:600;font-size:12px">${s.sub}</td><td style="color:var(--t2);font-size:11px">${s.variant}</td><td>${binCell}</td>
-    <td><div class="qc"><button class="qb" onclick="adjQ('${s.sku}',-1)">−</button><span class="qv">${i2.qty}</span><button class="qb" onclick="adjQ('${s.sku}',1)">+</button></div>${held>0?`<div style="font-size:9.5px;color:var(--wt);margin-top:2px;font-weight:600">${held} held by pickers</div>`:''}</td>
+    <td><div class="qc">${canEditBin?`<button class="qb" onclick="adjQ('${s.sku}',-1)">−</button>`:''}<span class="qv">${i2.qty}</span>${canEditBin?`<button class="qb" onclick="adjQ('${s.sku}',1)">+</button>`:''}</div>${held>0?`<div style="font-size:9.5px;color:var(--wt);margin-top:2px;font-weight:600">${held} held by pickers</div>`:''}</td>
     <td>${priceCell}</td>
     <td>${stPill(i2.qty)}</td>
-    <td><button class="btn-sm" onclick="quickDisp('${s.sku}','${s.sub.replace(/'/g,"\\'").replace(/"/g,'&quot;')}','${s.variant.replace(/'/g,"\\'")}',${i2.qty})" ${i2.qty<=0?'disabled':''}><i class="ti ti-send"></i></button></td></tr>`;
+    <td>${canEditBin?`<button class="btn-sm" onclick="quickDisp('${s.sku}','${s.sub.replace(/'/g,"\\'").replace(/"/g,'&quot;')}','${s.variant.replace(/'/g,"\\'")}',${i2.qty})" ${i2.qty<=0?'disabled':''}><i class="ti ti-send"></i></button>`:''}</td></tr>`;
   }).join('');
   document.getElementById('inv-ct').textContent=`Showing ${rows.length} of ${SKUS.length} SKUs`;
 }
 function adjQ(sku,d){
+  if(!getPerms().canEdit){ toast('You do not have permission to edit inventory quantities','w'); return; }
   if(!inv[sku])inv[sku]={qty:0,rack:SKUS.find(s=>s.sku===sku).rack,shelf:SKUS.find(s=>s.sku===sku).shelf};
   inv[sku].qty=Math.max(0,inv[sku].qty+d);
   saveInv();renderInv();
@@ -7776,13 +7787,14 @@ function printSelectedToteLabels(){
 let currentUser = null;
 let currentProfile = null;
 
-const ROLE_COLORS = {admin:'#c62828',supervisor:'#B8860B',picker:'#1565c0',packer:'#2e7d32',viewer:'#6a1b9a'};
+const ROLE_COLORS = {admin:'#c62828',supervisor:'#B8860B',picker:'#1565c0',packer:'#2e7d32',viewer:'#6a1b9a',packaging_viewer:'#00695c'};
 const ROLE_PERMS = {
   admin:    {canEdit:true,  canDispatch:true, canPack:true, canPick:true,  canReceive:true,  canManageUsers:true,  canAudit:true,  canReturn:true, canManageOrders:true},
   supervisor:{canEdit:true, canDispatch:true, canPack:true, canPick:true,  canReceive:true,  canManageUsers:false, canAudit:true,  canReturn:true, canManageOrders:true},
   picker:   {canEdit:false, canDispatch:false,canPack:true, canPick:true,  canReceive:false, canManageUsers:false, canAudit:false, canReturn:false, canManageOrders:false},
   packer:   {canEdit:false, canDispatch:true, canPack:true, canPick:false, canReceive:false, canManageUsers:false, canAudit:false, canReturn:false, canManageOrders:false},
   viewer:   {canEdit:false, canDispatch:false,canPack:false,canPick:false, canReceive:false, canManageUsers:false, canAudit:false, canReturn:false, canManageOrders:false},
+  packaging_viewer:{canEdit:false, canDispatch:false,canPack:false,canPick:false, canReceive:false, canManageUsers:false, canAudit:false, canReturn:false, canManageOrders:false},
 };
 
 function getPerms(){ return ROLE_PERMS[currentProfile?.role] || ROLE_PERMS.viewer; }
@@ -7851,7 +7863,8 @@ const ROLE_TABS = {
   supervisor: ['dashboard','inbound','picking','packing','orders','dispatch','mobile','returns','inventory','rack','orderstatus','reports','sop','audit','labels','analytics','finance'],
   picker: ['picking','mobile'],
   packer: ['packing','mobile'],
-  viewer: null
+  viewer: null,
+  packaging_viewer: ['dashboard','rack','inventory','orderstatus']
 };
 function applyTabVisibility(){
   const role=currentProfile?.role;
@@ -7887,6 +7900,22 @@ function applyRoleRestrictions(){
     `;
     document.head.appendChild(style);
     toast('You are logged in as a Viewer — read-only access','w');
+  }
+  // Lighter-touch lockdown for packaging_viewer: hide mutating action buttons
+  // but keep all inputs (search/filter boxes on Inventory + Order Status) usable.
+  if(role==='packaging_viewer'){
+    const style=document.createElement('style');
+    style.id='viewer-restrictions';
+    style.textContent=`
+      .btn-primary,.btn-success,button[onclick*="createGRN"],button[onclick*="confirmPick"],
+      button[onclick*="confirmCourierDispatch"],button[onclick*="startPacking"],
+      button[onclick*="openPackModal"],button[onclick*="processReturn"],
+      button[onclick*="adjQ"],button[onclick*="quickDisp"],button[onclick*="startEditBin"],
+      button[onclick*="startEditPrice"],button[onclick*="addToCart"],
+      #clear-all-btn,#add-product-panel{display:none!important}
+    `;
+    document.head.appendChild(style);
+    toast('View-only access — Dashboard, Rack View, Inventory and Order Status','w');
   }
 }
 
@@ -7989,7 +8018,7 @@ async function renderUsersList(){
         <td><span style="color:${u.is_active?'var(--st)':'var(--dt)'};font-size:11px;font-weight:600">${u.is_active?'Active':'Inactive'}</span></td>
         <td>${isMe?'<span style="font-size:10px;color:var(--t3)">You</span>':`
           <select onchange="updateUserRole('${u.id}',this.value)" style="padding:3px 6px;border:0.5px solid var(--b);border-radius:4px;background:var(--s2);color:var(--t);font-size:10px;margin-right:4px">
-            ${['admin','supervisor','picker','packer','viewer'].map(r=>`<option value="${r}"${r===u.role?' selected':''}>${r}</option>`).join('')}
+            ${['admin','supervisor','picker','packer','viewer','packaging_viewer'].map(r=>`<option value="${r}"${r===u.role?' selected':''}>${r}</option>`).join('')}
           </select>
           <button onclick="toggleUserActive('${u.id}',${u.is_active})" style="padding:2px 8px;font-size:10px;background:${u.is_active?'var(--dbg)':'var(--sbg)'};color:${u.is_active?'var(--dt)':'var(--st)'};border:none;border-radius:4px;cursor:pointer">${u.is_active?'Deactivate':'Activate'}</button>
         `}</td>

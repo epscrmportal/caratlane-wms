@@ -1,0 +1,108 @@
+-- URGENT FIX: your "Inventory shows only 5 products" issue.
+--
+-- Root cause: the live `skus` table was empty, and it only got 5 rows
+-- inserted (the new Stitched Denim sizes) from
+-- caratlane-sku-seed-denim-addition.sql. The app's loadSKUsFromDB() only
+-- falls back to its built-in 88-item catalog when the table is EMPTY —
+-- once it had 5 rows, it loaded ONLY those 5 and stopped using the
+-- built-in list, so Inventory/Rack View/Labels etc. only showed 5 SKUs.
+--
+-- This script re-seeds ALL 88 SKUs currently in the app (including the
+-- 5 new denim sizes), generated directly from the live index.html so
+-- nothing is missed or mistyped. Safe to re-run — updates on conflict.
+
+insert into skus (sku, cat, sub, variant, rack, shelf, price) values
+  ('UNI-GS-M-34','Uniform','Grey Sweater- Male','Size 34','A','1',995),
+  ('UNI-GS-M-36','Uniform','Grey Sweater- Male','Size 36','A','1',995),
+  ('UNI-GS-M-38','Uniform','Grey Sweater- Male','Size 38','A','1',995),
+  ('UNI-GS-M-42','Uniform','Grey Sweater- Male','Size 42','A','1',995),
+  ('UNI-GS-M-44','Uniform','Grey Sweater- Male','Size 44','A','1',995),
+  ('UNI-GS-M-46','Uniform','Grey Sweater- Male','Size 46','A','1',995),
+  ('UNI-GS-F-34','Uniform','Grey Sweater- Female','Size 34','A','2',995),
+  ('UNI-GS-F-36','Uniform','Grey Sweater- Female','Size 36','A','2',995),
+  ('UNI-GS-F-38','Uniform','Grey Sweater- Female','Size 38','A','2',995),
+  ('UNI-GS-F-40','Uniform','Grey Sweater- Female','Size 40','A','2',995),
+  ('UNI-GS-F-42','Uniform','Grey Sweater- Female','Size 42','A','2',995),
+  ('UNI-GS-F-44','Uniform','Grey Sweater- Female','Size 44','A','2',995),
+  ('UNI-GS-F-46','Uniform','Grey Sweater- Female','Size 46','A','2',995),
+  ('UNI-MC-U-34','Uniform','Monte Carlo Sweater- Unisex','Size 34','A','3',1175),
+  ('UNI-MC-U-36','Uniform','Monte Carlo Sweater- Unisex','Size 36','A','3',1175),
+  ('UNI-MC-U-38','Uniform','Monte Carlo Sweater- Unisex','Size 38','A','3',1175),
+  ('UNI-MC-U-40','Uniform','Monte Carlo Sweater- Unisex','Size 40','A','3',1175),
+  ('UNI-MC-U-42','Uniform','Monte Carlo Sweater- Unisex','Size 42','A','3',1175),
+  ('UNI-MC-U-44','Uniform','Monte Carlo Sweater- Unisex','Size 44','A','3',1175),
+  ('UNI-BLZ-U','Uniform','Blazers - Unisex','Unstitched','A','4',1805),
+  ('UNI-JCT-U','Uniform','JC Trouser - Unisex','Unstitched','A','4',659.1),
+  ('UNI-JCS-U','Uniform','JC Shirt - Unisex','Unstitched','A','4',450),
+  ('UNI-TAH-U','Uniform','TAH Shirt - Unisex','Unstitched','A','4',450),
+  ('UNI-HKS-M','Uniform','HK Shirt - Male','Unstitched','A','5',425),
+  ('UNI-HKT-M','Uniform','HK Trouser - Male','Unstitched','A','5',440),
+  ('UNI-HKK-F','Uniform','HK Kurta - Female','Unstitched','A','5',510),
+  ('UNI-HKP-F','Uniform','HK Pyjama - Female','Unstitched','A','5',440),
+  ('UNI-SH-M-6','Uniform','Shoes - Male','Size 6','A','6',800),
+  ('UNI-SH-M-7','Uniform','Shoes - Male','Size 7','A','6',800),
+  ('UNI-SH-M-8','Uniform','Shoes - Male','Size 8','A','6',800),
+  ('UNI-SH-M-11','Uniform','Shoes - Male','Size 11','A','6',950),
+  ('UNI-SH-M-12','Uniform','Shoes - Male','Size 12','A','6',950),
+  ('UNI-SH-F-6','Uniform','Shoes - Female','Size 6','A','7',800),
+  ('UNI-SH-F-7','Uniform','Shoes - Female','Size 7','A','7',800),
+  ('UNI-SH-U-4','Uniform','Shoes - Unisex','Size 4','A','7',890),
+  ('UNI-SH-U-5','Uniform','Shoes - Unisex','Size 5','A','7',890),
+  ('UNI-SH-U-6','Uniform','Shoes - Unisex','Size 6','A','7',890),
+  ('UNI-SH-U-7','Uniform','Shoes - Unisex','Size 7','A','7',890),
+  ('UNI-SH-U-8','Uniform','Shoes - Unisex','Size 8','A','7',890),
+  ('UNI-SH-U-9','Uniform','Shoes - Unisex','Size 9','A','7',890),
+  ('UNI-SH-U-10','Uniform','Shoes - Unisex','Size 10','A','7',890),
+  ('UNI-SH-U-11','Uniform','Shoes - Unisex','Size 11','A','7',890),
+  ('UNI-SH-U-12','Uniform','Shoes - Unisex','Size 12','A','7',890),
+  ('UNI-DN-M-28','Uniform','Stitched Denim - Male','Size 28','A','8',1400),
+  ('UNI-DN-M-30','Uniform','Stitched Denim - Male','Size 30','A','8',1400),
+  ('UNI-DN-M-32','Uniform','Stitched Denim - Male','Size 32','A','8',1400),
+  ('UNI-DN-M-34','Uniform','Stitched Denim - Male','Size 34','A','8',1400),
+  ('UNI-DN-M-36','Uniform','Stitched Denim - Male','Size 36','A','8',1400),
+  ('UNI-DN-M-38','Uniform','Stitched Denim - Male','Size 38','A','8',1400),
+  ('UNI-DN-M-40','Uniform','Stitched Denim - Male','Size 40','A','8',1400),
+  ('UNI-DN-M-42','Uniform','Stitched Denim - Male','Size 42','A','8',1400),
+  ('UNI-DN-M-44','Uniform','Stitched Denim - Male','Size 44','A','8',1400),
+  ('UNI-DN-M-46','Uniform','Stitched Denim - Male','Size 46','A','8',1400),
+  ('UNI-DN-F-24','Uniform','Stitched Denim - Female','Size 24','A','9',1400),
+  ('UNI-DN-F-26','Uniform','Stitched Denim - Female','Size 26','A','9',1400),
+  ('UNI-DN-F-28','Uniform','Stitched Denim - Female','Size 28','A','9',1400),
+  ('UNI-DN-F-30','Uniform','Stitched Denim - Female','Size 30','A','9',1400),
+  ('UNI-DN-F-32','Uniform','Stitched Denim - Female','Size 32','A','9',1400),
+  ('UNI-DN-F-34','Uniform','Stitched Denim - Female','Size 34','A','9',1400),
+  ('UNI-DN-F-36','Uniform','Stitched Denim - Female','Size 36','A','9',1400),
+  ('UNI-DN-F-38','Uniform','Stitched Denim - Female','Size 38','A','9',1400),
+  ('UNI-SHT-M-38','Uniform','Stitched Shirt - Male','Size 38','A','10',760),
+  ('UNI-SHT-M-40','Uniform','Stitched Shirt - Male','Size 40','A','10',760),
+  ('UNI-SHT-M-42','Uniform','Stitched Shirt - Male','Size 42','A','10',760),
+  ('UNI-SHT-M-44','Uniform','Stitched Shirt - Male','Size 44','A','10',760),
+  ('UNI-SHT-M-46','Uniform','Stitched Shirt - Male','Size 46','A','10',760),
+  ('UNI-SHT-M-48','Uniform','Stitched Shirt - Male','Size 48','A','10',760),
+  ('UNI-SHT-M-50','Uniform','Stitched Shirt - Male','Size 50','A','10',760),
+  ('UNI-SHT-M-52','Uniform','Stitched Shirt - Male','Size 52','A','10',760),
+  ('UNI-SHT-M-54','Uniform','Stitched Shirt - Male','Size 54','A','10',760),
+  ('UNI-SHT-F-XXS','Uniform','Stitched Shirt - Female','Size XXS','A','11',760),
+  ('UNI-SHT-F-XS','Uniform','Stitched Shirt - Female','Size XS','A','11',760),
+  ('UNI-SHT-F-S','Uniform','Stitched Shirt - Female','Size S','A','11',760),
+  ('UNI-SHT-F-M','Uniform','Stitched Shirt - Female','Size M','A','11',760),
+  ('UNI-SHT-F-L','Uniform','Stitched Shirt - Female','Size L','A','11',760),
+  ('UNI-SHT-F-XL','Uniform','Stitched Shirt - Female','Size XL','A','11',760),
+  ('UNI-SHT-F-XXL','Uniform','Stitched Shirt - Female','Size XXL','A','11',760),
+  ('UNI-SHT-F-XXXL','Uniform','Stitched Shirt - Female','Size XXXL','A','11',760),
+  ('VM-EG','VM','Eye glass','Eye glass','B','1',325),
+  ('VM-EL','VM','Eye Loop','Eye Loop','B','1',1100),
+  ('VM-CB','VM','Chocolate bowl','Chocolate bowl','B','2',395),
+  ('VM-CC','VM','Cleaning Cloth','Cleaning Cloth','B','2',125),
+  ('VM-IS','VM','Ipad Stand','Ipad Stand','B','3',NULL),
+  ('VM-IC-9','VM','Ipad Cover','9th Generation','B','3',275),
+  ('VM-IC-10','VM','Ipad Cover','10th Generation','B','3',300),
+  ('VM-RS','VM','Ring Sizer','Ring Sizer','B','4',NULL),
+  ('VM-RR','VM','Ring Rod','Ring Rod','B','4',350),
+  ('VM-BS','VM','Bangle Sizer','Bangle Sizer','B','4',990)
+on conflict (sku) do update set
+  cat = excluded.cat, sub = excluded.sub, variant = excluded.variant,
+  rack = excluded.rack, shelf = excluded.shelf, price = excluded.price;
+
+-- Sanity check — should show 88
+select count(*) as total_skus from skus;
