@@ -70,6 +70,28 @@
 -- if you want it, just say so.
 -- ============================================================
 
+-- 0) Pre-flight check — confirms you're connected to the right database
+--    before touching anything. If this fails, you're very likely on a
+--    different Supabase project or branch than the live production one:
+--    switch to org "epscrmportal's Org" → project "caratlane" → branch
+--    "main PRODUCTION" (URL should contain lqpqsrdxcxefxvobmnjc) and
+--    re-run. Nothing below this point runs until this passes.
+DO $$
+DECLARE missing text;
+BEGIN
+  SELECT string_agg(t, ', ') INTO missing
+  FROM unnest(ARRAY[
+    'audit_log','expected_shipments','history','inventory',
+    'inventory_counts','inventory_snapshots','order_events',
+    'orders','packing_queue','skus','stock_reservations','user_profiles'
+  ]) t
+  WHERE to_regclass('public.'||t) IS NULL;
+
+  IF missing IS NOT NULL THEN
+    RAISE EXCEPTION 'Wrong database — table(s) not found: %. You are likely connected to a different Supabase project or branch than the live production one (org "epscrmportal''s Org" -> project "caratlane" -> branch "main PRODUCTION", URL should contain lqpqsrdxcxefxvobmnjc). Switch and re-run.', missing;
+  END IF;
+END $$;
+
 -- 1) Wipe every existing policy on the 12 real tables.
 DO $$
 DECLARE pol record;
@@ -101,7 +123,10 @@ AS $$
 $$;
 
 -- 3) Plain operational tables — require a logged-in session for
---    any read/write.
+--    any read/write. Skips (with a NOTICE, not an error) any table that
+--    doesn't exist in whatever database this runs against, so a stray
+--    connection to the wrong project/branch can't derail the rest of
+--    the script the way it did the first time this was run.
 DO $$
 DECLARE t text;
 BEGIN
@@ -111,6 +136,10 @@ BEGIN
     'skus','stock_reservations'
   ])
   LOOP
+    IF to_regclass('public.'||t) IS NULL THEN
+      RAISE NOTICE 'Skipping %: table not found in this database (wrong project/branch selected?)', t;
+      CONTINUE;
+    END IF;
     EXECUTE format('CREATE POLICY "authenticated_all" ON public.%I FOR ALL TO authenticated USING (true) WITH CHECK (true)', t);
   END LOOP;
 END $$;
