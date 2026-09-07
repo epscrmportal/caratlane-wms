@@ -3115,21 +3115,18 @@ function createGRN(){
   const gid=newId('GRN');
   ibItems.forEach(item=>{
     if(item.qc==='PASS'){
-      if(!inv[item.sku])inv[item.sku]={qty:0,rack:SKUS.find(s=>s.sku===item.sku).rack,shelf:SKUS.find(s=>s.sku===item.sku).shelf};
-      inv[item.sku].qty+=item.qty;
-      // If admin/supervisor manually assigned a bin at receiving (typed
-      // into the bin-override field instead of accepting the SKU's
-      // catalog default), that decision must actually move the stock
-      // there. Previously this was silently discarded — inventory always
-      // landed back at the catalog's hardcoded home shelf regardless of
-      // what was entered, which is why some items ended up "in" shelf
-      // numbers that don't physically exist (only 6 shelves per rack are
-      // real; assignment beyond that must be a deliberate, valid choice
-      // made here at receiving time, not inherited from stale catalog data).
-      if(item.binOverridden && item.bin){
-        const [rk,sh]=item.bin.split('-');
-        if(rk && sh) { inv[item.sku].rack=rk; inv[item.sku].shelf=sh; }
-      }
+      // item.bin is always populated by addIbItem() — either the SKU's
+      // current default location, or an admin/supervisor override typed
+      // in at receiving. Route every receipt through it via
+      // addStockAtLocation() rather than always writing to a single
+      // rack/shelf: if the primary shelf is full and this batch (or a
+      // later one) is assigned to a different bin, that ADDS a second
+      // location for this SKU instead of overwriting the first — which
+      // is what actually lets the same SKU live on more than one shelf.
+      let rk,sh;
+      if(item.bin){ [rk,sh]=item.bin.split('-'); }
+      if(!rk||!sh){ const s=SKUS.find(x=>x.sku===item.sku); rk=s.rack; sh=s.shelf; }
+      addStockAtLocation(item.sku,rk,sh,item.qty);
     }
     // Track exceptions for compliance
     if(item.qc==='HOLD' || item.qc==='REJECT' || item.issue){
@@ -3176,10 +3173,17 @@ function voidGRN(grnId){
   if(!confirm(`Void ${grnId}? This reverses the ${grn.items?.filter(i=>i.qc==='PASS').reduce((a,i)=>a+i.qty,0)||0} unit(s) it added to inventory. This cannot be undone — create a fresh GRN afterward with the correct figures.`)) return;
   const reason=prompt('Reason for voiding this GRN (optional, shown in the log):','')||'';
   // Reverse exactly what this GRN added — only PASS-qc items ever touched
-  // inventory (see createGRN), so only those need reversing here.
+  // inventory (see createGRN). Each item's `bin` records exactly which
+  // shelf THAT batch went to, so reverse it from that specific location
+  // rather than just subtracting from the SKU's total — otherwise
+  // voiding a GRN that went to a secondary/overflow shelf would
+  // incorrectly drain stock off the primary shelf instead.
   (grn.items||[]).forEach(item=>{
     if(item.qc==='PASS' && inv[item.sku]){
-      inv[item.sku].qty=Math.max(0,inv[item.sku].qty-item.qty);
+      let rk,sh;
+      if(item.bin){ [rk,sh]=item.bin.split('-'); }
+      if(rk&&sh){ removeStockAtLocation(item.sku,rk,sh,item.qty); }
+      else { inv[item.sku].qty=Math.max(0,inv[item.sku].qty-item.qty); }
     }
   });
   grn.voided=true;
@@ -3984,14 +3988,20 @@ function advancePkSkuSelect(){
   const qtyEl=document.getElementById('pk-qty');
   if(qtyEl) qtyEl.value=1;
 }
+// A SKU can now be picked from more than one shelf in the same order
+// (if it's split across locations), so "picked so far" must sum every
+// pkItemsList line for that SKU — not just find one — and "Location"
+// must list every shelf that still legitimately holds this SKU, not
+// the single bin frozen at order-creation time.
 function renderPkChecklist(){
   const el=document.getElementById('pk-checklist');
   if(!el||!activeOrder) return;
   el.innerHTML=`<div class="tw"><table><thead><tr><th>SKU</th><th>Item</th><th>Location</th><th>Ordered</th><th>Picked</th></tr></thead><tbody>${activeOrder.items.map(exp=>{
-    const picked=pkItemsList.find(p=>p.sku===exp.sku);
-    const pq=picked?picked.qty:0;
+    const pq=pkItemsList.filter(p=>p.sku===exp.sku).reduce((a,p)=>a+p.qty,0);
     const done=pq>=exp.qty;
-    return `<tr${done?' style="color:var(--st)"':''}><td class="mono">${exp.sku}</td><td style="font-size:11px">${esc(exp.name)} — ${esc(exp.variant)}</td><td style="font-weight:700;font-size:11px;color:var(--gold)"><i class="ti ti-map-pin"></i> ${fmtLoc(exp.bin)}</td><td>${exp.qty}</td><td>${pq}${done?' <i class="ti ti-check"></i>':''}</td></tr>`;
+    const locs=getSkuLocations(exp.sku);
+    const locText=locs.length?locs.map(l=>fmtLoc(`${l.rack}-${l.shelf}`)).join(' or '):fmtLoc(exp.bin);
+    return `<tr${done?' style="color:var(--st)"':''}><td class="mono">${exp.sku}</td><td style="font-size:11px">${esc(exp.name)} — ${esc(exp.variant)}</td><td style="font-weight:700;font-size:11px;color:var(--gold)"><i class="ti ti-map-pin"></i> ${locText}</td><td>${exp.qty}</td><td>${pq}${done?' <i class="ti ti-check"></i>':''}</td></tr>`;
   }).join('')}</tbody></table></div>`;
 }
 async function addPkItem(){
@@ -4004,16 +4014,25 @@ async function addPkItem(){
   const s=SKUS.find(x=>x.sku===sku);
   const expected=activeOrder.items.find(it=>it.sku===sku);
   if(!expected){ toast(sku+' is not part of this order','w'); return; }
-  const skuLoc=liveLoc(sku);
-  if(skuLoc.rack!==confirmedShelf.rack || skuLoc.shelf!==confirmedShelf.shelf){
-    toast(`⚠ Location mismatch — ${sku} belongs on Rack ${skuLoc.rack} Shelf ${skuLoc.shelf}, but you're confirmed at Rack ${confirmedShelf.rack} Shelf ${confirmedShelf.shelf}. Scan that shelf's label first.`,'w');
-    logAudit('LOCATION_MISMATCH','inventory',sku,null,{scannedAt:confirmedShelf,expected:{rack:skuLoc.rack,shelf:skuLoc.shelf}});
+  // A split SKU legitimately sits on more than one shelf — accept a
+  // scan/confirmation at ANY of its current locations, not just the
+  // single "primary" one.
+  const validLocs=getSkuLocations(sku);
+  const atValidLoc=validLocs.some(l=>l.rack===confirmedShelf.rack && String(l.shelf)===String(confirmedShelf.shelf));
+  if(!atValidLoc){
+    const locStr=validLocs.length?validLocs.map(l=>`Rack ${l.rack} Shelf ${l.shelf}`).join(' or '):'nowhere on hand';
+    toast(`⚠ Location mismatch — ${sku} is stored at ${locStr}, but you're confirmed at Rack ${confirmedShelf.rack} Shelf ${confirmedShelf.shelf}. Scan one of those shelf labels first.`,'w');
+    logAudit('LOCATION_MISMATCH','inventory',sku,null,{scannedAt:confirmedShelf,expected:validLocs});
     return;
   }
   if(cond==='defective'){toast(`${sku} flagged DEFECTIVE — item moved to HOLD zone. Raise defect report. (SOP §2.5)`,'w');return;}
   if(!validateQty(qty)){toast('Invalid quantity','w');return;}
-  const already=pkItemsList.find(it=>it.sku===sku);
-  const remaining=expected.qty-(already?already.qty:0);
+  // "Already picked" must sum every bin this SKU has been picked from
+  // so far in this order — a split SKU can have multiple pkItemsList
+  // lines (one per shelf visited).
+  const bin=`${confirmedShelf.rack}-${confirmedShelf.shelf}`;
+  const totalAlready=pkItemsList.filter(it=>it.sku===sku).reduce((a,it)=>a+it.qty,0);
+  const remaining=expected.qty-totalAlready;
   if(qty>remaining){ toast(`Only ${remaining} more ${sku} expected for this order`,'w'); return; }
   const picker=activeOrder.assignedPicker||currentProfile?.full_name||'Unassigned';
   const res=await reserveStock(sku,qty,pkSessionId,activeOrder.id,picker);
@@ -4021,8 +4040,9 @@ async function addPkItem(){
     toast(res.reason==='network_error'?'Could not reach server to reserve stock — try again':`Insufficient stock: ${sku} has only ${res.available} units available`,'w');
     return;
   }
+  const already=pkItemsList.find(it=>it.sku===sku && it.bin===bin);
   if(already){ already.qty+=qty; } else {
-    pkItemsList.push({sku,name:s.sub,variant:s.variant,qty,bin:`${liveLoc(s.sku).rack}-${liveLoc(s.sku).shelf}`});
+    pkItemsList.push({sku,name:s.sub,variant:s.variant,qty,bin});
   }
   renderPkItemsList();
   renderPkChecklist();
@@ -4035,8 +4055,12 @@ async function pkScanAdd(sku){
   if(!pkToteId){ toast('Scan a tote bag barcode first — items need to go in the right tote','w'); return; }
   const expected=activeOrder.items.find(it=>it.sku===sku.sku);
   if(!expected){ toast(sku.sku+' is not part of this order','w'); return; }
-  const already=pkItemsList.find(it=>it.sku===sku.sku);
-  const remaining=expected.qty-(already?already.qty:0);
+  // The shared barcode-scan handler already confirmed confirmedShelf is one
+  // of this SKU's valid locations before calling us — use it as the bin,
+  // and sum "already picked" across every bin visited so far for this SKU.
+  const bin=confirmedShelf?`${confirmedShelf.rack}-${confirmedShelf.shelf}`:`${liveLoc(sku.sku).rack}-${liveLoc(sku.sku).shelf}`;
+  const totalAlready=pkItemsList.filter(it=>it.sku===sku.sku).reduce((a,it)=>a+it.qty,0);
+  const remaining=expected.qty-totalAlready;
   if(remaining<=0){ toast(sku.sku+' already fully picked for this order','w'); return; }
   const picker=activeOrder.assignedPicker||currentProfile?.full_name||'Unassigned';
   const res=await reserveStock(sku.sku,1,pkSessionId,activeOrder.id,picker);
@@ -4044,8 +4068,9 @@ async function pkScanAdd(sku){
     toast(res.reason==='network_error'?'Could not reach server to reserve stock — try again':`Insufficient stock: ${sku.sku} has only ${res.available} units available`,'w');
     return;
   }
+  const already=pkItemsList.find(it=>it.sku===sku.sku && it.bin===bin);
   if(already){ already.qty+=1; } else {
-    pkItemsList.push({sku:sku.sku,name:sku.sub,variant:sku.variant,qty:1,bin:`${liveLoc(sku.sku).rack}-${liveLoc(sku.sku).shelf}`});
+    pkItemsList.push({sku:sku.sku,name:sku.sub,variant:sku.variant,qty:1,bin});
   }
   renderPkItemsList();
   renderPkChecklist();
@@ -4076,7 +4101,11 @@ async function releaseToPacking(){
   const picker=activeOrder.assignedPicker||currentProfile?.full_name||'Unassigned';
   const result=await commitPickSession(pkSessionId);
   if(!result.success){ toast('Could not release to packing — connection issue, try again','w'); return; }
-  pkItemsList.forEach(item=>{ if(inv[item.sku]) inv[item.sku].qty-=item.qty; });
+  pkItemsList.forEach(item=>{
+    const [rk,sh]=(item.bin||'').split('-');
+    if(rk&&sh) removeStockAtLocation(item.sku,rk,sh,item.qty);
+    else if(inv[item.sku]) inv[item.sku].qty-=item.qty;
+  });
   const tid=newId('PCK');
   const newTask={id:tid,orderId:oid,priority:pri,method,picker,toteId:pkToteId,items:[...pkItemsList],ts:ts(),status:'awaiting_packing'};
   packingQueue.push(newTask);
@@ -5191,8 +5220,10 @@ async function mobilePickAddScan(sku){
     toast(sku.sku+' is not part of this order','w');
     return;
   }
-  const already=mobilePickSession.items.find(i=>i.sku===sku.sku);
-  if(already && already.qty>=expected.qty){
+  // Sum picked qty across every bin this SKU has been picked from so far
+  // in this session — a split SKU can have multiple item lines here.
+  const totalAlready=mobilePickSession.items.filter(i=>i.sku===sku.sku).reduce((a,i)=>a+i.qty,0);
+  if(totalAlready>=expected.qty){
     mobileScanFeedback(false);
     toast(sku.sku+' already fully picked for this order','w');
     return;
@@ -5200,7 +5231,7 @@ async function mobilePickAddScan(sku){
   const picker=currentProfile?.full_name||'Mobile picker';
   let res=await reserveStock(sku.sku,1,mobilePickSession.sessionId,mobilePickSession.orderId,picker);
   if(!res.success && res.reason==='network_error'){
-    const localAvail=(inv[sku.sku]||{qty:0}).qty-(already?already.qty:0);
+    const localAvail=(inv[sku.sku]||{qty:0}).qty-totalAlready;
     if(localAvail>0){
       queueOfflineAction('reserve_stock',{sku:sku.sku,qty:1,sessionId:mobilePickSession.sessionId,orderId:mobilePickSession.orderId,picker},`Reserve ${sku.sku} · ${mobilePickSession.orderId}`);
       res={success:true,available:localAvail-1,offline:true};
@@ -5215,9 +5246,10 @@ async function mobilePickAddScan(sku){
     }
     return;
   }
-  const existing=mobilePickSession.items.find(i=>i.sku===sku.sku);
+  const bin=confirmedShelf?`${confirmedShelf.rack}-${confirmedShelf.shelf}`:`${liveLoc(sku.sku).rack}-${liveLoc(sku.sku).shelf}`;
+  const existing=mobilePickSession.items.find(i=>i.sku===sku.sku && i.bin===bin);
   if(existing){ existing.qty+=1; existing.avail=res.available; } else {
-    mobilePickSession.items.push({sku:sku.sku,name:sku.sub,variant:sku.variant,qty:1,bin:`${liveLoc(sku.sku).rack}-${liveLoc(sku.sku).shelf}`,avail:res.available});
+    mobilePickSession.items.push({sku:sku.sku,name:sku.sub,variant:sku.variant,qty:1,bin,avail:res.available});
   }
   renderMobilePickSession();
   renderMpPickChecklist();
@@ -5257,13 +5289,14 @@ function renderMpPickChecklist(){
   const el=document.getElementById('mp-pick-checklist');
   if(!el||!mobilePickSession) return;
   el.innerHTML=`<div style="display:grid;gap:6px">${mobilePickSession.order.items.map(exp=>{
-    const picked=mobilePickSession.items.find(p=>p.sku===exp.sku);
-    const pq=picked?picked.qty:0;
+    const pq=mobilePickSession.items.filter(p=>p.sku===exp.sku).reduce((a,p)=>a+p.qty,0);
     const done=pq>=exp.qty;
+    const locs=getSkuLocations(exp.sku);
+    const locText=locs.length?locs.map(l=>fmtLoc(`${l.rack}-${l.shelf}`)).join(' or '):fmtLoc(exp.bin);
     return `<div style="display:flex;justify-content:space-between;align-items:center;background:var(--s2);padding:8px 10px;border-radius:6px;${done?'opacity:0.6':''}">
       <div>
         <div style="font-size:11px;font-weight:700">${exp.sku} — ${esc(exp.name)}</div>
-        <div style="font-size:11px;font-weight:700;color:var(--gold);margin-top:2px"><i class="ti ti-map-pin"></i> ${fmtLoc(exp.bin)}</div>
+        <div style="font-size:11px;font-weight:700;color:var(--gold);margin-top:2px"><i class="ti ti-map-pin"></i> ${locText}</div>
       </div>
       <div style="font-size:11px;font-weight:700;${done?'color:var(--st)':''}">${pq}/${exp.qty}${done?' <i class="ti ti-check"></i>':''}</div>
     </div>`;
@@ -5304,7 +5337,11 @@ async function completeMobilePick(){
   if(!rateLimit('mobile-pick',2000)){ toast('Please wait before submitting again','w'); return; }
   const result=await commitPickSession(mobilePickSession.sessionId);
   if(!result.success){ toast('Could not complete pick — connection issue, try again','w'); return; }
-  mobilePickSession.items.forEach(it=>{ if(inv[it.sku]) inv[it.sku].qty-=it.qty; });
+  mobilePickSession.items.forEach(it=>{
+    const [rk,sh]=(it.bin||'').split('-');
+    if(rk&&sh) removeStockAtLocation(it.sku,rk,sh,it.qty);
+    else if(inv[it.sku]) inv[it.sku].qty-=it.qty;
+  });
   const tid=newId('PCK');
   const picker=currentProfile?.full_name||'Mobile picker';
   const newTask={id:tid,orderId:mobilePickSession.orderId,priority:mobilePickSession.priority,method:mobilePickSession.method,picker,toteId:mobilePickSession.toteId||null,items:[...mobilePickSession.items],ts:ts(),status:'awaiting_packing'};
@@ -6227,15 +6264,19 @@ function renderAllRackUtil(){
     // Only real shelves 1–SHELVES_PER_RACK — items still tagged with
     // a higher shelf number are leftover data, not a real location,
     // so they're excluded here (and flagged on the Rack View page).
-    const itemsOnRack=SKUS.filter(s=>{const loc=liveLoc(s.sku);return loc.rack===r&&parseInt(loc.shelf)<=SHELVES_PER_RACK;});
     const shelves={};
     for(let i=1;i<=SHELVES_PER_RACK;i++) shelves[i]={total:0,occupied:0};
-    itemsOnRack.forEach(s=>{
-      const shelf=parseInt(liveLoc(s.sku).shelf);
-      shelves[shelf].total++;
-      if((inv[s.sku]||{qty:0}).qty>0)shelves[shelf].occupied++;
+    let hasAny=false;
+    SKUS.forEach(s=>{
+      getSkuLocations(s.sku).forEach(loc=>{
+        if(loc.rack!==r) return;
+        const shelf=parseInt(loc.shelf);
+        if(isNaN(shelf)||shelf>SHELVES_PER_RACK) return;
+        hasAny=true;
+        shelves[shelf].total++;
+        if(loc.qty>0)shelves[shelf].occupied++;
+      });
     });
-    const hasAny=itemsOnRack.length>0;
     html+=`<div style="margin-bottom:12px">
       <div style="font-size:11px;font-weight:700;color:var(--t2);margin-bottom:4px">Rack ${r}${hasAny?'':' — empty'}</div>
       ${[1,2,3,4,5,6].map(i=>{
@@ -6471,8 +6512,10 @@ function processReturn(){
   const rtype=document.getElementById('rt-type').value;
   rtItemsList.forEach(item=>{
     if(item.grade==='A'){
-      if(!inv[item.sku])inv[item.sku]={qty:0,rack:SKUS.find(s=>s.sku===item.sku).rack,shelf:SKUS.find(s=>s.sku===item.sku).shelf};
-      inv[item.sku].qty+=item.qty;
+      // Returns don't specify a bin — restock onto the SKU's current
+      // primary location (adds a fresh location if it has none yet).
+      const loc=liveLoc(item.sku);
+      addStockAtLocation(item.sku,loc.rack,loc.shelf,item.qty);
     }
   });
   const gradeA=rtItemsList.filter(i=>i.grade==='A').reduce((a,i)=>a+i.qty,0);
@@ -6513,6 +6556,7 @@ async function renderInvVersionHistory(){
 }
 let reservedMap={};
 let _binEditingSku=null;
+let _binEditRows=null; // [{rack,shelf,qty}] — working copy while editing a SKU's locations
 let _priceEditingSku=null;
 async function loadReservedMap(){
   try{
@@ -6537,9 +6581,11 @@ function renderInv(){
   document.getElementById('inv-tbody').innerHTML=rows.map(s=>{
     const i2=inv[s.sku]||{qty:0,rack:s.rack,shelf:s.shelf};
     const held=reservedMap[s.sku]||0;
+    const skuLocs=getSkuLocations(s.sku);
     const binCell=_binEditingSku===s.sku
-      ?`<div style="display:flex;gap:4px;align-items:center"><select id="bin-edit-rack-${s.sku}" style="font-size:11px;padding:2px 4px;width:54px">${RACK_LETTERS.map(r=>`<option value="${r}" ${r===i2.rack?'selected':''}>${r}</option>`).join('')}</select><select id="bin-edit-shelf-${s.sku}" style="font-size:11px;padding:2px 4px;width:48px">${Array.from({length:SHELVES_PER_RACK},(_,i)=>i+1).map(n=>`<option value="${n}" ${String(n)===String(i2.shelf)?'selected':''}>${n}</option>`).join('')}</select><button class="btn-sm" style="padding:2px 6px" onclick="saveEditBin('${s.sku}')" title="Save"><i class="ti ti-check"></i></button><button class="btn-sm btn-danger" style="padding:2px 6px" onclick="cancelEditBin()" title="Cancel"><i class="ti ti-x"></i></button></div>`
-      :`<span style="font-size:11px;font-weight:500">${i2.rack}-${i2.shelf}</span>${canEditBin?` <button class="btn-sm" style="padding:1px 5px;margin-left:4px" onclick="startEditBin('${s.sku}')" title="Edit bin location"><i class="ti ti-edit" style="font-size:11px"></i></button>`:''}`;
+      ?`<div style="display:flex;flex-direction:column;gap:3px">${(_binEditRows||[]).map((row,i)=>`<div style="display:flex;gap:4px;align-items:center"><select id="bin-edit-rack-${s.sku}-${i}" style="font-size:11px;padding:2px 4px;width:52px">${RACK_LETTERS.map(r=>`<option value="${r}" ${r===row.rack?'selected':''}>${r}</option>`).join('')}</select><select id="bin-edit-shelf-${s.sku}-${i}" style="font-size:11px;padding:2px 4px;width:44px">${Array.from({length:SHELVES_PER_RACK},(_,n)=>n+1).map(n=>`<option value="${n}" ${String(n)===String(row.shelf)?'selected':''}>${n}</option>`).join('')}</select><input type="number" id="bin-edit-qty-${s.sku}-${i}" value="${row.qty}" min="0" style="font-size:11px;padding:2px 4px;width:52px" title="Qty on this shelf">${(_binEditRows.length>1)?`<button class="btn-sm btn-danger" style="padding:2px 5px" onclick="removeBinEditRow('${s.sku}',${i})" title="Remove this location"><i class="ti ti-x" style="font-size:10px"></i></button>`:''}</div>`).join('')}
+      <div style="display:flex;gap:4px;margin-top:2px"><button class="btn-sm" style="padding:2px 6px" onclick="addBinEditRow('${s.sku}')" title="Split onto another shelf"><i class="ti ti-plus" style="font-size:11px"></i> Shelf</button><button class="btn-sm" style="padding:2px 6px" onclick="saveEditBin('${s.sku}')" title="Save"><i class="ti ti-check"></i></button><button class="btn-sm btn-danger" style="padding:2px 6px" onclick="cancelEditBin()" title="Cancel"><i class="ti ti-x"></i></button></div></div>`
+      :`<span style="font-size:11px;font-weight:500">${skuLocs.length?skuLocs.map(l=>`${l.rack}-${l.shelf} (${l.qty})`).join(', '):`${i2.rack}-${i2.shelf}`}</span>${canEditBin?` <button class="btn-sm" style="padding:1px 5px;margin-left:4px" onclick="startEditBin('${s.sku}')" title="Edit bin location(s)"><i class="ti ti-edit" style="font-size:11px"></i></button>`:''}`;
     const priceCell=_priceEditingSku===s.sku
       ?`<div style="display:flex;gap:4px;align-items:center"><input type="number" id="price-edit-${s.sku}" value="${s.price!=null?s.price:''}" min="0" step="0.01" style="font-size:11px;padding:2px 4px;width:70px"><button class="btn-sm" style="padding:2px 6px" onclick="saveEditPrice('${s.sku}')" title="Save"><i class="ti ti-check"></i></button><button class="btn-sm btn-danger" style="padding:2px 6px" onclick="cancelEditPrice()" title="Cancel"><i class="ti ti-x"></i></button></div>`
       :`<span style="font-size:11px;font-weight:500">${s.price!=null?'₹'+s.price:'—'}</span>${canEditBin?` <button class="btn-sm" style="padding:1px 5px;margin-left:4px" onclick="startEditPrice('${s.sku}')" title="Edit unit price"><i class="ti ti-edit" style="font-size:11px"></i></button>`:''}`;
@@ -6560,32 +6606,65 @@ function adjQ(sku,d){
 function startEditBin(sku){
   if(!getPerms().canEdit){ toast('You do not have permission to edit bin locations','w'); return; }
   _binEditingSku=sku;
+  const locs=getSkuLocations(sku);
+  const s=SKUS.find(x=>x.sku===sku);
+  _binEditRows=locs.length?locs.map(l=>({rack:l.rack,shelf:l.shelf,qty:l.qty})):[{rack:s.rack,shelf:s.shelf,qty:0}];
   renderInv();
 }
 function cancelEditBin(){
   _binEditingSku=null;
+  _binEditRows=null;
+  renderInv();
+}
+function addBinEditRow(sku){
+  if(!_binEditRows) return;
+  const s=SKUS.find(x=>x.sku===sku);
+  _binEditRows.push({rack:s.rack,shelf:1,qty:0});
+  renderInv();
+}
+function removeBinEditRow(sku,idx){
+  if(!_binEditRows||_binEditRows.length<=1) return;
+  _binEditRows.splice(idx,1);
   renderInv();
 }
 async function saveEditBin(sku){
-  const rackSel=document.getElementById('bin-edit-rack-'+sku);
-  const shelfSel=document.getElementById('bin-edit-shelf-'+sku);
-  if(!rackSel||!shelfSel) return;
-  const newRack=rackSel.value;
-  const newShelf=shelfSel.value;
+  if(!_binEditRows) return;
+  // Pull the live values out of each row's inputs (the row objects only
+  // hold what the UI was initialized with, not live edits).
+  const rows=_binEditRows.map((row,i)=>{
+    const rackSel=document.getElementById(`bin-edit-rack-${sku}-${i}`);
+    const shelfSel=document.getElementById(`bin-edit-shelf-${sku}-${i}`);
+    const qtyInp=document.getElementById(`bin-edit-qty-${sku}-${i}`);
+    return{
+      rack:rackSel?rackSel.value:row.rack,
+      shelf:shelfSel?shelfSel.value:row.shelf,
+      qty:qtyInp?Math.max(0,parseInt(qtyInp.value)||0):row.qty
+    };
+  }).filter(r=>r.qty>0);
+  // Merge any duplicate rack-shelf rows (e.g. user split then re-picked the same shelf twice).
+  const merged=[];
+  rows.forEach(r=>{
+    const ex=merged.find(m=>m.rack===r.rack&&String(m.shelf)===String(r.shelf));
+    if(ex){ ex.qty+=r.qty; } else { merged.push({...r}); }
+  });
   const s=SKUS.find(x=>x.sku===sku);
-  if(!inv[sku]) inv[sku]={qty:0,rack:s.rack,shelf:s.shelf};
-  const oldRack=inv[sku].rack, oldShelf=inv[sku].shelf;
-  if(String(newRack)===String(oldRack)&&String(newShelf)===String(oldShelf)){
-    _binEditingSku=null;renderInv();return;
+  const oldLocs=getSkuLocations(sku);
+  if(!merged.length){
+    toast('At least one location with quantity > 0 is required — use Adjust Qty to zero out a SKU instead','w');
+    return;
   }
-  inv[sku].rack=newRack;
-  inv[sku].shelf=newShelf;
+  if(!inv[sku]) inv[sku]={qty:0,rack:s.rack,shelf:s.shelf,locations:[]};
+  inv[sku].locations=merged;
+  inv[sku].qty=merged.reduce((a,r)=>a+r.qty,0);
+  inv[sku].rack=merged[0].rack;
+  inv[sku].shelf=merged[0].shelf;
   await saveInv();
-  logAudit('BIN_UPDATE','inventory',sku,{rack:oldRack,shelf:oldShelf},{rack:newRack,shelf:newShelf});
+  logAudit('BIN_UPDATE','inventory',sku,{locations:oldLocs},{locations:merged});
   _binEditingSku=null;
+  _binEditRows=null;
   renderInv();
   renderRack();
-  toast(`${sku} moved to bin ${newRack}-${newShelf}`,'s');
+  toast(`${sku} bin locations updated`,'s');
 }
 function startEditPrice(sku){
   if(!getPerms().canEdit){ toast('You do not have permission to edit prices','w'); return; }
@@ -6673,14 +6752,79 @@ function liveLoc(sku){
     shelf:(i2&&i2.shelf!=null)?i2.shelf:(s?s.shelf:undefined)
   };
 }
+// A SKU can now be split across more than one shelf (a rack fills up
+// during receiving, the rest gets assigned to a second bin). liveLoc()
+// above still returns just the PRIMARY location — kept for every
+// low-stakes display that only needs "a" bin (dashboard tiles, printed
+// labels). Anything that actually needs to know EVERY place a SKU
+// physically sits — Rack View, picking allocation, shelf-scan
+// verification — must go through getSkuLocations() instead.
+function getSkuLocations(sku){
+  const i2=inv[sku];
+  if(i2 && Array.isArray(i2.locations) && i2.locations.length){
+    return i2.locations.filter(l=>l.qty>0);
+  }
+  // Legacy/simple case: no locations array yet (brand-new SKU, or
+  // inventory data from before multi-location support) — treat the
+  // single rack/shelf (or catalog default) as one location.
+  const loc=liveLoc(sku);
+  const qty=(i2&&i2.qty)||0;
+  return qty>0 ? [{rack:loc.rack,shelf:loc.shelf,qty}] : [];
+}
+// Adds qty to a SKU at a specific rack/shelf — merges into an existing
+// location entry at that exact bin if one exists, otherwise opens a new
+// one. This is the actual mechanism behind "the shelf is full, put the
+// rest on the next one": each GRN line just says which bin THAT batch
+// went to, and locations accumulate instead of overwriting each other.
+function addStockAtLocation(sku,rack,shelf,qty){
+  if(qty<=0) return;
+  if(!inv[sku]) inv[sku]={qty:0,rack,shelf,locations:[]};
+  if(!Array.isArray(inv[sku].locations)){
+    // Upgrade a legacy single-location record into the locations array
+    // the first time this SKU is touched under the new model.
+    inv[sku].locations=(inv[sku].qty>0 && inv[sku].rack!=null)
+      ?[{rack:inv[sku].rack,shelf:inv[sku].shelf,qty:inv[sku].qty}]:[];
+  }
+  const loc=inv[sku].locations.find(l=>l.rack===rack&&String(l.shelf)===String(shelf));
+  if(loc){ loc.qty+=qty; } else { inv[sku].locations.push({rack,shelf,qty}); }
+  inv[sku].qty=inv[sku].locations.reduce((a,l)=>a+l.qty,0);
+  inv[sku].rack=inv[sku].locations[0].rack;
+  inv[sku].shelf=inv[sku].locations[0].shelf;
+}
+// Removes qty from a SKU at a specific rack/shelf (picking, packing
+// consumption, voiding a GRN). Drops the location entry once it's
+// empty so cleared shelves don't linger in the list.
+function removeStockAtLocation(sku,rack,shelf,qty){
+  if(!inv[sku] || qty<=0) return;
+  if(!Array.isArray(inv[sku].locations)){
+    inv[sku].qty=Math.max(0,inv[sku].qty-qty);
+    return;
+  }
+  const loc=inv[sku].locations.find(l=>l.rack===rack&&String(l.shelf)===String(shelf));
+  if(loc){ loc.qty=Math.max(0,loc.qty-qty); }
+  else if(inv[sku].locations.length){
+    // Bin didn't match any known location exactly (e.g. stale data) —
+    // fall back to taking it off whichever location has the most, so
+    // the total still comes out right even if the per-shelf split is
+    // slightly approximate.
+    inv[sku].locations.sort((a,b)=>b.qty-a.qty)[0].qty=Math.max(0,inv[sku].locations[0].qty-qty);
+  }
+  inv[sku].locations=inv[sku].locations.filter(l=>l.qty>0);
+  inv[sku].qty=inv[sku].locations.reduce((a,l)=>a+l.qty,0);
+  if(inv[sku].locations.length){
+    inv[sku].rack=inv[sku].locations[0].rack;
+    inv[sku].shelf=inv[sku].locations[0].shelf;
+  }
+}
 function getUnplacedSKUs(){
-  return SKUS.map(s=>{
-    const loc=liveLoc(s.sku);
-    return {...s, rack:loc.rack, shelf:loc.shelf};
-  }).filter(s=>{
-    const n=parseInt(s.shelf);
-    return !isNaN(n)&&n>SHELVES_PER_RACK;
+  const out=[];
+  SKUS.forEach(s=>{
+    getSkuLocations(s.sku).forEach(loc=>{
+      const n=parseInt(loc.shelf);
+      if(!isNaN(n)&&n>SHELVES_PER_RACK) out.push({...s,rack:loc.rack,shelf:loc.shelf,qty:loc.qty});
+    });
   });
+  return out;
 }
 function renderRack(){
   const container=document.getElementById('rack-view-container');
@@ -6688,16 +6832,15 @@ function renderRack(){
   const byRack={};
   RACK_LETTERS.forEach(r=>byRack[r]={});
   SKUS.forEach(s=>{
-    const qty=(inv[s.sku]||{qty:0}).qty;
-    // Only show a SKU as occupying a shelf if it actually has stock there.
-    // Every SKU has a "home" rack/shelf baked into the catalog since
-    // creation requires one, but a catalog home with zero units isn't a
-    // real placement — showing it made empty shelves look occupied.
-    if(qty<=0) return;
-    const loc=liveLoc(s.sku);
-    if(!byRack[loc.rack]) byRack[loc.rack]={};
-    if(!byRack[loc.rack][loc.shelf]) byRack[loc.rack][loc.shelf]=[];
-    byRack[loc.rack][loc.shelf].push({...s,qty,rack:loc.rack,shelf:loc.shelf});
+    // A SKU can occupy more than one shelf if it overflowed its first
+    // bin at receiving — place it on EVERY shelf it actually sits on,
+    // with that shelf's own quantity, not the SKU's grand total.
+    getSkuLocations(s.sku).forEach(loc=>{
+      if(loc.qty<=0) return;
+      if(!byRack[loc.rack]) byRack[loc.rack]={};
+      if(!byRack[loc.rack][loc.shelf]) byRack[loc.rack][loc.shelf]=[];
+      byRack[loc.rack][loc.shelf].push({...s,qty:loc.qty,rack:loc.rack,shelf:loc.shelf});
+    });
   });
   const rackHTML=RACK_LETTERS.map(r=>{
     const data=byRack[r]||{};
@@ -7806,7 +7949,7 @@ function renderShelfLabelGrid(){
   grid.innerHTML=locs.map(loc=>{
     const key=loc.rack+'-'+loc.shelf;
     const selected=_shelfLblSelected.has(key);
-    const itemsHere=SKUS.filter(s=>{const sl=liveLoc(s.sku);return sl.rack===loc.rack&&sl.shelf===loc.shelf;});
+    const itemsHere=SKUS.filter(s=>getSkuLocations(s.sku).some(l=>l.rack===loc.rack&&String(l.shelf)===String(loc.shelf)));
     const summary=itemsHere.length?`${itemsHere.length} SKU(s) here`:'Empty';
     const svgId='bc-loc-'+key.replace(/[^a-zA-Z0-9]/g,'_');
     return `<div class="lbl-card${selected?' selected':''}" onclick="toggleShelfLabelSelect('${key}')" id="shelf-lbl-card-${key}">
@@ -8035,7 +8178,7 @@ function printSelectedShelfLabels(){
       bcDataURI='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(svgStr)));
     } catch(e){ console.warn('Shelf label barcode error:',e); }
     document.body.removeChild(tmpSvg);
-    const itemsHere=SKUS.filter(s=>{const sl=liveLoc(s.sku);return sl.rack===loc.rack&&sl.shelf===loc.shelf;});
+    const itemsHere=SKUS.filter(s=>getSkuLocations(s.sku).some(l=>l.rack===loc.rack&&String(l.shelf)===String(loc.shelf)));
     const itemNames=itemsHere.length?itemsHere[0].sub+(itemsHere.length>1?` +${itemsHere.length-1} more`:''):'Unassigned — no items yet';
     return `<div class="label">
       <div class="lbl-name">Rack ${esc(loc.rack)} · Shelf ${esc(loc.shelf)}</div>
@@ -8627,7 +8770,11 @@ function handleShelfLocationScan(loc){
   }
   confirmedShelf=loc;
   updateShelfLocationBadge();
-  const itemsHere=SKUS.filter(s=>{const sl=liveLoc(s.sku);return sl.rack===loc.rack&&sl.shelf===loc.shelf;}).map(s=>({...s,qty:(inv[s.sku]||{qty:0}).qty}));
+  const itemsHere=SKUS.filter(s=>getSkuLocations(s.sku).some(l=>l.rack===loc.rack&&String(l.shelf)===String(loc.shelf)))
+    .map(s=>{
+      const here=getSkuLocations(s.sku).find(l=>l.rack===loc.rack&&String(l.shelf)===String(loc.shelf));
+      return {...s,qty:here?here.qty:0};
+    });
   const totalQty=itemsHere.reduce((a,s)=>a+s.qty,0);
   if(_barcodeTarget==='mobile-pick'||_barcodeTarget==='mobile-pack'){ mobileScanFeedback(true); }
   if(_barcodeTarget==='picking' && activeOrder){
@@ -8781,11 +8928,13 @@ function processBarcodeInput(barcode){
       toast('Scan the shelf location label before scanning an item — tote → shelf → item','w');
       return;
     }
-    const skuLoc=liveLoc(sku.sku);
-    if(skuLoc.rack!==confirmedShelf.rack || skuLoc.shelf!==confirmedShelf.shelf){
+    const validLocs=getSkuLocations(sku.sku);
+    const atValidLoc=validLocs.some(l=>l.rack===confirmedShelf.rack && String(l.shelf)===String(confirmedShelf.shelf));
+    if(!atValidLoc){
       if(_barcodeTarget==='mobile-pick'){ mobileScanFeedback(false); }
-      toast(`⚠ Location mismatch — ${sku.sku} belongs on Rack ${skuLoc.rack} Shelf ${skuLoc.shelf}, but you're confirmed at Rack ${confirmedShelf.rack} Shelf ${confirmedShelf.shelf}. Scan that shelf's label first.`,'w');
-      logAudit('LOCATION_MISMATCH','inventory',sku.sku,null,{scannedAt:confirmedShelf,expected:{rack:skuLoc.rack,shelf:skuLoc.shelf}});
+      const locStr=validLocs.length?validLocs.map(l=>`Rack ${l.rack} Shelf ${l.shelf}`).join(' or '):'nowhere on hand';
+      toast(`⚠ Location mismatch — ${sku.sku} is stored at ${locStr}, but you're confirmed at Rack ${confirmedShelf.rack} Shelf ${confirmedShelf.shelf}. Scan one of those shelf labels first.`,'w');
+      logAudit('LOCATION_MISMATCH','inventory',sku.sku,null,{scannedAt:confirmedShelf,expected:validLocs});
       return;
     }
   }
