@@ -1842,6 +1842,13 @@ function setSyncStatus(state) {
 }
 </script>
 <script>
+// This array is only the OFFLINE FALLBACK — loadSKUsFromDB() overwrites it
+// with the live Supabase `skus` table on every normal boot (see near
+// initAuth()/bootWMS() below), so this list only matters if a user's
+// browser can't reach Supabase at load time. Still, keep it in sync: after
+// editing the catalog in Supabase, run caratlane-regenerate-skus-array.sql
+// and paste its output here (and into index.html's matching array) so a
+// connectivity blip never shows stale/missing products.
 let SKUS=[
   {sku:"UNI-GS-M-34",cat:"Uniform",sub:"Grey Sweater- Male",variant:"Size 34",rack:"A",shelf:"1",price:995},
   {sku:"UNI-GS-M-36",cat:"Uniform",sub:"Grey Sweater- Male",variant:"Size 36",rack:"A",shelf:"1",price:995},
