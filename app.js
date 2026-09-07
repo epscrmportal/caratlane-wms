@@ -662,15 +662,16 @@ function renderDashRackSummary(){
   const byRack={};
   RACK_LETTERS.forEach(r=>byRack[r]={shelves:new Set(),qty:0});
   SKUS.forEach(s=>{
-    const qty=(inv[s.sku]||{qty:0}).qty;
     // Match Rack View: a shelf only counts as "in use" if it actually
     // has stock — a SKU's catalog home with zero units isn't a real
-    // placement.
-    if(qty<=0) return;
-    const loc=liveLoc(s.sku);
-    if(!byRack[loc.rack]) return;
-    byRack[loc.rack].shelves.add(loc.shelf);
-    byRack[loc.rack].qty+=qty;
+    // placement. A split SKU contributes to EVERY rack/shelf it
+    // actually sits on, with that location's own qty (not its total).
+    getSkuLocations(s.sku).forEach(loc=>{
+      if(loc.qty<=0) return;
+      if(!byRack[loc.rack]) return;
+      byRack[loc.rack].shelves.add(loc.shelf);
+      byRack[loc.rack].qty+=loc.qty;
+    });
   });
   el.innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px">${RACK_LETTERS.map(r=>{
     const d=byRack[r];
@@ -2978,6 +2979,9 @@ function renderComplianceLog(){
 }
 
 // INVENTORY COUNT & AUDIT
+// Cycle counts are keyed by SKU+LOCATION (not just SKU) so a split SKU
+// gets one countable line per shelf it actually sits on.
+function countKey(sku,rack,shelf){ return sku+'::'+rack+'-'+shelf; }
 function startInventoryCount(){
   const countType=document.getElementById('ic-type').value;
   const month=document.getElementById('ic-month').value;
@@ -3001,16 +3005,27 @@ function startInventoryCount(){
     status:'in-progress'
   };
   
+  // One count LINE per physical location, not per SKU — a SKU split
+  // across two shelves needs to be counted (and reconciled) at each
+  // shelf separately, since that's how staff actually walk the count.
+  // A SKU with no stock anywhere still gets one line at its catalog
+  // default location, so it's not skipped by the count entirely.
   SKUS.forEach(s=>{
-    const loc=liveLoc(s.sku);
-    currentCount.counts[s.sku]={
-      systemQty:(inv[s.sku]||{qty:0}).qty,
-      physicalQty:0,
-      counted:false,
-      rack:loc.rack,
-      shelf:loc.shelf,
-      category:s.category
-    };
+    const locs=getSkuLocations(s.sku);
+    if(!locs.length){
+      const loc=liveLoc(s.sku);
+      currentCount.counts[countKey(s.sku,loc.rack,loc.shelf)]={
+        sku:s.sku, systemQty:0, physicalQty:0, counted:false,
+        rack:loc.rack, shelf:loc.shelf, category:s.category
+      };
+    } else {
+      locs.forEach(loc=>{
+        currentCount.counts[countKey(s.sku,loc.rack,loc.shelf)]={
+          sku:s.sku, systemQty:loc.qty, physicalQty:0, counted:false,
+          rack:loc.rack, shelf:loc.shelf, category:s.category
+        };
+      });
+    }
   });
   
   document.getElementById('ic-status').textContent='In Progress';
@@ -3032,26 +3047,32 @@ function renderCountList(){
   }
   const q=(document.getElementById('ic-search')?.value||'').toLowerCase();
   const filterType=document.getElementById('ic-filter')?.value||'all';
-  
-  let skus=SKUS.filter(s=>{
+
+  // Each entry is now one SKU+LOCATION line, not one per SKU — a split
+  // SKU shows up once per shelf it's actually counted on.
+  let rows=Object.keys(currentCount.counts).filter(key=>{
+    const c=currentCount.counts[key];
+    const s=SKUS.find(x=>x.sku===c.sku);
+    if(!s) return false;
     const match=s.sku.toLowerCase().includes(q)||s.sub.toLowerCase().includes(q);
     if(!match)return false;
-    const c=currentCount.counts[s.sku];
     if(filterType==='counted'&&!c.counted)return false;
     if(filterType==='uncounted'&&c.counted)return false;
     if(filterType==='discrepancy'&&c.physicalQty===c.systemQty)return false;
     if(filterType.startsWith('rack:')&&c.rack!==filterType.slice(5))return false;
     return true;
   });
-  
-  el.innerHTML=skus.map(s=>{
-    const count=currentCount.counts[s.sku];
+
+  el.innerHTML=rows.map(key=>{
+    const count=currentCount.counts[key];
+    const s=SKUS.find(x=>x.sku===count.sku);
+    const domId=key.replace(/[^a-zA-Z0-9]/g,'_');
     const variance=count.physicalQty-count.systemQty;
     const varianceClass=variance===0?'p-pass':variance>0?'p-low':'p-out';
     const variancePct=(count.systemQty>0)?Math.round((variance/count.systemQty)*100):0;
     const status=count.counted?'✓ Counted':'Pending';
     const statusClass=count.counted?'p-pass':'p-out';
-    
+
     return `<div style="padding:10px;background:var(--s2);border-radius:6px;margin-bottom:8px;border-left:4px solid ${count.counted?'var(--st)':'var(--wt)'}">
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px;font-size:11px">
         <div><strong>${s.sku}</strong><br><span style="color:var(--t2);font-size:10px">${s.sub}</span></div>
@@ -3060,23 +3081,24 @@ function renderCountList(){
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:8px;font-size:10px">
         <div><span style="color:var(--t2)">System:</span> <strong>${count.systemQty}</strong></div>
-        <div><span style="color:var(--t2)">Physical:</span> <input type="number" id="ic-${s.sku}" value="${count.physicalQty}" min="0" onchange="updateCountQty('${s.sku}')" style="width:60%;padding:4px;border:0.5px solid var(--b);border-radius:3px;font-size:10px"></div>
+        <div><span style="color:var(--t2)">Physical:</span> <input type="number" id="ic-${domId}" value="${count.physicalQty}" min="0" onchange="updateCountQty('${key}')" style="width:60%;padding:4px;border:0.5px solid var(--b);border-radius:3px;font-size:10px"></div>
         <div><span style="color:var(--t2)">Variance:</span> <span class="pill ${varianceClass}" style="font-size:9px">${variance>0?'+':''}${variance} (${variancePct>0?'+':''}${variancePct}%)</span></div>
-        <button onclick="markCountComplete('${s.sku}')" style="padding:4px 6px;background:${count.counted?'var(--st)':'var(--b)'};color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:9px;font-weight:600">${count.counted?'✓ Done':'Mark Done'}</button>
+        <button onclick="markCountComplete('${key}')" style="padding:4px 6px;background:${count.counted?'var(--st)':'var(--b)'};color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:9px;font-weight:600">${count.counted?'✓ Done':'Mark Done'}</button>
       </div>
     </div>`;
   }).join('');
   updateCountSummary();
 }
 
-function updateCountQty(sku){
-  const val=parseInt(document.getElementById('ic-'+sku).value)||0;
-  currentCount.counts[sku].physicalQty=val;
+function updateCountQty(key){
+  const domId=key.replace(/[^a-zA-Z0-9]/g,'_');
+  const val=parseInt(document.getElementById('ic-'+domId).value)||0;
+  currentCount.counts[key].physicalQty=val;
   updateCountSummary();
 }
 
-function markCountComplete(sku){
-  currentCount.counts[sku].counted=!currentCount.counts[sku].counted;
+function markCountComplete(key){
+  currentCount.counts[key].counted=!currentCount.counts[key].counted;
   renderCountList();
 }
 
@@ -3108,11 +3130,13 @@ function updateCountSummary(){
     const pct=c.systemQty>0?Math.abs((c.physicalQty-c.systemQty)/c.systemQty):0;
     return pct>=0.1;
   });
-  const accuracy=Math.round((1-(discrepancies.length/SKUS.length))*100);
-  const progressPct=Math.round((counted/SKUS.length)*100);
-  
+  // Denominator is count LINES (one per SKU+location), not SKUS.length —
+  // a split SKU contributes more than one countable line.
+  const accuracy=Math.round((1-(discrepancies.length/counts.length))*100);
+  const progressPct=Math.round((counted/counts.length)*100);
+
   // Update progress bar
-  setEl('ic-counted',counted+' / '+SKUS.length);
+  setEl('ic-counted',counted+' / '+counts.length);
   setEl('ic-progress-pct',progressPct+'%');
   setStyle('ic-progress-bar','width',progressPct+'%');
   
@@ -3129,28 +3153,30 @@ function updateCountSummary(){
   // Show discrepancies section
   if(discrepancies.length>0){
     setDisplay('ic-discrepancies-section','block');
-    const discList=Object.keys(currentCount.counts).filter(k=>currentCount.counts[k].physicalQty!==currentCount.counts[k].systemQty).map(sku=>{
-      const count=currentCount.counts[sku];
-      const item=SKUS.find(s=>s.sku===sku);
+    const discList=Object.keys(currentCount.counts).filter(k=>currentCount.counts[k].physicalQty!==currentCount.counts[k].systemQty).map(key=>{
+      const count=currentCount.counts[key];
+      const item=SKUS.find(s=>s.sku===count.sku);
       if(!item)return '';
       const variance=count.physicalQty-count.systemQty;
       const type=variance>0?'📈 EXCESS':'📉 SHORTAGE';
       const pct=count.systemQty>0?Math.round((variance/count.systemQty)*100):0;
       return `<div style="padding:8px;background:var(--s3);border-radius:4px;margin-bottom:6px;font-size:10px;display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center">
-        <div style="font-weight:600">${sku}</div>
+        <div style="font-weight:600">${count.sku}<br><span style="color:var(--t2);font-weight:400">Rack ${count.rack}/${count.shelf}</span></div>
         <div><span style="color:var(--t2)">${item.sub}</span><br>Sys: ${count.systemQty} | Phys: ${count.physicalQty}</div>
         <div style="text-align:right;white-space:nowrap"><span class="pill ${variance>0?'p-low':'p-out'}" style="font-size:9px">${type} ${variance>0?'+':''}${variance} (${pct>0?'+':''}${pct}%)</span></div>
       </div>`;
     }).join('');
     setHTML('ic-discrepancies-list',discList);
   }
-  
+
   // Rack analysis — dynamic across whichever of the 15 racks (A–O)
-  // currently have SKUs placed on them, instead of assuming only A/B.
+  // currently have count lines on them. Each line already carries its
+  // own rack, so a split SKU's shelves are attributed to the right
+  // rack automatically instead of all landing on its primary shelf.
   setDisplay('ic-rack-analysis','block');
-  const racksInUse=[...new Set(SKUS.map(s=>currentCount.counts[s.sku]?currentCount.counts[s.sku].rack:liveLoc(s.sku).rack))].sort();
+  const racksInUse=[...new Set(counts.map(c=>c.rack))].sort();
   const rackAnalysisHTML=racksInUse.map(r=>{
-    const data=SKUS.filter(s=>(currentCount.counts[s.sku]?currentCount.counts[s.sku].rack:liveLoc(s.sku).rack)===r).map(s=>currentCount.counts[s.sku]).filter(Boolean);
+    const data=counts.filter(c=>c.rack===r);
     const sysQty=data.reduce((a,c)=>a+c.systemQty,0);
     const physQty=data.reduce((a,c)=>a+c.physicalQty,0);
     const variance=physQty-sysQty;
@@ -3175,21 +3201,26 @@ function updateCountSummary(){
 function completeInventoryCount(){
   const counts=Object.values(currentCount.counts);
   const uncounted=counts.filter(c=>!c.counted);
-  if(uncounted.length>0){toast(`${uncounted.length} SKUs not yet counted. Complete all counts first.`,'w');return;}
-  
+  if(uncounted.length>0){toast(`${uncounted.length} location(s) not yet counted. Complete all counts first.`,'w');return;}
+
   currentCount.status='completed';
   currentCount.completedTs=ts();
-  
-  // Calculate movements for each SKU
+
+  // Calculate movements per count LINE (keyed the same as currentCount.counts).
+  // Movement totals are still SKU-wide (GRN/pick/dispatch don't break down
+  // by shelf), so a split SKU's two lines will show identical movement
+  // figures — expected, since the movement history itself isn't
+  // per-location.
   currentCount.movements={};
-  Object.keys(currentCount.counts).forEach(sku=>{
-    const count=currentCount.counts[sku];
+  Object.keys(currentCount.counts).forEach(key=>{
+    const count=currentCount.counts[key];
+    const sku=count.sku;
     const variance=count.physicalQty-count.systemQty;
     const grnItems=history.filter(h=>h.type==='grn').flatMap(g=>g.items.filter(i=>i.sku===sku)).reduce((a,i)=>a+i.qty,0);
     const pickItems=history.filter(h=>h.type==='pick').reduce((a,h)=>a+(h.detail.includes(sku)?1:0),0);
     const dispatchItems=history.filter(h=>h.type==='dispatched').flatMap(d=>d.items).filter(i=>i.sku===sku).reduce((a,i)=>a+i.qty,0);
     const returnItems=history.filter(h=>h.type==='return').reduce((a,h)=>a+(h.detail.includes(sku)?1:0),0);
-    currentCount.movements[sku]={grnInbound:grnItems,pickOutbound:pickItems,dispatchOutbound:dispatchItems,returnInbound:returnItems,netMovement:grnItems-dispatchItems+returnItems};
+    currentCount.movements[key]={grnInbound:grnItems,pickOutbound:pickItems,dispatchOutbound:dispatchItems,returnInbound:returnItems,netMovement:grnItems-dispatchItems+returnItems};
   });
   
   inventoryCounts.push({...currentCount});
@@ -3957,8 +3988,9 @@ function renderCountHistory(){
     return;
   }
   el.innerHTML=inventoryCounts.slice().reverse().map(count=>{
-    const discrepancies=Object.values(count.counts||{}).filter(c=>c.physicalQty!==c.systemQty);
-    const accuracy=Math.round((1-(discrepancies.length/SKUS.length))*100);
+    const lines=Object.values(count.counts||{});
+    const discrepancies=lines.filter(c=>c.physicalQty!==c.systemQty);
+    const accuracy=lines.length?Math.round((1-(discrepancies.length/lines.length))*100):100;
     const accuracyColor=accuracy>=95?'var(--st)':'var(--wt)';
     return `<div style="padding:8px;background:var(--s2);border-radius:4px;margin-bottom:6px;font-size:10px">
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:4px">
@@ -3986,44 +4018,44 @@ function downloadCountReport(){
   csv+=`Verified By,${currentCount.verifier}\n\n`;
   
   csv+='Summary Metrics,Value\n';
-  csv+=`Total SKUs,${SKUS.length}\n`;
+  csv+=`Total Count Lines (SKU x Location),${counts.length}\n`;
   csv+=`Total Variance (Units),${totalVariance}\n`;
-  csv+=`SKUs with Discrepancies,${discrepancies.length}\n`;
-  csv+=`Accuracy,${Math.round((1-(discrepancies.length/SKUS.length))*100)}%\n\n`;
-  
+  csv+=`Lines with Discrepancies,${discrepancies.length}\n`;
+  csv+=`Accuracy,${Math.round((1-(discrepancies.length/counts.length))*100)}%\n\n`;
+
   csv+='Full Count Details\n';
-  csv+='SKU Code,Item Name,Variant,System Qty,Physical Qty,Variance,Inbound GRN,Outbound Dispatch,Returns Inbound,Net Movement,Status\n';
-  Object.keys(currentCount.counts).forEach(sku=>{
-    const count=currentCount.counts[sku];
-    const item=SKUS.find(s=>s.sku===sku);
+  csv+='SKU Code,Item Name,Variant,Rack,Shelf,System Qty,Physical Qty,Variance,Inbound GRN,Outbound Dispatch,Returns Inbound,Net Movement,Status\n';
+  Object.keys(currentCount.counts).forEach(key=>{
+    const count=currentCount.counts[key];
+    const item=SKUS.find(s=>s.sku===count.sku);
     const variance=count.physicalQty-count.systemQty;
     const status=variance===0?'MATCH':variance>0?'EXCESS':'SHORTAGE';
-    const movements=currentCount.movements?currentCount.movements[sku]:{grnInbound:0,dispatchOutbound:0,returnInbound:0,netMovement:0};
-    csv+=`"${sku}","${item.sub}","${item.variant}",${count.systemQty},${count.physicalQty},${variance>0?'+':''}${variance},"${status}",${movements.grnInbound||0},${movements.dispatchOutbound||0},${movements.returnInbound||0},${movements.netMovement||0}\n`;
+    const movements=currentCount.movements?currentCount.movements[key]:{grnInbound:0,dispatchOutbound:0,returnInbound:0,netMovement:0};
+    csv+=`"${count.sku}","${item.sub}","${item.variant}","${count.rack}","${count.shelf}",${count.systemQty},${count.physicalQty},${variance>0?'+':''}${variance},${movements.grnInbound||0},${movements.dispatchOutbound||0},${movements.returnInbound||0},${movements.netMovement||0},"${status}"\n`;
   });
   
   csv+='\n\nDISCREPANCY ANALYSIS (Why the variance?)\n';
-  csv+='SKU Code,Item Name,System Qty,Physical Qty,Variance,Expected (based on movements),Unexplained Loss/Gain,Analysis\n';
-  Object.keys(currentCount.counts).forEach(sku=>{
-    const count=currentCount.counts[sku];
-    const item=SKUS.find(s=>s.sku===sku);
+  csv+='SKU Code,Rack,Shelf,Item Name,System Qty,Physical Qty,Variance,Expected (based on movements),Unexplained Loss/Gain,Analysis\n';
+  Object.keys(currentCount.counts).forEach(key=>{
+    const count=currentCount.counts[key];
+    const item=SKUS.find(s=>s.sku===count.sku);
     const variance=count.physicalQty-count.systemQty;
-    const movements=currentCount.movements?currentCount.movements[sku]:{grnInbound:0,dispatchOutbound:0,returnInbound:0,netMovement:0};
+    const movements=currentCount.movements?currentCount.movements[key]:{grnInbound:0,dispatchOutbound:0,returnInbound:0,netMovement:0};
     const expectedQty=count.systemQty+movements.netMovement;
     const unexplained=count.physicalQty-expectedQty;
     if(unexplained!==0){
       const analysis=unexplained>0?'Excess (possible data entry error or undocumented receipt)':'Shortage (possible theft, damage not recorded, or documentation error)';
-      csv+=`"${sku}","${item.sub}",${count.systemQty},${count.physicalQty},${variance>0?'+':''}${variance},${expectedQty},${unexplained>0?'+':''}${unexplained},"${analysis}"\n`;
+      csv+=`"${count.sku}","${count.rack}","${count.shelf}","${item.sub}",${count.systemQty},${count.physicalQty},${variance>0?'+':''}${variance},${expectedQty},${unexplained>0?'+':''}${unexplained},"${analysis}"\n`;
     }
   });
-  
+
   csv+='\n\nMOVEMENT SUMMARY (Transaction History)\n';
-  csv+='SKU Code,GRN Inbound,Pick/Dispatch Outbound,Returns Inbound,Net Movement,Expected System Qty\n';
-  Object.keys(currentCount.counts).forEach(sku=>{
-    const count=currentCount.counts[sku];
-    const movements=currentCount.movements?currentCount.movements[sku]:{grnInbound:0,dispatchOutbound:0,returnInbound:0,netMovement:0};
+  csv+='SKU Code,Rack,Shelf,GRN Inbound,Pick/Dispatch Outbound,Returns Inbound,Net Movement,Expected System Qty\n';
+  Object.keys(currentCount.counts).forEach(key=>{
+    const count=currentCount.counts[key];
+    const movements=currentCount.movements?currentCount.movements[key]:{grnInbound:0,dispatchOutbound:0,returnInbound:0,netMovement:0};
     const expectedQty=count.systemQty+movements.netMovement;
-    csv+=`"${sku}",${movements.grnInbound||0},${movements.dispatchOutbound||0},${movements.returnInbound||0},${movements.netMovement||0},${expectedQty}\n`;
+    csv+=`"${count.sku}","${count.rack}","${count.shelf}",${movements.grnInbound||0},${movements.dispatchOutbound||0},${movements.returnInbound||0},${movements.netMovement||0},${expectedQty}\n`;
   });
   
   csv+='\n\nSignatures\n';
@@ -4070,30 +4102,29 @@ function printCountReport(){
       <div class="info-box"><strong>Verified By:</strong> ${currentCount.verifier}</div>
     </div>
     <div class="summary">
-      <div><strong>Total SKUs:</strong> ${SKUS.length}</div>
+      <div><strong>Total Count Lines (SKU x Location):</strong> ${counts.length}</div>
       <div><strong>Total Variance:</strong> <span class="${totalVariance===0?'':totalVariance>0?'variance-pos':'variance-neg'}">${totalVariance>0?'+':''}${totalVariance}</span></div>
       <div><strong>Discrepancies:</strong> ${discrepancies.length}</div>
-      <div><strong>Accuracy:</strong> ${Math.round((1-(discrepancies.length/SKUS.length))*100)}%</div>
+      <div><strong>Accuracy:</strong> ${Math.round((1-(discrepancies.length/counts.length))*100)}%</div>
     </div>
     <h3>Items with Discrepancies</h3>
-    <table><thead><tr><th>SKU</th><th>Item</th><th>System Qty</th><th>Physical Qty</th><th>Variance</th></tr></thead><tbody>
+    <table><thead><tr><th>SKU</th><th>Rack</th><th>Shelf</th><th>Item</th><th>System Qty</th><th>Physical Qty</th><th>Variance</th></tr></thead><tbody>
       ${discrepancies.map(d=>{
-        const sku=Object.keys(currentCount.counts).find(k=>currentCount.counts[k]===d);
-        const item=SKUS.find(s=>s.sku===sku);
+        const item=SKUS.find(s=>s.sku===d.sku);
         const variance=d.physicalQty-d.systemQty;
-        return `<tr><td>${sku}</td><td>${item.sub}</td><td>${d.systemQty}</td><td>${d.physicalQty}</td><td class="${variance>0?'variance-pos':'variance-neg'}">${variance>0?'+':''}${variance}</td></tr>`;
+        return `<tr><td>${d.sku}</td><td>${d.rack}</td><td>${d.shelf}</td><td>${item.sub}</td><td>${d.systemQty}</td><td>${d.physicalQty}</td><td class="${variance>0?'variance-pos':'variance-neg'}">${variance>0?'+':''}${variance}</td></tr>`;
       }).join('')}
     </tbody></table>
     <h3>Movement Analysis (Understanding the Variance)</h3>
     <p style="font-size:12px;color:#666;margin-bottom:10px">This shows how much inventory came in (GRN) and went out (Dispatch) to explain the variance</p>
-    <table><thead><tr><th>SKU</th><th>GRN Inbound</th><th>Dispatch Outbound</th><th>Returns</th><th>Net Movement</th><th>Expected Qty</th><th>Actual Qty</th><th>Unexplained</th></tr></thead><tbody>
-      ${Object.keys(currentCount.counts).filter(sku=>currentCount.movements&&currentCount.movements[sku]).map(sku=>{
-        const count=currentCount.counts[sku];
-        const movements=currentCount.movements[sku];
+    <table><thead><tr><th>SKU</th><th>Rack</th><th>Shelf</th><th>GRN Inbound</th><th>Dispatch Outbound</th><th>Returns</th><th>Net Movement</th><th>Expected Qty</th><th>Actual Qty</th><th>Unexplained</th></tr></thead><tbody>
+      ${Object.keys(currentCount.counts).filter(key=>currentCount.movements&&currentCount.movements[key]).map(key=>{
+        const count=currentCount.counts[key];
+        const movements=currentCount.movements[key];
         const expectedQty=count.systemQty+movements.netMovement;
         const unexplained=count.physicalQty-expectedQty;
         if(unexplained!==0){
-          return `<tr><td>${sku}</td><td>${movements.grnInbound||0}</td><td>${movements.dispatchOutbound||0}</td><td>${movements.returnInbound||0}</td><td>${movements.netMovement}</td><td>${expectedQty}</td><td>${count.physicalQty}</td><td class="${unexplained>0?'variance-pos':'variance-neg'}">${unexplained>0?'+':''}${unexplained}</td></tr>`;
+          return `<tr><td>${count.sku}</td><td>${count.rack}</td><td>${count.shelf}</td><td>${movements.grnInbound||0}</td><td>${movements.dispatchOutbound||0}</td><td>${movements.returnInbound||0}</td><td>${movements.netMovement}</td><td>${expectedQty}</td><td>${count.physicalQty}</td><td class="${unexplained>0?'variance-pos':'variance-neg'}">${unexplained>0?'+':''}${unexplained}</td></tr>`;
         }
       }).join('')}
     </tbody></table>
@@ -5488,12 +5519,16 @@ function renderReports(){
   document.getElementById('rpt-inventory').innerHTML=`
     <div style="font-size:11px;color:var(--t2);margin-bottom:8px">Live snapshot as of <strong>${new Date().toLocaleString('en-IN')}</strong> · ${inStockCount}/${SKUS.length} SKUs in stock · ${totalUnits} total units</div>
     <div class="tw"><table><thead><tr><th>SKU</th><th>Item</th><th>Variant</th><th>Rack</th><th>Shelf</th><th>Qty</th><th>Status</th></tr></thead><tbody>
-    ${SKUS.map(s=>{
+    ${SKUS.flatMap(s=>{
       const q=(inv[s.sku]||{qty:0}).qty;
-      const loc=liveLoc(s.sku);
       const st=q<=0?'Out':q<=3?'Low':'OK';
       const stColor=q<=0?'var(--dt)':q<=3?'var(--wt)':'var(--st)';
-      return `<tr><td class="mono" style="font-size:10px">${s.sku}</td><td style="font-size:10px">${s.sub}</td><td style="font-size:10px">${s.variant}</td><td style="text-align:center">${loc.rack}</td><td style="text-align:center">${loc.shelf}</td><td style="text-align:center;font-weight:700">${q}</td><td><span style="font-size:10px;font-weight:600;color:${stColor}">${st}</span></td></tr>`;
+      // One row per physical location — a split SKU shows every shelf
+      // it's actually on, each with that shelf's own qty, instead of
+      // collapsing to a single primary bin.
+      const locs=getSkuLocations(s.sku);
+      const rows=locs.length?locs:[{...liveLoc(s.sku),qty:0}];
+      return rows.map(loc=>`<tr><td class="mono" style="font-size:10px">${s.sku}</td><td style="font-size:10px">${s.sub}</td><td style="font-size:10px">${s.variant}</td><td style="text-align:center">${loc.rack}</td><td style="text-align:center">${loc.shelf}</td><td style="text-align:center;font-weight:700">${loc.qty}</td><td><span style="font-size:10px;font-weight:600;color:${stColor}">${st}</span></td></tr>`);
     }).join('')}
     </tbody></table></div>`;
 
@@ -5584,9 +5619,14 @@ function downloadWeeklyCSV(){
   csv+=`SKU,Item Name,Variant,Rack,Shelf,Qty,Status\n`;
   SKUS.forEach(s=>{
     const q=(inv[s.sku]||{qty:0}).qty;
-    const loc=liveLoc(s.sku);
     const st=q<=0?'Out of Stock':q<=3?'Low Stock':'In Stock';
-    csv+=`"${s.sku}","${s.sub}","${s.variant}",${loc.rack},${loc.shelf},${q},"${st}"\n`;
+    // One row per physical location — see comment on the on-screen
+    // inventory snapshot table for why.
+    const locs=getSkuLocations(s.sku);
+    const rows=locs.length?locs:[{...liveLoc(s.sku),qty:0}];
+    rows.forEach(loc=>{
+      csv+=`"${s.sku}","${s.sub}","${s.variant}",${loc.rack},${loc.shelf},${loc.qty},"${st}"\n`;
+    });
   });
 
   downloadCSV(`CaratLane_Weekly_MIS_${weekStr}.csv`,csv);
@@ -5646,9 +5686,14 @@ function downloadMonthlyMasterCSV(){
   csv+=`SKU,Item Name,Variant,Rack,Shelf,Qty,Status\n`;
   SKUS.forEach(s=>{
     const q=(inv[s.sku]||{qty:0}).qty;
-    const loc=liveLoc(s.sku);
     const st=q<=0?'Out of Stock':q<=3?'Low Stock':'In Stock';
-    csv+=`"${s.sku}","${esc(s.sub)}","${esc(s.variant)}",${loc.rack},${loc.shelf},${q},"${st}"\n`;
+    // One row per physical location — see comment on the on-screen
+    // inventory snapshot table for why.
+    const locs=getSkuLocations(s.sku);
+    const rows=locs.length?locs:[{...liveLoc(s.sku),qty:0}];
+    rows.forEach(loc=>{
+      csv+=`"${s.sku}","${esc(s.sub)}","${esc(s.variant)}",${loc.rack},${loc.shelf},${loc.qty},"${st}"\n`;
+    });
   });
   const totalUnitsNow=SKUS.reduce((a,s)=>a+((inv[s.sku]||{qty:0}).qty),0);
   csv+=`TOTAL UNITS IN STOCK (as of generation):,${totalUnitsNow}\n`;
