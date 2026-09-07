@@ -558,6 +558,10 @@ tr:hover td{background:var(--s2)}
               <option value="broken">Broken / missing seal ⚠</option>
             </select>
           </div>
+          <div style="margin-bottom:14px">
+            <label for="ib-notes" style="font-size:10px;color:var(--t2);display:block;margin-bottom:3px;font-weight:600">GRN NOTES (optional)</label>
+            <textarea id="ib-notes" placeholder="e.g. Partial delivery, remaining 2 cartons expected tomorrow..." style="width:100%;padding:8px;border:0.5px solid var(--b);border-radius:6px;background:var(--s2);color:var(--t);font-size:11px;min-height:56px;resize:vertical"></textarea>
+          </div>
           <div class="sep"></div>
           <div class="stitle">Items in this shipment</div>
           <div class="frow"><label for="ib-sku-search">Search or select SKU</label>
@@ -2074,7 +2078,8 @@ async function loadHist(){
         packMaterials:r.pack_materials||[],
         packNotes:r.pack_notes, packedId:r.packed_id, category:r.category, grn:r.grn,
         items:r.items||[], photo:r.photo||null, packer:r.packer||null,
-        asn:r.asn||null, carrier:r.carrier||null, vehicle:r.vehicle||null, cartons:(r.cartons!=null?r.cartons:null)
+        asn:r.asn||null, carrier:r.carrier||null, vehicle:r.vehicle||null, cartons:(r.cartons!=null?r.cartons:null),
+        grnNotes:r.grn_notes||null
       }));
       // Also load packing queue
       const {data:pq} = await supa.from('packing_queue').select('*').order('created_at',{ascending:true});
@@ -2107,7 +2112,8 @@ function historyRecordToRow(h){
     pack_materials:h.packMaterials||null,
     pack_notes:h.packNotes||null, packed_id:h.packedId||null, category:h.category||null,
     grn:h.grn||null, items:h.items||[], photo:h.photo||null, packer:h.packer||null,
-    asn:h.asn||null, carrier:h.carrier||null, vehicle:h.vehicle||null, cartons:(h.cartons!=null?h.cartons:null)
+    asn:h.asn||null, carrier:h.carrier||null, vehicle:h.vehicle||null, cartons:(h.cartons!=null?h.cartons:null),
+    grn_notes:h.grnNotes||null
   };
 }
 // Upsert a specific history record (not necessarily the last one in the
@@ -3110,6 +3116,7 @@ function createGRN(){
   const cartonsRaw=document.getElementById('ib-cartons').value.trim();
   const cartons=cartonsRaw?parseInt(cartonsRaw)||0:0;
   if(!cartons){ toast('Enter the number of cartons/boxes received — needed for billing','w'); return; }
+  const grnNotes=document.getElementById('ib-notes').value.trim();
   const gid=newId('GRN');
   ibItems.forEach(item=>{
     if(item.qc==='PASS'){
@@ -3134,13 +3141,13 @@ function createGRN(){
   const pass=ibItems.filter(i=>i.qc==='PASS').reduce((a,i)=>a+i.qty,0);
   const hold=ibItems.filter(i=>i.qc==='HOLD').reduce((a,i)=>a+i.qty,0);
   const rej=ibItems.filter(i=>i.qc==='REJECT').reduce((a,i)=>a+i.qty,0);
-  history.push({id:gid,type:'grn',ts:ts(),detail:`ASN: ${asn||'N/A'} · ${cartons} carton(s) · ${ibItems.length} SKUs · PASS:${pass} HOLD:${hold} REJ:${rej}`,items:[...ibItems],asn,carrier,vehicle,cartons});
+  history.push({id:gid,type:'grn',ts:ts(),detail:`ASN: ${asn||'N/A'} · ${cartons} carton(s) · ${ibItems.length} SKUs · PASS:${pass} HOLD:${hold} REJ:${rej}`,items:[...ibItems],asn,carrier,vehicle,cartons,grnNotes:grnNotes||null});
   saveInv();saveHist();
   const recon=asn?reconcileAgainstExpected(asn, ibItems):null;
   ibItems=[];renderIbItemsList();renderIbLog();updateNotificationBadge();
   document.getElementById('ib-issue').value='';
   document.getElementById('ib-load-expected').value='';
-  ['ib-asn','ib-carrier','ib-vehicle','ib-cartons'].forEach(id_=>document.getElementById(id_).value='');
+  ['ib-asn','ib-carrier','ib-vehicle','ib-cartons','ib-notes'].forEach(id_=>document.getElementById(id_).value='');
   renderExpShipmentsBoard();
   populateExpectedSelect();
   if(recon){
@@ -3161,7 +3168,7 @@ function renderIbLog(){
   const el=document.getElementById('ib-log');
   const logs=history.filter(h=>h.type==='grn').slice(-10).reverse();
   const canVoid=getPerms().canReceive;
-  el.innerHTML=logs.length?logs.map(h=>`<div class="hist-entry"${h.voided?' style="opacity:0.6"':''}><div class="hist-head"><span class="hist-id">${h.id}</span>${h.voided?'<span class="pill p-out" style="margin-left:6px">VOIDED</span>':''}<span class="hist-ts">${h.ts}</span><button onclick="printGRN('${h.id}')" style="background:none;border:none;cursor:pointer;color:var(--t2);font-size:11px;padding:4px 8px;border-radius:3px;transition:all 0.2s" onmouseover="this.style.background='var(--s2)';this.style.color='var(--t)'" onmouseout="this.style.background='transparent';this.style.color='var(--t2)'"><i class="ti ti-printer"></i>Print</button>${(!h.voided&&canVoid)?`<button onclick="voidGRN('${h.id}')" style="background:none;border:none;cursor:pointer;color:var(--dt);font-size:11px;padding:4px 8px;border-radius:3px;transition:all 0.2s" onmouseover="this.style.background='var(--s2)'" onmouseout="this.style.background='transparent'"><i class="ti ti-rotate-2"></i>Void</button>`:''}</span></div><div class="hist-body">${esc(h.detail)}${h.voided?`<div style="color:var(--dt);font-size:10px;margin-top:2px">Voided by ${esc(h.voidedBy||'—')} on ${esc(h.voidedAt||'')}${h.voidReason?' — '+esc(h.voidReason):''}</div>`:''}</div></div>`).join(''):'<div class="empty">No GRNs created yet</div>';
+  el.innerHTML=logs.length?logs.map(h=>`<div class="hist-entry"${h.voided?' style="opacity:0.6"':''}><div class="hist-head"><span class="hist-id">${h.id}</span>${h.voided?'<span class="pill p-out" style="margin-left:6px">VOIDED</span>':''}<span class="hist-ts">${h.ts}</span><button onclick="printGRN('${h.id}')" style="background:none;border:none;cursor:pointer;color:var(--t2);font-size:11px;padding:4px 8px;border-radius:3px;transition:all 0.2s" onmouseover="this.style.background='var(--s2)';this.style.color='var(--t)'" onmouseout="this.style.background='transparent';this.style.color='var(--t2)'"><i class="ti ti-printer"></i>Print</button>${(!h.voided&&canVoid)?`<button onclick="voidGRN('${h.id}')" style="background:none;border:none;cursor:pointer;color:var(--dt);font-size:11px;padding:4px 8px;border-radius:3px;transition:all 0.2s" onmouseover="this.style.background='var(--s2)'" onmouseout="this.style.background='transparent'"><i class="ti ti-rotate-2"></i>Void</button>`:''}</span></div><div class="hist-body">${esc(h.detail)}${h.grnNotes?`<div style="color:var(--t2);font-size:10px;margin-top:2px"><i class="ti ti-note"></i> ${esc(h.grnNotes)}</div>`:''}${h.voided?`<div style="color:var(--dt);font-size:10px;margin-top:2px">Voided by ${esc(h.voidedBy||'—')} on ${esc(h.voidedAt||'')}${h.voidReason?' — '+esc(h.voidReason):''}</div>`:''}</div></div>`).join(''):'<div class="empty">No GRNs created yet</div>';
 }
 function voidGRN(grnId){
   if(!getPerms().canReceive){ toast('You do not have permission to void a GRN','w'); return; }
@@ -3277,7 +3284,11 @@ function printGRN(grnId){
           <div class="info-value">${items.length}</div>
         </div>
       </div>
-      
+      ${grn.grnNotes?`<div class="info-box" style="margin-bottom:20px">
+        <div class="info-label">GRN Notes</div>
+        <div class="info-value" style="font-weight:normal;font-size:12px">${esc(grn.grnNotes)}</div>
+      </div>`:''}
+
       <h3 style="margin-top:20px;border-bottom:2px solid #000;padding-bottom:10px">Received Items</h3>
       <table>
         <thead>
