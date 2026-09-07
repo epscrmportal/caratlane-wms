@@ -499,6 +499,17 @@ tr:hover td{background:var(--s2)}
   <div id="exp-shipment-panel" class="panel" style="margin-bottom:16px;display:none">
     <div class="ph"><i class="ti ti-clipboard-list"></i>Log an expected shipment</div>
     <div class="pb">
+      <div style="background:var(--s2);border:1px dashed var(--b);border-radius:8px;padding:12px;margin-bottom:14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+          <div style="font-size:11px;color:var(--t2)"><i class="ti ti-file-spreadsheet"></i> Upload CaratLane's shipment Excel to auto-fill the item list below instead of adding each SKU by hand.</div>
+          <div>
+            <input type="file" id="exp-excel-file" accept=".xlsx,.xls" style="display:none" onchange="handleExcelUpload(event)">
+            <button class="btn-sm" onclick="document.getElementById('exp-excel-file').click()"><i class="ti ti-upload"></i> Upload Excel</button>
+          </div>
+        </div>
+        <div id="exp-excel-status" style="font-size:10px;color:var(--t3);margin-top:6px"></div>
+      </div>
+      <div id="exp-import-review" style="display:none;margin-bottom:14px;background:var(--s2);border:1px solid var(--gold);border-radius:8px;padding:12px"></div>
       <div class="fg2">
         <div class="frow"><label for="exp-asn">ASN / PO reference</label><input type="text" id="exp-asn" placeholder="e.g. ASN-2026-0042"></div>
         <div class="frow"><label for="exp-vendor">Vendor</label><input type="text" id="exp-vendor" placeholder="Optional"></div>
@@ -2525,6 +2536,8 @@ function filterSkuList(searchInputId,selectId){
 // arrives, then reconcile it against actual GRN receipts automatically.
 let expectedShipments=[];
 let expItemsList=[];
+let _xlsxLibLoaded=false;
+let _excelImportRows=[];
 
 async function loadExpectedShipments(){
   try{
@@ -2577,6 +2590,185 @@ function removeExpItem(i){
   expItemsList.splice(i,1);
   renderExpItemsList();
 }
+function loadXLSXLib(cb){
+  if(_xlsxLibLoaded){ cb(); return; }
+  const s=document.createElement('script');
+  s.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+  s.onload=()=>{ _xlsxLibLoaded=true; cb(); };
+  s.onerror=()=>{ console.error('XLSX library failed to load'); toast('Could not load the Excel reader — check your internet connection and try again','w'); };
+  document.head.appendChild(s);
+}
+function _normHeader(h){ return String(h||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
+function _findExcelCol(headerRow, matchFn){
+  for(let i=0;i<headerRow.length;i++){ if(matchFn(_normHeader(headerRow[i]))) return i; }
+  return -1;
+}
+// Matches a row's free-text sub-category + variant (as written in
+// CaratLane's sheet) to a catalog SKU. Tries an exact match first (this is
+// the normal case — CaratLane's category/size wording matches our catalog
+// almost verbatim), then falls back to a looser match, and otherwise
+// leaves it unmatched for manual selection in the review panel.
+function matchExcelRowToSku(subVal, variantVal){
+  const sub=String(subVal||'').trim().toLowerCase();
+  const variant=String(variantVal||'').trim().toLowerCase();
+  if(!sub && !variant) return null;
+  let hit=SKUS.find(s=>s.sub.trim().toLowerCase()===sub && s.variant.trim().toLowerCase()===variant);
+  if(hit) return hit;
+  hit=SKUS.find(s=>{
+    const sSub=s.sub.trim().toLowerCase(), sVar=s.variant.trim().toLowerCase();
+    return (sSub.includes(sub)||sub.includes(sSub)) && (sVar.includes(variant)||variant.includes(sVar));
+  });
+  return hit||null;
+}
+function handleExcelUpload(event){
+  const file=event.target.files[0];
+  if(!file) return;
+  const statusEl=document.getElementById('exp-excel-status');
+  if(statusEl) statusEl.textContent='Reading '+file.name+'...';
+  loadXLSXLib(()=>{
+    const reader=new FileReader();
+    reader.onload=(e)=>{
+      try{
+        const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array',cellDates:true});
+        let parsed=null;
+        for(const sheetName of wb.SheetNames){
+          const ws=wb.Sheets[sheetName];
+          const aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
+          // Scan the first several rows for a header row that has both a
+          // sub-category-ish column and a qty column — that's the row we
+          // need; everything above it (titles, merged cells) is ignored.
+          for(let r=0;r<Math.min(15,aoa.length);r++){
+            const hdr=aoa[r]||[];
+            const subCol=_findExcelCol(hdr,h=>h.startsWith('sub'));
+            const qtyCol=_findExcelCol(hdr,h=>h.includes('qty')||h.includes('quantity'));
+            if(subCol>=0 && qtyCol>=0){
+              const variantCol=_findExcelCol(hdr,h=>h.includes('variant')||h.includes('size'));
+              const boxCol=_findExcelCol(hdr,h=>h.includes('boxno')||h==='box'||h.includes('carton')||h.includes('ctn'));
+              const courierCol=_findExcelCol(hdr,h=>h.includes('courier')||h.includes('carrier'));
+              const dateCol=_findExcelCol(hdr,h=>h.includes('dispatchdate')||h.includes('shippeddate')||h==='date');
+              const rows=[];
+              let lastBox='';
+              for(let dr=r+1;dr<aoa.length;dr++){
+                const row=aoa[dr]||[];
+                const qtyVal=parseFloat(row[qtyCol]);
+                const subVal=row[subCol];
+                if(!subVal || !(qtyVal>0)) continue; // skip blank separator/total rows
+                const variantVal=variantCol>=0?row[variantCol]:'';
+                const match=matchExcelRowToSku(subVal,variantVal);
+                // A blank box-no cell with an item present means this line
+                // is a second SKU packed in the same carton as the row
+                // above (mixed-item boxes are common in these lists).
+                let boxLabel;
+                if(boxCol>=0 && row[boxCol]){ boxLabel=String(row[boxCol]); lastBox=boxLabel; }
+                else if(lastBox){ boxLabel=lastBox+' (cont\'d)'; }
+                else { boxLabel='Row '+(dr+1); }
+                rows.push({
+                  box:boxLabel,
+                  sub:String(subVal).trim(), variant:String(variantVal||'').trim(),
+                  qty:Math.round(qtyVal),
+                  courier:courierCol>=0?String(row[courierCol]||'').trim():'',
+                  date:dateCol>=0?row[dateCol]:null,
+                  matchedSku:match?match.sku:null, matchedName:match?match.sub:null, matchedVariant:match?match.variant:null
+                });
+              }
+              if(rows.length){ parsed=rows; }
+              break;
+            }
+          }
+          if(parsed) break;
+        }
+        if(!parsed || !parsed.length){
+          if(statusEl) statusEl.textContent='Could not find a recognizable item table in this file (needs a Sub-Category and Qty column).';
+          toast('Could not read this Excel file — expected columns like Sub-Category, Variant, and Qty','w');
+          return;
+        }
+        _excelImportRows=parsed;
+        if(statusEl) statusEl.textContent=`Parsed ${parsed.length} row(s) from ${file.name}.`;
+        renderExcelImportReview();
+      }catch(err){
+        console.error('Excel parse failed:',err.message||err);
+        if(statusEl) statusEl.textContent='Failed to read this file.';
+        toast('Could not read this Excel file — please check the format','w');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+function renderExcelImportReview(){
+  const el=document.getElementById('exp-import-review');
+  if(!el) return;
+  if(!_excelImportRows.length){ el.style.display='none'; el.innerHTML=''; return; }
+  const unmatchedCount=_excelImportRows.filter(r=>!r.matchedSku).length;
+  const skuOptions='<option value="">— select SKU —</option>'+SKUS.map(s=>`<option value="${s.sku}">${esc(s.sku)} — ${esc(s.sub)} — ${esc(s.variant)}</option>`).join('');
+  el.style.display='block';
+  el.innerHTML=`
+    <div style="font-weight:700;font-size:12px;margin-bottom:4px">Review import — ${_excelImportRows.length} row(s), ${_excelImportRows.length-unmatchedCount} auto-matched${unmatchedCount?`, ${unmatchedCount} need${unmatchedCount===1?'s':''} manual selection`:''}</div>
+    <div class="tw" style="max-height:340px;overflow:auto"><table><thead><tr><th>Box</th><th>From file</th><th>Qty</th><th>Matched SKU</th><th></th></tr></thead><tbody>
+      ${_excelImportRows.map((r,i)=>`<tr>
+        <td style="font-size:11px">${esc(r.box)}</td>
+        <td style="font-size:11px">${esc(r.sub)}${r.variant?' — '+esc(r.variant):''}</td>
+        <td>${r.qty}</td>
+        <td>${r.matchedSku
+          ?`<span class="pill p-pass" style="font-size:10px">${esc(r.matchedSku)}</span>`
+          :`<select style="font-size:11px;width:100%" onchange="updateExcelImportRowSku(${i},this.value)">${skuOptions}</select>`}</td>
+        <td><button class="btn-sm btn-danger" onclick="removeExcelImportRow(${i})" title="Skip this row"><i class="ti ti-trash"></i></button></td>
+      </tr>`).join('')}
+    </tbody></table></div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn-primary" onclick="confirmExcelImport()"><i class="ti ti-check"></i> Add all to expected items list</button>
+      <button class="btn-sm btn-danger" onclick="cancelExcelImport()">Cancel import</button>
+    </div>`;
+}
+function updateExcelImportRowSku(i,val){
+  const s=SKUS.find(x=>x.sku===val);
+  if(!_excelImportRows[i]) return;
+  _excelImportRows[i].matchedSku=s?s.sku:null;
+  _excelImportRows[i].matchedName=s?s.sub:null;
+  _excelImportRows[i].matchedVariant=s?s.variant:null;
+  renderExcelImportReview();
+}
+function removeExcelImportRow(i){
+  _excelImportRows.splice(i,1);
+  renderExcelImportReview();
+}
+function cancelExcelImport(){
+  _excelImportRows=[];
+  const el=document.getElementById('exp-import-review');
+  if(el){ el.style.display='none'; el.innerHTML=''; }
+  const fileInput=document.getElementById('exp-excel-file');
+  if(fileInput) fileInput.value='';
+  const statusEl=document.getElementById('exp-excel-status');
+  if(statusEl) statusEl.textContent='';
+}
+function confirmExcelImport(){
+  if(!_excelImportRows.length){ toast('Nothing to import','w'); return; }
+  const unmatched=_excelImportRows.filter(r=>!r.matchedSku);
+  if(unmatched.length){ toast(`${unmatched.length} row(s) still need a SKU selected — pick one for each, or remove the row`,'w'); return; }
+  _excelImportRows.forEach(r=>{
+    expItemsList.push({sku:r.matchedSku,name:r.matchedName,variant:r.matchedVariant,qty:r.qty});
+  });
+  renderExpItemsList();
+  // Auto-fill carrier/date if the fields are still empty — don't clobber
+  // anything the person already typed in manually.
+  const carrierEl=document.getElementById('exp-carrier');
+  if(carrierEl && !carrierEl.value.trim()){
+    const couriers=_excelImportRows.map(r=>r.courier).filter(Boolean);
+    if(couriers.length){
+      const counts={};
+      couriers.forEach(c=>counts[c]=(counts[c]||0)+1);
+      const top=Object.keys(counts).sort((a,b)=>counts[b]-counts[a])[0];
+      carrierEl.value=top;
+    }
+  }
+  const dateEl=document.getElementById('exp-date');
+  if(dateEl && !dateEl.value){
+    const firstDate=_excelImportRows.map(r=>r.date).find(d=>d instanceof Date);
+    if(firstDate) dateEl.value=firstDate.toISOString().slice(0,10);
+  }
+  const count=_excelImportRows.length;
+  cancelExcelImport();
+  toast(`Added ${count} item(s) from the Excel file — review the list below, then log the expected shipment`,'s');
+}
 async function createExpectedShipment(){
   const id=document.getElementById('exp-asn').value.trim();
   if(!id){toast('Enter an ASN / PO reference','w');return;}
@@ -2617,21 +2809,45 @@ function loadExpectedIntoGRN(){
   const s=expectedShipments.find(x=>x.id===id);
   if(!s) return;
   document.getElementById('ib-asn').value=s.id;
+  // If earlier GRNs already received part of this ASN, only pre-fill the
+  // REMAINING quantity still owed per SKU — not the full original expected
+  // amount again — so each partial batch's GRN starts from what's actually
+  // still outstanding. Lines that are already fully received are dropped
+  // from the prefill entirely.
+  const receivedSoFar=getReceivedSoFarByAsn(id);
+  const anyPriorReceiving=Object.keys(receivedSoFar).length>0;
   ibItems=s.items.map(it=>{
     const loc=liveLoc(it.sku);
-    // Not yet physically verified — this is just the expected qty
-    // pre-filled as a starting point, so the first real "Add" against
+    const already=receivedSoFar[it.sku]||0;
+    const remaining=Math.max(0,it.qty-already);
+    // Not yet physically verified — this is just the remaining expected
+    // qty pre-filled as a starting point, so the first real "Add" against
     // this line shouldn't trigger the already-counted confirmation.
-    return {sku:it.sku,name:it.name,variant:it.variant,qc:'PASS',issue:'',qty:it.qty,bin:(loc.rack&&loc.shelf)?`${loc.rack}-${loc.shelf}`:'',binOverridden:false,counted:false};
-  });
+    return {sku:it.sku,name:it.name,variant:it.variant,qc:'PASS',issue:'',qty:remaining,bin:(loc.rack&&loc.shelf)?`${loc.rack}-${loc.shelf}`:'',binOverridden:false,counted:false};
+  }).filter(it=>it.qty>0);
   renderIbItemsList();
-  toast(`Loaded ${s.items.length} expected item(s) from ${s.id} — adjust quantities/QC to match what actually arrived`,'s');
+  toast(`Loaded ${ibItems.length} remaining item(s) from ${s.id}${anyPriorReceiving?' — earlier batch(es) already accounted for':''} — adjust quantities/QC to match what actually arrived today`,'s');
+}
+function getReceivedSoFarByAsn(asnId){
+  // Sums received quantities across EVERY GRN raised against this ASN so
+  // far — CaratLane shipments often arrive as several partial deliveries
+  // over multiple days (e.g. 18 of 41 boxes today, the rest later), each
+  // needing its own GRN. The running total must reflect all of them, not
+  // just the most recent one.
+  const receivedBySku={};
+  history.filter(h=>h.type==='grn' && (h.asn||'').toLowerCase()===(asnId||'').toLowerCase())
+    .forEach(grn=>{
+      (grn.items||[]).forEach(it=>{ receivedBySku[it.sku]=(receivedBySku[it.sku]||0)+it.qty; });
+    });
+  return receivedBySku;
 }
 function reconcileAgainstExpected(asn, receivedItems){
   const s=expectedShipments.find(x=>x.id.toLowerCase()===(asn||'').toLowerCase());
   if(!s) return null;
-  const receivedBySku={};
-  receivedItems.forEach(it=>{ receivedBySku[it.sku]=(receivedBySku[it.sku]||0)+it.qty; });
+  // Pulls the cumulative total from history (which already includes the
+  // GRN just created, since createGRN() pushes to history before calling
+  // this) rather than only the items passed in from this one batch.
+  const receivedBySku=getReceivedSoFarByAsn(asn);
   const summary=s.items.map(exp=>{
     const got=receivedBySku[exp.sku]||0;
     delete receivedBySku[exp.sku];
@@ -2721,8 +2937,8 @@ function printTallySheet(asnId){
     </div>
     <div><strong>ASN / PO:</strong> ${esc(s.id)} &nbsp; <strong>Vendor:</strong> ${esc(s.vendor||'—')} &nbsp; <strong>Carrier:</strong> ${esc(s.carrier||'—')}</div>
     <div><strong>Expected date:</strong> ${esc(s.expectedDate||'—')} &nbsp; <strong>Printed:</strong> ${new Date().toLocaleString('en-IN')}</div>
-    <table><thead><tr><th>SKU</th><th>Item</th><th>Expected Qty</th><th class="tick">Actual Qty</th><th class="tick">✓ Tick</th></tr></thead><tbody>
-      ${s.items.map(it=>`<tr><td>${esc(it.sku)}</td><td>${esc(it.name)} — ${esc(it.variant||'')}</td><td>${it.qty}</td><td class="tick"></td><td class="tick"></td></tr>`).join('')}
+    <table><thead><tr><th>SKU</th><th>Item</th><th>Expected Qty</th><th class="tick">Received So Far</th><th class="tick">Remaining</th><th class="tick">Actual Qty (this batch)</th><th class="tick">✓ Tick</th></tr></thead><tbody>
+      ${(()=>{const receivedSoFar=getReceivedSoFarByAsn(s.id);return s.items.map(it=>{const got=receivedSoFar[it.sku]||0;const remaining=Math.max(0,it.qty-got);return `<tr><td>${esc(it.sku)}</td><td>${esc(it.name)} — ${esc(it.variant||'')}</td><td>${it.qty}</td><td class="tick">${got}</td><td class="tick">${remaining}</td><td class="tick"></td><td class="tick"></td></tr>`;}).join('');})()}
     </tbody></table>
     <div class="sign">
       <div>Received by (name &amp; signature)</div>
