@@ -511,7 +511,7 @@ tr:hover td{background:var(--s2)}
       </div>
       <div id="exp-import-review" style="display:none;margin-bottom:14px;background:var(--s2);border:1px solid var(--gold);border-radius:8px;padding:12px"></div>
       <div class="fg2">
-        <div class="frow"><label for="exp-asn">ASN / PO reference</label><input type="text" id="exp-asn" placeholder="e.g. ASN-2026-0042"></div>
+        <div class="frow"><label for="exp-asn">ASN / PO reference</label><input type="text" id="exp-asn" placeholder="e.g. ASN-2026-0042"><div id="exp-asn-hint" style="display:none;font-size:10px;color:var(--t3);margin-top:3px">ASN can't be changed once created — it's how GRNs already logged against this shipment are matched. Create a new shipment instead if this was a typo.</div></div>
         <div class="frow"><label for="exp-vendor">Vendor</label><input type="text" id="exp-vendor" placeholder="Optional"></div>
       </div>
       <div class="fg2">
@@ -527,7 +527,10 @@ tr:hover td{background:var(--s2)}
         <button onclick="addExpItem()"><i class="ti ti-plus"></i>Add</button>
       </div>
       <div id="exp-items-list" style="margin-bottom:10px"></div>
-      <button class="btn-primary" style="width:100%;justify-content:center" onclick="createExpectedShipment()"><i class="ti ti-check"></i>Log expected shipment</button>
+      <div style="display:flex;gap:8px">
+        <button id="exp-save-btn" class="btn-primary" style="flex:1;justify-content:center" onclick="saveExpectedShipmentForm()"><i class="ti ti-check"></i>Log expected shipment</button>
+        <button id="exp-cancel-edit-btn" class="btn-sm btn-danger" style="display:none" onclick="cancelEditExpectedShipment()">Cancel edit</button>
+      </div>
     </div>
   </div>
   <div class="stitle">Inbound tally — expected vs received</div>
@@ -2538,6 +2541,7 @@ let expectedShipments=[];
 let expItemsList=[];
 let _xlsxLibLoaded=false;
 let _excelImportRows=[];
+let _editingExpId=null;
 
 async function loadExpectedShipments(){
   try{
@@ -2769,12 +2773,73 @@ function confirmExcelImport(){
   cancelExcelImport();
   toast(`Added ${count} item(s) from the Excel file — review the list below, then log the expected shipment`,'s');
 }
-async function createExpectedShipment(){
+function startEditExpectedShipment(id){
+  const s=expectedShipments.find(x=>x.id===id);
+  if(!s){ toast('Shipment not found','w'); return; }
+  _editingExpId=id;
+  const asnEl=document.getElementById('exp-asn');
+  asnEl.value=s.id;
+  asnEl.disabled=true;
+  document.getElementById('exp-vendor').value=s.vendor||'';
+  document.getElementById('exp-carrier').value=s.carrier||'';
+  document.getElementById('exp-date').value=s.expectedDate||'';
+  expItemsList=s.items.map(it=>({...it}));
+  renderExpItemsList();
+  updateExpFormModeUI();
+  const panel=document.getElementById('exp-shipment-panel');
+  if(panel && panel.scrollIntoView) panel.scrollIntoView({behavior:'smooth',block:'start'});
+  toast(`Viewing/editing ${id} — update the fields below, then save`,'s');
+}
+function cancelEditExpectedShipment(){
+  _editingExpId=null;
+  const asnEl=document.getElementById('exp-asn');
+  asnEl.disabled=false;
+  asnEl.value='';
+  document.getElementById('exp-vendor').value='';
+  document.getElementById('exp-carrier').value='';
+  document.getElementById('exp-date').value='';
+  expItemsList=[];
+  renderExpItemsList();
+  updateExpFormModeUI();
+}
+function updateExpFormModeUI(){
+  const btn=document.getElementById('exp-save-btn');
+  const cancelBtn=document.getElementById('exp-cancel-edit-btn');
+  const hint=document.getElementById('exp-asn-hint');
+  if(_editingExpId){
+    if(btn) btn.innerHTML=`<i class="ti ti-check"></i>Save changes to ${esc(_editingExpId)}`;
+    if(cancelBtn) cancelBtn.style.display='inline-flex';
+    if(hint) hint.style.display='block';
+  } else {
+    if(btn) btn.innerHTML='<i class="ti ti-check"></i>Log expected shipment';
+    if(cancelBtn) cancelBtn.style.display='none';
+    if(hint) hint.style.display='none';
+  }
+}
+async function saveExpectedShipmentForm(){
   const id=document.getElementById('exp-asn').value.trim();
   if(!id){toast('Enter an ASN / PO reference','w');return;}
   if(!expItemsList.length){toast('Add at least one expected item','w');return;}
+  if(!rateLimit('save-expected-shipment',1500)){toast('Please wait before submitting again','w');return;}
+  if(_editingExpId){
+    const s=expectedShipments.find(x=>x.id===_editingExpId);
+    if(!s){ toast('Shipment not found — it may have been removed','w'); cancelEditExpectedShipment(); return; }
+    const oldItemCount=s.items.length;
+    s.vendor=document.getElementById('exp-vendor').value.trim()||null;
+    s.carrier=document.getElementById('exp-carrier').value.trim()||null;
+    s.expectedDate=document.getElementById('exp-date').value||null;
+    s.items=[...expItemsList];
+    const ok=await saveExpectedShipmentRow(s);
+    if(!ok) return;
+    recomputeShipmentTally(s);
+    logAudit('UPDATE_EXPECTED_SHIPMENT','expected_shipments',id,{items:oldItemCount},{items:s.items.length});
+    cancelEditExpectedShipment();
+    renderExpShipmentsBoard();
+    populateExpectedSelect();
+    toast(`Expected shipment ${id} updated — ${s.items.length} SKU(s)`,'s');
+    return;
+  }
   if(expectedShipments.some(s=>s.id.toLowerCase()===id.toLowerCase())){toast('A shipment with this ASN already exists','w');return;}
-  if(!rateLimit('create-expected-shipment',1500)){toast('Please wait before submitting again','w');return;}
   const s={
     id, vendor:document.getElementById('exp-vendor').value.trim()||null,
     carrier:document.getElementById('exp-carrier').value.trim()||null,
@@ -2835,19 +2900,27 @@ function getReceivedSoFarByAsn(asnId){
   // needing its own GRN. The running total must reflect all of them, not
   // just the most recent one.
   const receivedBySku={};
-  history.filter(h=>h.type==='grn' && (h.asn||'').toLowerCase()===(asnId||'').toLowerCase())
+  history.filter(h=>h.type==='grn' && !h.voided && (h.asn||'').toLowerCase()===(asnId||'').toLowerCase())
     .forEach(grn=>{
       (grn.items||[]).forEach(it=>{ receivedBySku[it.sku]=(receivedBySku[it.sku]||0)+it.qty; });
     });
   return receivedBySku;
 }
-function reconcileAgainstExpected(asn, receivedItems){
-  const s=expectedShipments.find(x=>x.id.toLowerCase()===(asn||'').toLowerCase());
-  if(!s) return null;
-  // Pulls the cumulative total from history (which already includes the
-  // GRN just created, since createGRN() pushes to history before calling
-  // this) rather than only the items passed in from this one batch.
-  const receivedBySku=getReceivedSoFarByAsn(asn);
+// Recomputes an expected shipment's status/tally from whatever has
+// actually been received against it so far (per getReceivedSoFarByAsn).
+// Shared by GRN creation AND by editing a shipment's item list — editing
+// must NOT accidentally mark a shipment 'partial'/'received' just because
+// the math ran; if nothing has been received yet, it stays 'expected'.
+function recomputeShipmentTally(s){
+  const hasAnyGrn=history.some(h=>h.type==='grn' && !h.voided && (h.asn||'').toLowerCase()===s.id.toLowerCase());
+  if(!hasAnyGrn){
+    s.status='expected';
+    s.receivedSummary=null;
+    s.receivedAt=null;
+    saveExpectedShipmentRow(s);
+    return {status:s.status, summary:null, anyShortage:false, anyOverage:false};
+  }
+  const receivedBySku=getReceivedSoFarByAsn(s.id);
   const summary=s.items.map(exp=>{
     const got=receivedBySku[exp.sku]||0;
     delete receivedBySku[exp.sku];
@@ -2873,6 +2946,14 @@ function reconcileAgainstExpected(asn, receivedItems){
   saveExpectedShipmentRow(s);
   return {status:s.status, summary, anyShortage, anyOverage};
 }
+function reconcileAgainstExpected(asn, receivedItems){
+  const s=expectedShipments.find(x=>x.id.toLowerCase()===(asn||'').toLowerCase());
+  if(!s) return null;
+  // Pulls the cumulative total from history (which already includes the
+  // GRN just created, since createGRN() pushes to history before calling
+  // this) rather than only the items passed in from this one batch.
+  return recomputeShipmentTally(s);
+}
 function renderExpShipmentsBoard(){
   const el=document.getElementById('exp-shipments-board');
   if(!el) return;
@@ -2887,7 +2968,7 @@ function renderExpShipmentsBoard(){
         return `<div style="font-size:10px;color:${color}">${esc(r.sku)}: ${r.received}/${r.expected} (${label})</div>`;
       }).join('');
     }
-    return `<tr><td class="mono">${esc(s.id)}</td><td style="font-size:11px">${esc(s.vendor||'—')}</td><td>${s.items.length} SKU(s)</td><td><span class="pill ${statusPill[s.status]||'p-info'}">${s.status}</span></td><td>${tally}</td><td><button class="btn-sm" onclick="printTallySheet('${esc(s.id)}')"><i class="ti ti-printer"></i>Print</button></td></tr>`;
+    return `<tr><td class="mono">${esc(s.id)}</td><td style="font-size:11px">${esc(s.vendor||'—')}</td><td>${s.items.length} SKU(s)</td><td><span class="pill ${statusPill[s.status]||'p-info'}">${s.status}</span></td><td>${tally}</td><td style="white-space:nowrap"><button class="btn-sm" onclick="printTallySheet('${esc(s.id)}')"><i class="ti ti-printer"></i>Print</button> <button class="btn-sm" onclick="startEditExpectedShipment('${esc(s.id)}')"><i class="ti ti-edit"></i>View/Edit</button></td></tr>`;
   }).join('')}</tbody></table></div>`;
 }
 function pdfDownloadSnippet(filename,orientation){
@@ -2962,6 +3043,17 @@ function addIbItem(){
   const sLoc=liveLoc(sku);
   const defaultBin=`${sLoc.rack}-${sLoc.shelf}`;
   const bin=binOverride||defaultBin;
+  // Every rack physically has SHELVES_PER_RACK (6) shelves — a manually
+  // entered bin outside that range can't be a real location, so catch it
+  // here rather than let it silently create a shelf that doesn't exist.
+  if(binOverride){
+    const [ovRack,ovShelf]=binOverride.split('-');
+    const shelfNum=parseInt(ovShelf);
+    if(!ovRack || !RACK_LETTERS.includes(ovRack.toUpperCase()) || isNaN(shelfNum) || shelfNum<1 || shelfNum>SHELVES_PER_RACK){
+      toast(`"${binOverride}" isn't a valid bin — use RACK-SHELF, e.g. A-3, with shelf 1-${SHELVES_PER_RACK}`,'w');
+      return;
+    }
+  }
   // If an expected shipment is loaded, catch someone receiving a SKU that
   // wasn't actually on that ASN (e.g. picked the wrong size by mistake)
   // before it silently gets added.
@@ -3019,6 +3111,19 @@ function createGRN(){
     if(item.qc==='PASS'){
       if(!inv[item.sku])inv[item.sku]={qty:0,rack:SKUS.find(s=>s.sku===item.sku).rack,shelf:SKUS.find(s=>s.sku===item.sku).shelf};
       inv[item.sku].qty+=item.qty;
+      // If admin/supervisor manually assigned a bin at receiving (typed
+      // into the bin-override field instead of accepting the SKU's
+      // catalog default), that decision must actually move the stock
+      // there. Previously this was silently discarded — inventory always
+      // landed back at the catalog's hardcoded home shelf regardless of
+      // what was entered, which is why some items ended up "in" shelf
+      // numbers that don't physically exist (only 6 shelves per rack are
+      // real; assignment beyond that must be a deliberate, valid choice
+      // made here at receiving time, not inherited from stale catalog data).
+      if(item.binOverridden && item.bin){
+        const [rk,sh]=item.bin.split('-');
+        if(rk && sh) { inv[item.sku].rack=rk; inv[item.sku].shelf=sh; }
+      }
     }
     // Track exceptions for compliance
     if(item.qc==='HOLD' || item.qc==='REJECT' || item.issue){
@@ -3054,7 +3159,41 @@ function createGRN(){
 function renderIbLog(){
   const el=document.getElementById('ib-log');
   const logs=history.filter(h=>h.type==='grn').slice(-10).reverse();
-  el.innerHTML=logs.length?logs.map(h=>`<div class="hist-entry"><div class="hist-head"><span class="hist-id">${h.id}</span><span class="hist-ts">${h.ts}</span><button onclick="printGRN('${h.id}')" style="background:none;border:none;cursor:pointer;color:var(--t2);font-size:11px;padding:4px 8px;border-radius:3px;transition:all 0.2s" onmouseover="this.style.background='var(--s2)';this.style.color='var(--t)'" onmouseout="this.style.background='transparent';this.style.color='var(--t2)'"><i class="ti ti-printer"></i>Print</button></span></div><div class="hist-body">${esc(h.detail)}</div></div>`).join(''):'<div class="empty">No GRNs created yet</div>';
+  const canVoid=getPerms().canReceive;
+  el.innerHTML=logs.length?logs.map(h=>`<div class="hist-entry"${h.voided?' style="opacity:0.6"':''}><div class="hist-head"><span class="hist-id">${h.id}</span>${h.voided?'<span class="pill p-out" style="margin-left:6px">VOIDED</span>':''}<span class="hist-ts">${h.ts}</span><button onclick="printGRN('${h.id}')" style="background:none;border:none;cursor:pointer;color:var(--t2);font-size:11px;padding:4px 8px;border-radius:3px;transition:all 0.2s" onmouseover="this.style.background='var(--s2)';this.style.color='var(--t)'" onmouseout="this.style.background='transparent';this.style.color='var(--t2)'"><i class="ti ti-printer"></i>Print</button>${(!h.voided&&canVoid)?`<button onclick="voidGRN('${h.id}')" style="background:none;border:none;cursor:pointer;color:var(--dt);font-size:11px;padding:4px 8px;border-radius:3px;transition:all 0.2s" onmouseover="this.style.background='var(--s2)'" onmouseout="this.style.background='transparent'"><i class="ti ti-rotate-2"></i>Void</button>`:''}</span></div><div class="hist-body">${esc(h.detail)}${h.voided?`<div style="color:var(--dt);font-size:10px;margin-top:2px">Voided by ${esc(h.voidedBy||'—')} on ${esc(h.voidedAt||'')}${h.voidReason?' — '+esc(h.voidReason):''}</div>`:''}</div></div>`).join(''):'<div class="empty">No GRNs created yet</div>';
+}
+function voidGRN(grnId){
+  if(!getPerms().canReceive){ toast('You do not have permission to void a GRN','w'); return; }
+  const grn=history.find(h=>h.id===grnId && h.type==='grn');
+  if(!grn){ toast('GRN not found','w'); return; }
+  if(grn.voided){ toast('This GRN has already been voided','w'); return; }
+  if(!confirm(`Void ${grnId}? This reverses the ${grn.items?.filter(i=>i.qc==='PASS').reduce((a,i)=>a+i.qty,0)||0} unit(s) it added to inventory. This cannot be undone — create a fresh GRN afterward with the correct figures.`)) return;
+  const reason=prompt('Reason for voiding this GRN (optional, shown in the log):','')||'';
+  // Reverse exactly what this GRN added — only PASS-qc items ever touched
+  // inventory (see createGRN), so only those need reversing here.
+  (grn.items||[]).forEach(item=>{
+    if(item.qc==='PASS' && inv[item.sku]){
+      inv[item.sku].qty=Math.max(0,inv[item.sku].qty-item.qty);
+    }
+  });
+  grn.voided=true;
+  grn.voidedBy=currentProfile?.full_name||'Unknown';
+  grn.voidedAt=new Date().toLocaleString('en-IN');
+  grn.voidReason=reason;
+  saveInv();saveHist();
+  logAudit('VOID_GRN','history',grnId,{voided:false},{voided:true,reason});
+  // If this GRN was tied to an expected shipment, recompute its tally now
+  // that this batch's received quantities no longer count.
+  if(grn.asn){
+    const s=expectedShipments.find(x=>x.id.toLowerCase()===grn.asn.toLowerCase());
+    if(s) recomputeShipmentTally(s);
+  }
+  renderIbLog();
+  renderInv();
+  updateNotificationBadge();
+  renderExpShipmentsBoard();
+  populateExpectedSelect();
+  toast(`${grnId} voided — inventory reversed`,'s');
 }
 
 function printGRN(grnId){
@@ -8111,7 +8250,12 @@ function applyRoleRestrictions(){
   const addProdPanel=document.getElementById('add-product-panel');
   if(addProdPanel) addProdPanel.style.display=perms.canEdit?'block':'none';
   applyTabVisibility();
-  // Hide action buttons for viewer
+  // Hide action buttons for viewer. Search/filter/navigation controls are
+  // explicitly excluded from the pointer-events lockdown below — a blanket
+  // rule on every input previously broke Order Status search, Inventory
+  // search/filter, Label Printer search, Audit Trail filters, and the
+  // Reports week/month selectors for this role, which was never intended
+  // (read-only should mean "can't mutate data," not "can't look things up").
   if(role==='viewer'){
     const style=document.createElement('style');
     style.id='viewer-restrictions';
@@ -8120,7 +8264,9 @@ function applyRoleRestrictions(){
       button[onclick*="confirmCourierDispatch"],button[onclick*="startPacking"],
       button[onclick*="openPackModal"],button[onclick*="processReturn"],
       #clear-all-btn{display:none!important}
-      input,select,textarea{pointer-events:none!important;opacity:0.7}
+      input:not(#inv-q):not(#os-order-id):not(#lbl-search):not(#audit-search):not(#exp-sku-search):not(#ib-sku-search),
+      select:not(#inv-cat):not(#inv-st):not(#lbl-cat):not(#lbl-size):not(#rpt-week-select):not(#rpt-month-select):not(#bill-month-select):not(#audit-filter-role):not(#audit-filter-action),
+      textarea{pointer-events:none!important;opacity:0.7}
     `;
     document.head.appendChild(style);
     toast('You are logged in as a Viewer — read-only access','w');
