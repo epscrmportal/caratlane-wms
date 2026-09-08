@@ -91,7 +91,7 @@ let SKUS=[
   {sku:"VM-RR",cat:"VM",sub:"Ring Rod",variant:"Ring Rod",rack:"B",shelf:"4",price:350},
   {sku:"VM-BS",cat:"VM",sub:"Bangle Sizer",variant:"Bangle Sizer",rack:"B",shelf:"4",price:990},
 ];
-let inv={},history=[],ibItems=[],pkItemsList=[],rtItemsList=[],packingQueue=[],inventoryCounts=[],currentCount={},costParams={
+let inv={},history=[],ibItems=[],ibExpectedRemaining=null,pkItemsList=[],rtItemsList=[],packingQueue=[],inventoryCounts=[],currentCount={},costParams={
   receivingCostPerGrn:500,
   pickCostPerOrder:50,
   packCostPerOrder:40,
@@ -226,7 +226,8 @@ async function loadHist(){
         packNotes:r.pack_notes, packedId:r.packed_id, category:r.category, grn:r.grn,
         items:r.items||[], photo:r.photo||null, packer:r.packer||null,
         asn:r.asn||null, carrier:r.carrier||null, vehicle:r.vehicle||null, cartons:(r.cartons!=null?r.cartons:null),
-        grnNotes:r.grn_notes||null
+        grnNotes:r.grn_notes||null,
+        voided:r.voided||false, voidedBy:r.voided_by||null, voidedAt:r.voided_at||null, voidReason:r.void_reason||null
       }));
       // Also load packing queue
       const {data:pq} = await supa.from('packing_queue').select('*').order('created_at',{ascending:true});
@@ -260,7 +261,8 @@ function historyRecordToRow(h){
     pack_notes:h.packNotes||null, packed_id:h.packedId||null, category:h.category||null,
     grn:h.grn||null, items:h.items||[], photo:h.photo||null, packer:h.packer||null,
     asn:h.asn||null, carrier:h.carrier||null, vehicle:h.vehicle||null, cartons:(h.cartons!=null?h.cartons:null),
-    grn_notes:h.grnNotes||null
+    grn_notes:h.grnNotes||null,
+    voided:h.voided||false, voided_by:h.voidedBy||null, voided_at:h.voidedAt||null, void_reason:h.voidReason||null
   };
 }
 // Upsert a specific history record (not necessarily the last one in the
@@ -1028,28 +1030,39 @@ function populateExpectedSelect(){
 }
 function loadExpectedIntoGRN(){
   const id=document.getElementById('ib-load-expected').value;
-  if(!id) return;
+  if(!id){ ibExpectedRemaining=null; document.getElementById('ib-expected-reference').innerHTML=''; return; }
   const s=expectedShipments.find(x=>x.id===id);
   if(!s) return;
   document.getElementById('ib-asn').value=s.id;
-  // If earlier GRNs already received part of this ASN, only pre-fill the
-  // REMAINING quantity still owed per SKU — not the full original expected
-  // amount again — so each partial batch's GRN starts from what's actually
-  // still outstanding. Lines that are already fully received are dropped
-  // from the prefill entirely.
+  // This used to auto-populate ibItems with the full remaining-expected
+  // qty per SKU as a "starting point to edit down" — but in practice
+  // receivers were submitting that pre-filled list largely as-is (often
+  // across SKUs from boxes that hadn't even arrived yet in this batch),
+  // because manually zeroing out or correcting 40-60 rows one by one
+  // isn't realistic. That produced GRNs that vastly overstated what was
+  // actually received. Since CaratLane shipments arrive as several boxes
+  // received and counted individually, the received-items list now
+  // starts EMPTY every time — you add each SKU as you physically count
+  // it (exactly as for an ad-hoc receipt), same as always. The expected
+  // shipment is only used to (a) show what's still outstanding as a
+  // reference below, and (b) warn if you add a SKU that isn't on this
+  // ASN at all.
+  ibItems=[];
+  renderIbItemsList();
   const receivedSoFar=getReceivedSoFarByAsn(id);
   const anyPriorReceiving=Object.keys(receivedSoFar).length>0;
-  ibItems=s.items.map(it=>{
-    const loc=liveLoc(it.sku);
-    const already=receivedSoFar[it.sku]||0;
-    const remaining=Math.max(0,it.qty-already);
-    // Not yet physically verified — this is just the remaining expected
-    // qty pre-filled as a starting point, so the first real "Add" against
-    // this line shouldn't trigger the already-counted confirmation.
-    return {sku:it.sku,name:it.name,variant:it.variant,qc:'PASS',issue:'',qty:remaining,bin:(loc.rack&&loc.shelf)?`${loc.rack}-${loc.shelf}`:'',binOverridden:false,counted:false};
-  }).filter(it=>it.qty>0);
-  renderIbItemsList();
-  toast(`Loaded ${ibItems.length} remaining item(s) from ${s.id}${anyPriorReceiving?' — earlier batch(es) already accounted for':''} — adjust quantities/QC to match what actually arrived today`,'s');
+  ibExpectedRemaining=s.items.map(it=>({sku:it.sku,name:it.name,variant:it.variant,remaining:Math.max(0,it.qty-(receivedSoFar[it.sku]||0))})).filter(it=>it.remaining>0);
+  renderIbExpectedReference();
+  toast(`${s.id} loaded — ${ibExpectedRemaining.length} SKU(s) still outstanding (see reference list below)${anyPriorReceiving?'. Earlier batch(es) already accounted for':''}. Add each item below as you physically count it.`,'s');
+}
+function renderIbExpectedReference(){
+  const el=document.getElementById('ib-expected-reference');
+  if(!el) return;
+  if(!ibExpectedRemaining || !ibExpectedRemaining.length){ el.innerHTML=''; return; }
+  el.innerHTML=`<div style="background:var(--s2);border:0.5px solid var(--b);border-radius:6px;padding:8px 10px;max-height:180px;overflow:auto">
+    <div style="font-size:10px;color:var(--t2);font-weight:600;margin-bottom:4px">STILL OUTSTANDING ON THIS ASN (reference only — not added automatically)</div>
+    ${ibExpectedRemaining.map(it=>`<div style="font-size:11px;display:flex;justify-content:space-between;padding:2px 0"><span class="mono">${esc(it.sku)}</span><span style="color:var(--t2)">${esc(it.name||'')}${it.variant?' — '+esc(it.variant):''} · owed ${it.remaining}</span></div>`).join('')}
+  </div>`;
 }
 function getReceivedSoFarByAsn(asnId){
   // Sums received quantities across EVERY GRN raised against this ASN so
@@ -1318,7 +1331,7 @@ function createGRN(){
   if(uncounted.length){
     toast(`${uncounted.length} unconfirmed line(s) were left out of GRN ${gid} — they stay outstanding on the ASN for the next batch`,'w');
   }
-  ibItems=[];renderIbItemsList();renderIbLog();updateNotificationBadge();
+  ibItems=[];ibExpectedRemaining=null;renderIbItemsList();renderIbExpectedReference();renderIbLog();updateNotificationBadge();
   document.getElementById('ib-issue').value='';
   document.getElementById('ib-load-expected').value='';
   ['ib-asn','ib-carrier','ib-vehicle','ib-cartons','ib-notes'].forEach(id_=>document.getElementById(id_).value='');
@@ -1369,7 +1382,14 @@ function voidGRN(grnId){
   grn.voidedBy=currentProfile?.full_name||'Unknown';
   grn.voidedAt=new Date().toLocaleString('en-IN');
   grn.voidReason=reason;
-  saveInv();saveHist();
+  saveInv();
+  // voidGRN mutates an EARLIER history record, not the newest one — the
+  // generic saveHist() only ever upserts history[history.length-1], so it
+  // would silently save nothing for this record. saveHistRecord(grn)
+  // upserts this specific record by id instead. Also refresh the local
+  // cache directly since saveHist() (which does that) isn't being called.
+  saveHistRecord(grn);
+  localStorage.setItem('cl_wms_hist2', JSON.stringify(history));
   logAudit('VOID_GRN','history',grnId,{voided:false},{voided:true,reason});
   // If this GRN was tied to an expected shipment, recompute its tally now
   // that this batch's received quantities no longer count.
