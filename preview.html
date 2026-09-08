@@ -3076,17 +3076,18 @@ function addIbItem(){
     }
   }
   // If this SKU is already in the list at the same bin with the same QC
-  // result (e.g. it was pre-loaded from the expected shipment, or it was
-  // already scanned once), this "add" is you confirming/correcting the
-  // actual physical count — SET the line's qty to what you just entered,
-  // don't sum it on top of the pre-loaded/previous value (that would
-  // silently inflate the count instead of verifying it).
-  const existing=ibItems.find(it=>it.sku===sku && it.qc===qc && it.bin===bin);
+  // result, what "add" means depends on whether that line has actually
+  // been physically counted yet:
+  //  - Not yet counted (still showing its pre-filled expected-shipment
+  //    qty) — this add IS the first real physical count for it, so SET
+  //    the qty rather than summing on top of the placeholder value.
+  //  - Already counted once — a second add for the same SKU/QC/bin means
+  //    another carton of the same item arrived (goods routinely come in
+  //    4-5 separate boxes per SKU), so it must become its OWN separate
+  //    line, not overwrite/replace the first box's count. Silently
+  //    replacing would erase the first box's quantity entirely.
+  const existing=ibItems.find(it=>it.sku===sku && it.qc===qc && it.bin===bin && !it.counted);
   if(existing){
-    // Once a line has actually been counted once, re-adding it is
-    // unusual enough to double-check — could be a duplicate scan, or a
-    // real correction. Either way, don't silently overwrite it again.
-    if(existing.counted && !confirm(`${sku} at ${bin} has already been counted (qty: ${existing.qty}). Update it again?`)) return;
     const oldQty=existing.qty;
     existing.qty=qty;
     existing.counted=true;
@@ -3096,6 +3097,8 @@ function addIbItem(){
     toast(`${sku} at ${bin} — quantity confirmed as ${qty}${oldQty!==qty?` (was ${oldQty})`:''}`, 's');
     return;
   }
+  const alreadyCounted=ibItems.filter(it=>it.sku===sku && it.qc===qc && it.bin===bin && it.counted);
+  if(alreadyCounted.length && !confirm(`${sku} at ${bin} already has ${alreadyCounted.length} counted carton(s) on this GRN (qty so far: ${alreadyCounted.reduce((a,i)=>a+i.qty,0)}). Add this as another carton (+${qty})?`)) return;
   ibItems.push({sku,name:s.sub,variant:s.variant,qc,issue,qty,bin,binOverridden:!!binOverride,counted:true});
   renderIbItemsList();
   document.getElementById('ib-bin-override').value='';
@@ -3103,11 +3106,29 @@ function addIbItem(){
 }
 function renderIbItemsList(){
   const el=document.getElementById('ib-items-list');
-  el.innerHTML=ibItems.length?`<div class="tw"><table><thead><tr><th>SKU</th><th>Item</th><th>BIN</th><th>QC</th><th>Issue</th><th>Qty</th><th>Status</th><th></th></tr></thead><tbody>${ibItems.map((item,i)=>`<tr><td class="mono">${item.sku}</td><td style="font-size:11px">${item.name}</td><td style="font-weight:600;color:var(--gold)">${item.bin}${item.binOverridden?' ⚠':'(auto)'}</td><td><span class="pill ${item.qc==='PASS'?'p-pass':item.qc==='HOLD'?'p-hold':'p-out'}">${item.qc}</span></td><td style="font-size:10px;color:var(--t2)">${item.issue||'—'}</td><td>${item.qty}</td><td>${item.counted?'<span class="pill p-pass"><i class="ti ti-check"></i> Counted</span>':'<span class="pill p-hold">Not yet counted</span>'}</td><td><button class="btn-sm btn-danger" onclick="removeIbItem(${i})"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table></div>`:'';
+  const uncounted=ibItems.filter(it=>!it.counted).length;
+  el.innerHTML=ibItems.length?`${uncounted?`<div style="background:var(--hold-bg,#3a2e10);color:var(--hold,#e0a020);border:0.5px solid var(--hold,#e0a020);border-radius:6px;padding:6px 10px;font-size:11px;margin-bottom:6px"><i class="ti ti-alert-triangle"></i> ${uncounted} line(s) below still show the pre-filled expected quantity and haven't been physically confirmed — edit the Qty or use Add item to set what you actually counted before creating the GRN.</div>`:''}<div class="tw"><table><thead><tr><th>SKU</th><th>Item</th><th>BIN</th><th>QC</th><th>Issue</th><th>Qty</th><th>Status</th><th></th></tr></thead><tbody>${ibItems.map((item,i)=>`<tr><td class="mono">${item.sku}</td><td style="font-size:11px">${item.name}</td><td style="font-weight:600;color:var(--gold)">${item.bin}${item.binOverridden?' ⚠':'(auto)'}</td><td><span class="pill ${item.qc==='PASS'?'p-pass':item.qc==='HOLD'?'p-hold':'p-out'}">${item.qc}</span></td><td style="font-size:10px;color:var(--t2)">${item.issue||'—'}</td><td><input type="number" min="0" max="9999" value="${item.qty}" style="width:60px;padding:3px 5px;font-size:11px" onchange="updateIbItemQty(${i},this.value)"></td><td>${item.counted?'<span class="pill p-pass"><i class="ti ti-check"></i> Counted</span>':'<span class="pill p-hold">Not yet counted</span>'}</td><td><button class="btn-sm btn-danger" onclick="removeIbItem(${i})"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table></div>`:'';
+}
+function updateIbItemQty(i,val){
+  const qty=parseInt(val)||0;
+  if(!ibItems[i]) return;
+  if(qty<=0){
+    if(confirm(`Remove ${ibItems[i].sku} at ${ibItems[i].bin} from this GRN (qty 0 = not received)?`)){ ibItems.splice(i,1); renderIbItemsList(); }
+    else renderIbItemsList();
+    return;
+  }
+  ibItems[i].qty=qty;
+  ibItems[i].counted=true;
+  renderIbItemsList();
 }
 function removeIbItem(i){ibItems.splice(i,1);renderIbItemsList();}
 function createGRN(){
   if(!ibItems.length){toast('Add at least one item to the shipment','w');return;}
+  const uncounted=ibItems.filter(it=>!it.counted);
+  if(uncounted.length){
+    const totalQty=uncounted.reduce((a,i)=>a+i.qty,0);
+    if(!confirm(`${uncounted.length} line(s) (${totalQty} unit(s) total) still show the pre-filled EXPECTED quantity and were never physically confirmed — if you didn't actually receive that much, this GRN will overstate what came in.\n\nSubmit anyway with those lines as-is? Choose Cancel to go back and fix the Qty (or remove lines you didn't receive) first.`)) return;
+  }
   if(!rateLimit('grn',2000)){toast('Please wait before submitting again','w');return;}
   const seal=document.getElementById('ib-seal').value;
   if(seal==='broken'){toast('STOP: Broken seal detected — escalate to CaratLane & security before proceeding (SOP §1.5)','w');return;}
