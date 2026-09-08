@@ -3109,7 +3109,7 @@ function addIbItem(){
 function renderIbItemsList(){
   const el=document.getElementById('ib-items-list');
   const uncounted=ibItems.filter(it=>!it.counted).length;
-  el.innerHTML=ibItems.length?`${uncounted?`<div style="background:var(--hold-bg,#3a2e10);color:var(--hold,#e0a020);border:0.5px solid var(--hold,#e0a020);border-radius:6px;padding:6px 10px;font-size:11px;margin-bottom:6px"><i class="ti ti-alert-triangle"></i> ${uncounted} line(s) below still show the pre-filled expected quantity and haven't been physically confirmed — edit the Qty or use Add item to set what you actually counted before creating the GRN.</div>`:''}<div class="tw"><table><thead><tr><th>SKU</th><th>Item</th><th>BIN</th><th>QC</th><th>Issue</th><th>Qty</th><th>Status</th><th></th></tr></thead><tbody>${ibItems.map((item,i)=>`<tr><td class="mono">${item.sku}</td><td style="font-size:11px">${item.name}</td><td style="font-weight:600;color:var(--gold)">${item.bin}${item.binOverridden?' ⚠':'(auto)'}</td><td><span class="pill ${item.qc==='PASS'?'p-pass':item.qc==='HOLD'?'p-hold':'p-out'}">${item.qc}</span></td><td style="font-size:10px;color:var(--t2)">${item.issue||'—'}</td><td><input type="number" min="0" max="9999" value="${item.qty}" style="width:60px;padding:3px 5px;font-size:11px" onchange="updateIbItemQty(${i},this.value)"></td><td>${item.counted?'<span class="pill p-pass"><i class="ti ti-check"></i> Counted</span>':'<span class="pill p-hold">Not yet counted</span>'}</td><td><button class="btn-sm btn-danger" onclick="removeIbItem(${i})"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table></div>`:'';
+  el.innerHTML=ibItems.length?`${uncounted?`<div style="background:var(--hold-bg,#3a2e10);color:var(--hold,#e0a020);border:0.5px solid var(--hold,#e0a020);border-radius:6px;padding:6px 10px;font-size:11px;margin-bottom:6px"><i class="ti ti-alert-triangle"></i> ${uncounted} line(s) below still show the pre-filled EXPECTED quantity and haven't been physically confirmed — edit the Qty to what you actually counted. Unconfirmed lines will NOT be included when you create the GRN (they stay outstanding).</div>`:''}<div class="tw"><table><thead><tr><th>SKU</th><th>Item</th><th>BIN</th><th>QC</th><th>Issue</th><th>Qty</th><th>Status</th><th></th></tr></thead><tbody>${ibItems.map((item,i)=>`<tr><td class="mono">${item.sku}</td><td style="font-size:11px">${item.name}</td><td style="font-weight:600;color:var(--gold)">${item.bin}${item.binOverridden?' ⚠':'(auto)'}</td><td><span class="pill ${item.qc==='PASS'?'p-pass':item.qc==='HOLD'?'p-hold':'p-out'}">${item.qc}</span></td><td style="font-size:10px;color:var(--t2)">${item.issue||'—'}</td><td><input type="number" min="0" max="9999" value="${item.qty}" style="width:60px;padding:3px 5px;font-size:11px" onchange="updateIbItemQty(${i},this.value)"></td><td>${item.counted?'<span class="pill p-pass"><i class="ti ti-check"></i> Counted</span>':'<span class="pill p-hold">Not yet counted</span>'}</td><td><button class="btn-sm btn-danger" onclick="removeIbItem(${i})"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table></div>`:'';
 }
 function updateIbItemQty(i,val){
   const qty=parseInt(val)||0;
@@ -3126,11 +3126,13 @@ function updateIbItemQty(i,val){
 function removeIbItem(i){ibItems.splice(i,1);renderIbItemsList();}
 function createGRN(){
   if(!ibItems.length){toast('Add at least one item to the shipment','w');return;}
+  // Only lines the receiver has actually physically confirmed (counted)
+  // go into the GRN — a pre-filled expected-shipment line that was never
+  // touched must NOT be treated as received. It's simply left out of this
+  // GRN; the SKU stays outstanding on the ASN for the next batch/GRN.
+  const counted=ibItems.filter(it=>it.counted);
   const uncounted=ibItems.filter(it=>!it.counted);
-  if(uncounted.length){
-    const totalQty=uncounted.reduce((a,i)=>a+i.qty,0);
-    if(!confirm(`${uncounted.length} line(s) (${totalQty} unit(s) total) still show the pre-filled EXPECTED quantity and were never physically confirmed — if you didn't actually receive that much, this GRN will overstate what came in.\n\nSubmit anyway with those lines as-is? Choose Cancel to go back and fix the Qty (or remove lines you didn't receive) first.`)) return;
-  }
+  if(!counted.length){ toast('None of the lines have been confirmed yet — edit the Qty (or use Add item) to record what you actually counted before creating the GRN','w'); return; }
   if(!rateLimit('grn',2000)){toast('Please wait before submitting again','w');return;}
   const seal=document.getElementById('ib-seal').value;
   if(seal==='broken'){toast('STOP: Broken seal detected — escalate to CaratLane & security before proceeding (SOP §1.5)','w');return;}
@@ -3142,7 +3144,7 @@ function createGRN(){
   if(!cartons){ toast('Enter the number of cartons/boxes received — needed for billing','w'); return; }
   const grnNotes=document.getElementById('ib-notes').value.trim();
   const gid=newId('GRN');
-  ibItems.forEach(item=>{
+  counted.forEach(item=>{
     if(item.qc==='PASS'){
       // item.bin is always populated by addIbItem() — either the SKU's
       // current default location, or an admin/supervisor override typed
@@ -3162,12 +3164,15 @@ function createGRN(){
       history.push({id:newId('EXC'),type:'exception',ts:ts(),category:'damage',detail:`${item.sku} · QC: ${item.qc} · Issue: ${item.issue||'N/A'} · Qty: ${item.qty}`,grn:gid});
     }
   });
-  const pass=ibItems.filter(i=>i.qc==='PASS').reduce((a,i)=>a+i.qty,0);
-  const hold=ibItems.filter(i=>i.qc==='HOLD').reduce((a,i)=>a+i.qty,0);
-  const rej=ibItems.filter(i=>i.qc==='REJECT').reduce((a,i)=>a+i.qty,0);
-  history.push({id:gid,type:'grn',ts:ts(),detail:`ASN: ${asn||'N/A'} · ${cartons} carton(s) · ${ibItems.length} SKUs · PASS:${pass} HOLD:${hold} REJ:${rej}`,items:[...ibItems],asn,carrier,vehicle,cartons,grnNotes:grnNotes||null});
+  const pass=counted.filter(i=>i.qc==='PASS').reduce((a,i)=>a+i.qty,0);
+  const hold=counted.filter(i=>i.qc==='HOLD').reduce((a,i)=>a+i.qty,0);
+  const rej=counted.filter(i=>i.qc==='REJECT').reduce((a,i)=>a+i.qty,0);
+  history.push({id:gid,type:'grn',ts:ts(),detail:`ASN: ${asn||'N/A'} · ${cartons} carton(s) · ${counted.length} SKUs · PASS:${pass} HOLD:${hold} REJ:${rej}`,items:[...counted],asn,carrier,vehicle,cartons,grnNotes:grnNotes||null});
   saveInv();saveHist();
-  const recon=asn?reconcileAgainstExpected(asn, ibItems):null;
+  const recon=asn?reconcileAgainstExpected(asn, counted):null;
+  if(uncounted.length){
+    toast(`${uncounted.length} unconfirmed line(s) were left out of GRN ${gid} — they stay outstanding on the ASN for the next batch`,'w');
+  }
   ibItems=[];renderIbItemsList();renderIbLog();updateNotificationBadge();
   document.getElementById('ib-issue').value='';
   document.getElementById('ib-load-expected').value='';
