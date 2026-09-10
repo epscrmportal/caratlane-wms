@@ -2073,6 +2073,7 @@ async function loadHist(){
         packStartTs:r.pack_start_ts, packStartTime:r.pack_start_time,
         packEndTs:r.pack_end_ts, packEndTime:r.pack_end_time,
         packDuration:r.pack_duration, packDurationSecs:r.pack_duration_secs,
+        pickStartTs:r.pick_start_ts, pickDurationSecs:r.pick_duration_secs,
         boxL:r.box_l, boxW:r.box_w, boxH:r.box_h,
         actualWeight:r.actual_weight, volWeight:r.vol_weight, chargeableWeight:r.chargeable_weight,
         dispatchWeight:r.dispatch_weight,
@@ -2108,6 +2109,7 @@ function historyRecordToRow(h){
     pack_start_ts:h.packStartTs||null, pack_start_time:h.packStartTime||null,
     pack_end_ts:h.packEndTs||null, pack_end_time:h.packEndTime||null,
     pack_duration:h.packDuration||null, pack_duration_secs:h.packDurationSecs||null,
+    pick_start_ts:h.pickStartTs||null, pick_duration_secs:h.pickDurationSecs||null,
     box_l:h.boxL||null, box_w:h.boxW||null, box_h:h.boxH||null,
     actual_weight:h.actualWeight||null, vol_weight:h.volWeight||null, chargeable_weight:h.chargeableWeight||null,
     dispatch_weight:h.dispatchWeight||null,
@@ -4022,6 +4024,8 @@ async function unassignOrder(orderId){
 // PICKING — picks are only made against orders assigned to the current picker
 let pkSessionId=null;
 let activeOrder=null;
+let pkPickStartTime=null; // Date.now() when this desktop pick session began — used to compute real cycle time
+let pkPickStartTs=null;
 
 function populateSkuSelFromList(id_, items){
   const s=document.getElementById(id_);
@@ -4058,6 +4062,8 @@ function startDesktopPick(orderId){
   if(!o){ toast('Order not found','w'); return; }
   activeOrder=o;
   pkSessionId=newId('SESS');
+  pkPickStartTime=Date.now();
+  pkPickStartTs=ts();
   pkItemsList=[];
   clearConfirmedShelf();
   pkToteId=null;
@@ -4074,6 +4080,7 @@ async function cancelActivePick(){
   if(pkItemsList.length && !confirm('Discard this pick? Everything reserved will be released back to stock.')) return;
   if(pkSessionId) await releasePickSession(pkSessionId);
   pkItemsList=[]; pkSessionId=null; activeOrder=null;
+  pkPickStartTime=null; pkPickStartTs=null;
   clearConfirmedShelf();
   pkToteId=null;
   updateToteBadge();
@@ -4219,12 +4226,14 @@ async function releaseToPacking(){
   const tid=newId('PCK');
   const newTask={id:tid,orderId:oid,priority:pri,method,picker,toteId:pkToteId,items:[...pkItemsList],ts:ts(),status:'awaiting_packing'};
   packingQueue.push(newTask);
-  history.push({id:tid,type:'pick',ts:ts(),detail:`${oid} · ${method} pick · ${pri} · ${pkItemsList.length} SKUs · Picker: ${picker} · Tote ${pkToteId}`,orderId:oid,items:[...pkItemsList],picker});
+  const pickDurationSecs=pkPickStartTime?Math.floor((Date.now()-pkPickStartTime)/1000):null;
+  history.push({id:tid,type:'pick',ts:ts(),detail:`${oid} · ${method} pick · ${pri} · ${pkItemsList.length} SKUs · Picker: ${picker} · Tote ${pkToteId}`,orderId:oid,items:[...pkItemsList],picker,pickStartTs:pkPickStartTs,pickDurationSecs});
   saveInv();saveHist();upsertPackingQueueItem(newTask);
   activeOrder.status='picked';
   activeOrder.pickedTaskId=tid;
   await saveOrderRow(activeOrder);
   pkItemsList=[];pkSessionId=null;activeOrder=null;
+  pkPickStartTime=null;pkPickStartTs=null;
   pkToteId=null;updateToteBadge();
   renderPkItemsList();
   const el=document.getElementById('pk-log');
@@ -5219,13 +5228,29 @@ let mobilePickSession=null,mobilePackActive=null;
 
 function updateMobileKPIs(){
   const picks=history.filter(h=>h.type==='pick');
-  const today=new Date().toISOString().split('T')[0];
-  const todayPicks=picks.filter(p=>p.ts.includes(today));
+  // "today" was compared as an ISO date string ("2026-09-11") against
+  // ts(), which is a display string like "11 Sept, 12:07 am" — that
+  // substring match could never succeed, so todayPicks was ALWAYS empty
+  // and this whole KPI row silently showed 0/100%/0m regardless of real
+  // activity. Use parseDisplayTs + a real calendar-date comparison
+  // instead, same pattern as getSameDayPending().
+  const now=new Date();
+  const todayY=now.getFullYear(),todayM=now.getMonth(),todayD=now.getDate();
+  const todayPicks=picks.filter(p=>{
+    const t=parseDisplayTs(p.ts);
+    if(!t) return false;
+    const d=new Date(t);
+    return d.getFullYear()===todayY && d.getMonth()===todayM && d.getDate()===todayD;
+  });
   const dispatches=history.filter(h=>h.type==='dispatched');
   const exceptions=history.filter(h=>h.type==='exception');
   const accuracy=todayPicks.length>0?Math.round((1-(exceptions.length/todayPicks.length))*100):100;
-  const avgCycleTime=todayPicks.length>0?Math.round(Math.random()*30+5):0;
-  
+  // Real average pick-to-release duration for today's picks, instead of
+  // a random placeholder number. Only picks with recorded duration data
+  // count (older records predating this fix won't have pickDurationSecs).
+  const picksWithDuration=todayPicks.filter(p=>p.pickDurationSecs>0);
+  const avgCycleTime=picksWithDuration.length>0?Math.round(picksWithDuration.reduce((a,p)=>a+p.pickDurationSecs,0)/picksWithDuration.length/60):0;
+
   document.getElementById('m-kpi-picks').textContent=todayPicks.length;
   document.getElementById('m-kpi-accuracy').textContent=accuracy+'%';
   document.getElementById('m-kpi-cycletime').textContent=avgCycleTime+'m';
@@ -5314,7 +5339,7 @@ function renderMpMyOrders(){
 function startMobilePick(orderId){
   const o=orders.find(x=>x.id===orderId);
   if(!o){ toast('Order not found','w'); return; }
-  mobilePickSession={orderId:o.id,priority:o.priority,method:o.method,items:[],sessionId:newId('SESS'),order:o,toteId:null};
+  mobilePickSession={orderId:o.id,priority:o.priority,method:o.method,items:[],sessionId:newId('SESS'),order:o,toteId:null,pickStartTime:Date.now(),pickStartTs:ts()};
   clearConfirmedShelf();
   updateToteBadge();
   initMobilePickView();
@@ -5509,7 +5534,8 @@ async function completeMobilePick(){
   const picker=currentProfile?.full_name||'Mobile picker';
   const newTask={id:tid,orderId:mobilePickSession.orderId,priority:mobilePickSession.priority,method:mobilePickSession.method,picker,toteId:mobilePickSession.toteId||null,items:[...mobilePickSession.items],ts:ts(),status:'awaiting_packing'};
   packingQueue.push(newTask);
-  history.push({id:tid,type:'pick',ts:ts(),detail:`${mobilePickSession.orderId} · ${mobilePickSession.method} pick · ${mobilePickSession.priority} · ${mobilePickSession.items.length} SKUs · Picker: ${picker} (mobile scan)`,orderId:mobilePickSession.orderId,items:[...mobilePickSession.items],picker});
+  const pickDurationSecs=mobilePickSession.pickStartTime?Math.floor((Date.now()-mobilePickSession.pickStartTime)/1000):null;
+  history.push({id:tid,type:'pick',ts:ts(),detail:`${mobilePickSession.orderId} · ${mobilePickSession.method} pick · ${mobilePickSession.priority} · ${mobilePickSession.items.length} SKUs · Picker: ${picker} (mobile scan)`,orderId:mobilePickSession.orderId,items:[...mobilePickSession.items],picker,pickStartTs:mobilePickSession.pickStartTs,pickDurationSecs});
   saveInv();saveHist();upsertPackingQueueItem(newTask);
   const o=mobilePickSession.order;
   o.status='picked';
