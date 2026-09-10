@@ -60,6 +60,8 @@ let SKUS=[
   {sku:"UNI-DN-F-34",cat:"Uniform",sub:"Stitched Denim - Female",variant:"Size 34",rack:"A",shelf:"9",price:1400},
   {sku:"UNI-DN-F-36",cat:"Uniform",sub:"Stitched Denim - Female",variant:"Size 36",rack:"A",shelf:"9",price:1400},
   {sku:"UNI-DN-F-38",cat:"Uniform",sub:"Stitched Denim - Female",variant:"Size 38",rack:"A",shelf:"9",price:1400},
+  {sku:"UNI-SHT-M-34",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 34",rack:"A",shelf:"10",price:760},
+  {sku:"UNI-SHT-M-36",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 36",rack:"A",shelf:"10",price:760},
   {sku:"UNI-SHT-M-38",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 38",rack:"A",shelf:"10",price:760},
   {sku:"UNI-SHT-M-40",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 40",rack:"A",shelf:"10",price:760},
   {sku:"UNI-SHT-M-42",cat:"Uniform",sub:"Stitched Shirt - Male",variant:"Size 42",rack:"A",shelf:"10",price:760},
@@ -77,6 +79,8 @@ let SKUS=[
   {sku:"UNI-SHT-F-XL",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size XL",rack:"A",shelf:"11",price:760},
   {sku:"UNI-SHT-F-XXL",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size XXL",rack:"A",shelf:"11",price:760},
   {sku:"UNI-SHT-F-XXXL",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size XXXL",rack:"A",shelf:"11",price:760},
+  {sku:"UNI-SHT-F-4XL",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size 4XL",rack:"A",shelf:"11",price:760},
+  {sku:"UNI-SHT-F-5XL",cat:"Uniform",sub:"Stitched Shirt - Female",variant:"Size 5XL",rack:"A",shelf:"11",price:760},
   {sku:"UNI-KPD-F-S",cat:"Uniform",sub:"Stitched Set - Kurti+Pant+Dupatta (Female)",variant:"Size S",rack:"A",shelf:"12",price:2034},
   {sku:"UNI-KPD-F-M",cat:"Uniform",sub:"Stitched Set - Kurti+Pant+Dupatta (Female)",variant:"Size M",rack:"A",shelf:"12",price:2034},
   {sku:"UNI-KPD-F-L",cat:"Uniform",sub:"Stitched Set - Kurti+Pant+Dupatta (Female)",variant:"Size L",rack:"A",shelf:"12",price:2034},
@@ -711,6 +715,7 @@ function filterSkuList(searchInputId,selectId){
 let expectedShipments=[];
 let expItemsList=[];
 let _xlsxLibLoaded=false;
+let _jszipLibLoaded=false;
 let _excelImportRows=[];
 let _editingExpId=null;
 
@@ -772,6 +777,155 @@ function loadXLSXLib(cb){
   s.onload=()=>{ _xlsxLibLoaded=true; cb(); };
   s.onerror=()=>{ console.error('XLSX library failed to load'); toast('Could not load the Excel reader — check your internet connection and try again','w'); };
   document.head.appendChild(s);
+}
+function loadJSZipLib(cb){
+  if(_jszipLibLoaded){ cb(); return; }
+  const s=document.createElement('script');
+  s.src='https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';
+  s.onload=()=>{ _jszipLibLoaded=true; cb(); };
+  s.onerror=()=>{ console.error('JSZip library failed to load'); toast('Could not load the chart-building library — check your internet connection and try again','w'); };
+  document.head.appendChild(s);
+}
+
+// ── Native Excel chart injection ──────────────────────────────────────
+// SheetJS's free/community build (the one we load via loadXLSXLib) can
+// write cell data but cannot write native charts, images, or cell
+// styling — those are Pro-only features. To get real, editable Excel
+// charts on the Monthly Master Report's Dashboard sheet, we build the
+// workbook with SheetJS as normal, then post-process the raw .xlsx (a
+// zip of XML parts) with JSZip: hand-write the chart/drawing XML parts
+// the OOXML spec requires and splice them into the zip. Produces
+// standard native charts openable/editable in Excel — verified via
+// LibreOffice round-trip during development.
+function _xmlEsc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function _chartStrCache(vals){
+  return `<c:ptCount val="${vals.length}"/>`+vals.map((v,i)=>`<c:pt idx="${i}"><c:v>${_xmlEsc(v)}</c:v></c:pt>`).join('');
+}
+function _chartNumCache(vals){
+  return `<c:formatCode>General</c:formatCode><c:ptCount val="${vals.length}"/>`+vals.map((v,i)=>`<c:pt idx="${i}"><c:v>${Number(v)||0}</c:v></c:pt>`).join('');
+}
+function _buildBarChartXml(opts){
+  const axId1=100000000+Math.floor(Math.random()*900000);
+  const axId2=axId1+1;
+  const sers=opts.series.map((s,idx)=>`
+    <c:ser>
+      <c:idx val="${idx}"/><c:order val="${idx}"/>
+      <c:tx><c:strRef><c:f>${s.nameRef}</c:f><c:strCache>${_chartStrCache([s.nameCache])}</c:strCache></c:strRef></c:tx>
+      <c:cat><c:strRef><c:f>${opts.catRef}</c:f><c:strCache>${_chartStrCache(opts.catCache)}</c:strCache></c:strRef></c:cat>
+      <c:val><c:numRef><c:f>${s.valRef}</c:f><c:numCache>${_chartNumCache(s.valCache)}</c:numCache></c:numRef></c:val>
+    </c:ser>`).join('');
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<c:chart>
+<c:title><c:tx><c:rich><a:bodyPr/><a:p><a:pPr><a:defRPr sz="1200" b="1"/></a:pPr><a:r><a:t>${_xmlEsc(opts.title)}</a:t></a:r></a:p></c:rich></c:tx><c:overlay val="0"/></c:title>
+<c:autoTitleDeleted val="0"/>
+<c:plotArea><c:layout/>
+<c:barChart>
+<c:barDir val="col"/><c:grouping val="clustered"/><c:varyColors val="0"/>
+${sers}
+<c:axId val="${axId1}"/><c:axId val="${axId2}"/>
+</c:barChart>
+<c:catAx><c:axId val="${axId1}"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="b"/><c:txPr><a:bodyPr rot="0" vert="horz"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="900"/></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr><c:crossAx val="${axId2}"/></c:catAx>
+<c:valAx><c:axId val="${axId2}"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="l"/><c:crossAx val="${axId1}"/></c:valAx>
+</c:plotArea>
+<c:legend><c:legendPos val="b"/></c:legend>
+<c:plotVisOnly val="1"/>
+</c:chart>
+</c:chartSpace>`;
+}
+function _buildPieChartXml(opts){
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<c:chart>
+<c:title><c:tx><c:rich><a:bodyPr/><a:p><a:pPr><a:defRPr sz="1200" b="1"/></a:pPr><a:r><a:t>${_xmlEsc(opts.title)}</a:t></a:r></a:p></c:rich></c:tx><c:overlay val="0"/></c:title>
+<c:autoTitleDeleted val="0"/>
+<c:plotArea><c:layout/>
+<c:pieChart>
+<c:varyColors val="1"/>
+<c:ser>
+<c:idx val="0"/><c:order val="0"/>
+<c:tx><c:v>${_xmlEsc(opts.seriesName||'Series 1')}</c:v></c:tx>
+<c:dLbls><c:showLegendKey val="0"/><c:showVal val="1"/><c:showCatName val="0"/><c:showSerName val="0"/><c:showPercent val="1"/><c:showBubbleSize val="0"/></c:dLbls>
+<c:cat><c:strRef><c:f>${opts.catRef}</c:f><c:strCache>${_chartStrCache(opts.catCache)}</c:strCache></c:strRef></c:cat>
+<c:val><c:numRef><c:f>${opts.valRef}</c:f><c:numCache>${_chartNumCache(opts.valCache)}</c:numCache></c:numRef></c:val>
+</c:ser>
+<c:firstSliceAng val="0"/>
+</c:pieChart>
+</c:plotArea>
+<c:legend><c:legendPos val="b"/></c:legend>
+<c:plotVisOnly val="1"/>
+</c:chart>
+</c:chartSpace>`;
+}
+function _buildChartAnchorXml(chartIdx,rId,from,to){
+  return `<xdr:twoCellAnchor>
+<xdr:from><xdr:col>${from.col}</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${from.row}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>
+<xdr:to><xdr:col>${to.col}</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${to.row}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>
+<xdr:graphicFrame macro="">
+<xdr:nvGraphicFramePr><xdr:cNvPr id="${chartIdx+1}" name="Chart ${chartIdx}"/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr>
+<xdr:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></xdr:xfrm>
+<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="${rId}"/></a:graphicData></a:graphic>
+</xdr:graphicFrame>
+<xdr:clientData/>
+</xdr:twoCellAnchor>`;
+}
+// Injects one or more native charts onto `sheetName` of an already-built
+// .xlsx array buffer (from XLSX.write(wb,{type:'array'})). Returns a
+// Promise<Uint8Array> of the modified workbook — save via Blob.
+async function injectNativeCharts(buf,sheetName,charts){
+  const zip=await JSZip.loadAsync(buf);
+  const wbXml=await zip.file('xl/workbook.xml').async('string');
+  const sheetTagMatch=wbXml.match(new RegExp(`<sheet[^>]*name="${sheetName.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}"[^>]*/>`));
+  if(!sheetTagMatch) throw new Error('Sheet not found: '+sheetName);
+  const rid=sheetTagMatch[0].match(/r:id="([^"]+)"/)[1];
+  const wbRels=await zip.file('xl/_rels/workbook.xml.rels').async('string');
+  const relTag=wbRels.match(new RegExp(`<Relationship[^>]*Id="${rid}"[^>]*/>`))[0];
+  let sheetTarget=relTag.match(/Target="([^"]+)"/)[1];
+  if(!sheetTarget.startsWith('xl/')) sheetTarget='xl/'+sheetTarget;
+  const sheetFileName=sheetTarget.split('/').pop();
+  const sheetRelsPath='xl/worksheets/_rels/'+sheetFileName+'.rels';
+
+  let drawingIdx=1; while(zip.file(`xl/drawings/drawing${drawingIdx}.xml`)) drawingIdx++;
+  let chartStartIdx=1; while(zip.file(`xl/charts/chart${chartStartIdx}.xml`)) chartStartIdx++;
+
+  const anchors=[],relEntries=[],ctOverrides=[];
+  charts.forEach((c,i)=>{
+    const chartFileIdx=chartStartIdx+i;
+    const chartXml=c.type==='pie'?_buildPieChartXml(c):_buildBarChartXml(c);
+    zip.file(`xl/charts/chart${chartFileIdx}.xml`,chartXml);
+    ctOverrides.push(`<Override PartName="/xl/charts/chart${chartFileIdx}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>`);
+    const rIdLocal=`rId${i+1}`;
+    relEntries.push(`<Relationship Id="${rIdLocal}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart${chartFileIdx}.xml"/>`);
+    anchors.push(_buildChartAnchorXml(i,rIdLocal,c.anchor.from,c.anchor.to));
+  });
+
+  const drawingXml=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+${anchors.join('\n')}
+</xdr:wsDr>`;
+  const drawingRels=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+${relEntries.join('\n')}
+</Relationships>`;
+  zip.file(`xl/drawings/drawing${drawingIdx}.xml`,drawingXml);
+  zip.file(`xl/drawings/_rels/drawing${drawingIdx}.xml.rels`,drawingRels);
+  ctOverrides.push(`<Override PartName="/xl/drawings/drawing${drawingIdx}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>`);
+
+  const drawingRidForSheet='rId1';
+  zip.file(sheetRelsPath,`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="${drawingRidForSheet}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing${drawingIdx}.xml"/>
+</Relationships>`);
+
+  let sheetXml=await zip.file(sheetTarget).async('string');
+  sheetXml=sheetXml.replace('</worksheet>',`<drawing r:id="${drawingRidForSheet}"/></worksheet>`);
+  zip.file(sheetTarget,sheetXml);
+
+  let ct=await zip.file('[Content_Types].xml').async('string');
+  ct=ct.replace('</Types>',ctOverrides.join('')+'</Types>');
+  zip.file('[Content_Types].xml',ct);
+
+  return await zip.generateAsync({type:'uint8array'});
 }
 function _normHeader(h){ return String(h||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
 function _findExcelCol(headerRow, matchFn){
@@ -5935,7 +6089,18 @@ function downloadMonthlyMasterCSV(){
       ['Out of Stock SKUs',outOfStockCount],
     ];
     const wsDash=XLSX.utils.aoa_to_sheet(dash);
-    wsDash['!cols']=[{wch:32},{wch:18},{wch:18},{wch:12}];
+    // Small data block feeding the QC-breakdown and inventory-health pie
+    // charts below — sits in unused columns F:G, inside the KEY METRICS
+    // block's fixed row range (6-15) so it never collides with the
+    // variable-length TOP COURIERS section further down.
+    const inStockCount=SKUS.length-lowStockCount-outOfStockCount;
+    XLSX.utils.sheet_add_aoa(wsDash,[
+      ['Chart data (auto-generated — do not edit)'],
+      ['PASS',totalUnitsIn],['HOLD',totalUnitsHold],['REJECT',totalUnitsReject],
+      [],
+      ['In Stock',inStockCount],['Low Stock',lowStockCount],['Out of Stock',outOfStockCount],
+    ],{origin:'F1'});
+    wsDash['!cols']=[{wch:32},{wch:18},{wch:18},{wch:12},{wch:2},{wch:16},{wch:10}];
     XLSX.utils.book_append_sheet(wb,wsDash,'Dashboard');
 
     // ── MoM Comparison sheet ──
@@ -6035,8 +6200,53 @@ function downloadMonthlyMasterCSV(){
     wsInv['!cols']=[{wch:14},{wch:24},{wch:16},{wch:8},{wch:8},{wch:8},{wch:14}];
     XLSX.utils.book_append_sheet(wb,wsInv,'Inventory Snapshot');
 
-    XLSX.writeFile(wb,`CaratLane_Monthly_Master_Report_${monthStr}.xlsx`);
-    toast('Monthly master report downloaded','s');
+    // ── Native charts on the Dashboard sheet ──
+    // Built from the fixed-position MoM/Courier/chart-data ranges above so
+    // they stay live/editable if the user tweaks the underlying numbers.
+    const filename=`CaratLane_Monthly_Master_Report_${monthStr}.xlsx`;
+    loadJSZipLib(async()=>{
+      try{
+        const charts=[
+          { type:'bar', title:'This Month vs Last Month',
+            catRef:`'MoM Comparison'!$A$2:$A$7`,
+            catCache:['Orders Created','GRNs Received','Units Received (PASS)','Shipments Dispatched','Units Dispatched','Warehouse Bill (₹)'],
+            series:[
+              {nameRef:`'MoM Comparison'!$B$1`,nameCache:monthLabel,valRef:`'MoM Comparison'!$B$2:$B$7`,valCache:[mOrders.length,grns.length,totalUnitsIn,monthDisps.length,totalUnitsOut,bill.total]},
+              {nameRef:`'MoM Comparison'!$C$1`,nameCache:prevMonthLabel,valRef:`'MoM Comparison'!$C$2:$C$7`,valCache:[prevOrders.length,prevGrns.length,prevUnitsIn,prevDisps.length,prevUnitsOut,prevBill.total]},
+            ],
+            anchor:{from:{col:7,row:0},to:{col:14,row:16}} },
+        ];
+        if(courierRows.length>0){
+          const topN=Math.min(5,courierRows.length);
+          charts.push({ type:'bar', title:'Top Couriers This Month',
+            catRef:`'Courier Breakdown'!$A$2:$A$${1+topN}`,catCache:courierRows.slice(0,topN).map(c=>c.name),
+            series:[{nameRef:`'Courier Breakdown'!$B$1`,nameCache:'Shipments',valRef:`'Courier Breakdown'!$B$2:$B$${1+topN}`,valCache:courierRows.slice(0,topN).map(c=>c.count)}],
+            anchor:{from:{col:15,row:0},to:{col:21,row:16}} });
+        }
+        if(totalUnitsIn+totalUnitsHold+totalUnitsReject>0){
+          charts.push({ type:'pie', title:'Units Received — QC Breakdown', seriesName:'Units',
+            catRef:`Dashboard!$F$2:$F$4`,catCache:['PASS','HOLD','REJECT'],
+            valRef:`Dashboard!$G$2:$G$4`,valCache:[totalUnitsIn,totalUnitsHold,totalUnitsReject],
+            anchor:{from:{col:7,row:17},to:{col:14,row:33}} });
+        }
+        charts.push({ type:'pie', title:'Inventory Health (SKU count)', seriesName:'SKUs',
+          catRef:`Dashboard!$F$6:$F$8`,catCache:['In Stock','Low Stock','Out of Stock'],
+          valRef:`Dashboard!$G$6:$G$8`,valCache:[inStockCount,lowStockCount,outOfStockCount],
+          anchor:{from:{col:15,row:17},to:{col:21,row:33}} });
+        const rawBuf=XLSX.write(wb,{bookType:'xlsx',type:'array'});
+        const chartedBuf=await injectNativeCharts(rawBuf,'Dashboard',charts);
+        const blob=new Blob([chartedBuf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+        const url=URL.createObjectURL(blob);
+        const a=document.createElement('a');
+        a.href=url;a.download=filename;document.body.appendChild(a);a.click();
+        setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},500);
+        toast('Monthly master report downloaded','s');
+      }catch(err){
+        console.error('Chart injection failed, falling back to plain workbook',err);
+        XLSX.writeFile(wb,filename);
+        toast('Monthly master report downloaded (without charts — see console)','w');
+      }
+    });
   });
 }
 function printWeeklyReport(){
