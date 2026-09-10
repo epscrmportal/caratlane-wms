@@ -1124,9 +1124,9 @@ tr:hover td{background:var(--s2)}
   <div style="background:var(--s2);border-radius:10px;padding:12px 16px;margin-bottom:14px;display:flex;flex-wrap:wrap;align-items:center;gap:10px;border:1px solid var(--gold)">
     <div style="font-weight:700;font-size:12px;color:var(--gold)"><i class="ti ti-file-spreadsheet"></i> MONTHLY MASTER REPORT:</div>
     <select id="rpt-month-select" style="padding:7px 10px;border:0.5px solid var(--b);border-radius:6px;background:var(--s);color:var(--t);font-size:12px;font-weight:600;flex:1;min-width:200px"></select>
-    <button onclick="downloadMonthlyMasterCSV()" style="padding:8px 14px;background:var(--gold);color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:11px;display:flex;align-items:center;gap:5px"><i class="ti ti-download"></i>Download Master Report</button>
+    <button onclick="downloadMonthlyMasterCSV()" style="padding:8px 14px;background:var(--gold);color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:11px;display:flex;align-items:center;gap:5px"><i class="ti ti-download"></i>Download Master Report (.xlsx)</button>
   </div>
-  <div class="info-box" style="margin-bottom:14px"><i class="ti ti-info-circle"></i>One spreadsheet for the selected month: GRNs received + inbound stock (SKU, qty, time in), every order with full customer detail and pick/pack/dispatch timestamps + AWB/courier, and a live inventory count.</div>
+  <div class="info-box" style="margin-bottom:14px"><i class="ti ti-info-circle"></i>One Excel workbook for the selected month, split into separate sheets so it's easy to read: Dashboard (headline KPIs + month-over-month), MoM Comparison, Orders, Inbound GRN (with PASS/HOLD/REJECT), Open ASN (what's still outstanding), Outbound Dispatch, Courier Breakdown, Financial Summary, and Inventory Snapshot.</div>
 
   <!-- WEEKLY KPI SUMMARY CARDS -->
   <div id="rpt-week-kpis" style="margin-bottom:14px"></div>
@@ -2282,25 +2282,34 @@ function populateSkuSel(id_){
 
 // DASHBOARD
 function getSameDayPending(){
-  // Returns packed orders that were packed today and not yet dispatched
-  const today=new Date();
-  const todayStr=today.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
+  // Returns packed orders that were packed today and not yet dispatched.
+  // todayStr used to be computed and never actually used to filter —
+  // this returned EVERY never-dispatched packed order regardless of how
+  // old it was, so a weeks-old backlog item would show up forever as if
+  // it were a fresh same-day dispatch, permanently misrepresenting old
+  // backlog as urgent same-day work (and hiding just how overdue it
+  // really was).
+  const now=new Date();
+  const todayY=now.getFullYear(),todayM=now.getMonth(),todayD=now.getDate();
   const packed=history.filter(h=>h.type==='packed');
   const dispatched=new Set(history.filter(h=>h.type==='dispatched').map(h=>h.packedId||h.orderId));
   return packed.filter(p=>{
     const notDispatched=!dispatched.has(p.id)&&!dispatched.has(p.orderId);
-    return notDispatched;
+    if(!notDispatched) return false;
+    const t=parseDisplayTs(p.ts);
+    if(!t) return false;
+    const d=new Date(t);
+    return d.getFullYear()===todayY && d.getMonth()===todayM && d.getDate()===todayD;
   });
 }
 function getHoursPassed(tsString){
-  // Try to parse timestamp from history entry
-  try{
-    const now=new Date();
-    // ts format: "04 Jun 2026, 10:30" or similar
-    const d=new Date(tsString);
-    if(!isNaN(d)){return Math.floor((now-d)/3600000);}
-  }catch(e){}
-  return null;
+  // Uses the same parseDisplayTs() as everywhere else in the app (fixed
+  // to handle locale month abbreviations like "Sept") rather than the
+  // native Date constructor, which isn't guaranteed to parse this
+  // app's "DD Mon, hh:mm am/pm" display format consistently.
+  const t=parseDisplayTs(tsString);
+  if(!t) return null;
+  return Math.floor((Date.now()-t)/3600000);
 }
 function renderSameDayAlert(){
   const el=document.getElementById('same-day-dispatch-banner');
@@ -3089,7 +3098,17 @@ function printTallySheet(asnId){
     <div><strong>ASN / PO:</strong> ${esc(s.id)} &nbsp; <strong>Vendor:</strong> ${esc(s.vendor||'—')} &nbsp; <strong>Carrier:</strong> ${esc(s.carrier||'—')}</div>
     <div><strong>Expected date:</strong> ${esc(s.expectedDate||'—')} &nbsp; <strong>Printed:</strong> ${new Date().toLocaleString('en-IN')}</div>
     <table><thead><tr><th>SKU</th><th>Item</th><th>Expected Qty</th><th class="tick">Received So Far</th><th class="tick">Remaining</th><th class="tick">Actual Qty (this batch)</th><th class="tick">✓ Tick</th></tr></thead><tbody>
-      ${(()=>{const receivedSoFar=getReceivedSoFarByAsn(s.id);return s.items.map(it=>{const got=receivedSoFar[it.sku]||0;const remaining=Math.max(0,it.qty-got);return `<tr><td>${esc(it.sku)}</td><td>${esc(it.name)} — ${esc(it.variant||'')}</td><td>${it.qty}</td><td class="tick">${got}</td><td class="tick">${remaining}</td><td class="tick"></td><td class="tick"></td></tr>`;}).join('');})()}
+      ${(()=>{const receivedSoFar=getReceivedSoFarByAsn(s.id);
+        // s.items often has MULTIPLE raw lines per SKU (one per carton, from
+        // Excel-manifest imports) — aggregate by SKU first so each SKU prints
+        // as a single row with its true total expected qty, not one row per
+        // carton line with the per-carton qty.
+        const bySku={};
+        s.items.forEach(it=>{
+          if(!bySku[it.sku]) bySku[it.sku]={sku:it.sku,name:it.name,variant:it.variant,qty:0};
+          bySku[it.sku].qty+=it.qty;
+        });
+        return Object.values(bySku).map(it=>{const got=receivedSoFar[it.sku]||0;const remaining=Math.max(0,it.qty-got);return `<tr><td>${esc(it.sku)}</td><td>${esc(it.name)} — ${esc(it.variant||'')}</td><td>${it.qty}</td><td class="tick">${got}</td><td class="tick">${remaining}</td><td class="tick"></td><td class="tick"></td></tr>`;}).join('');})()}
     </tbody></table>
     <div class="sign">
       <div>Received by (name &amp; signature)</div>
@@ -3224,7 +3243,7 @@ function createGRN(){
   const pass=counted.filter(i=>i.qc==='PASS').reduce((a,i)=>a+i.qty,0);
   const hold=counted.filter(i=>i.qc==='HOLD').reduce((a,i)=>a+i.qty,0);
   const rej=counted.filter(i=>i.qc==='REJECT').reduce((a,i)=>a+i.qty,0);
-  history.push({id:gid,type:'grn',ts:ts(),detail:`ASN: ${asn||'N/A'} · ${cartons} carton(s) · ${counted.length} SKUs · PASS:${pass} HOLD:${hold} REJ:${rej}`,items:[...counted],asn,carrier,vehicle,cartons,grnNotes:grnNotes||null});
+  history.push({id:gid,type:'grn',ts:ts(),detail:`ASN: ${asn||'N/A'} · ${cartons} carton(s) · ${new Set(counted.map(i=>i.sku)).size} SKUs · PASS:${pass} HOLD:${hold} REJ:${rej}`,items:[...counted],asn,carrier,vehicle,cartons,grnNotes:grnNotes||null});
   saveInv();saveHist();
   const recon=asn?reconcileAgainstExpected(asn, counted):null;
   if(uncounted.length){
@@ -3378,7 +3397,7 @@ function printGRN(grnId){
         </div>
         <div class="info-box">
           <div class="info-label">Total SKUs</div>
-          <div class="info-value">${items.length}</div>
+          <div class="info-value">${new Set(items.map(i=>i.sku)).size}</div>
         </div>
       </div>
       ${grn.grnNotes?`<div class="info-box" style="margin-bottom:20px">
@@ -3572,7 +3591,7 @@ function printDispatch(dispatchId){
       <div class="info-grid">
         <div class="info-box">
           <div class="info-label">Total SKUs</div>
-          <div class="info-value">${items.length}</div>
+          <div class="info-value">${new Set(items.map(i=>i.sku)).size}</div>
         </div>
         <div class="info-box">
           <div class="info-label">Total Units</div>
@@ -5156,15 +5175,39 @@ function completeInventoryCount(){
   // by shelf), so a split SKU's two lines will show identical movement
   // figures — expected, since the movement history itself isn't
   // per-location.
+  //
+  // IMPORTANT: count.systemQty was captured in startInventoryCount() as
+  // the CURRENT stock level at that moment — it already reflects every
+  // GRN/dispatch/pick/return that ever happened before the count started.
+  // "Expected Qty" (systemQty + netMovement) is meant to explain a
+  // variance from things that happened DURING the count window (received
+  // or shipped out while counting was in progress), not from all-time
+  // history — adding an unscoped all-time netMovement on top of an
+  // already-current systemQty double-counts everything that happened
+  // before the count even began. Bound the movement scan to the window
+  // between when this count started and when it's being completed now.
+  const countStartT=parseDisplayTs(currentCount.ts);
+  const countEndT=parseDisplayTs(currentCount.completedTs);
+  const inCountWindow=h=>{
+    const t=parseDisplayTs(h.ts);
+    return t>0 && (!countStartT||t>=countStartT) && (!countEndT||t<=countEndT);
+  };
+  const windowHistory=history.filter(inCountWindow);
   currentCount.movements={};
   Object.keys(currentCount.counts).forEach(key=>{
     const count=currentCount.counts[key];
     const sku=count.sku;
     const variance=count.physicalQty-count.systemQty;
-    const grnItems=history.filter(h=>h.type==='grn').flatMap(g=>g.items.filter(i=>i.sku===sku)).reduce((a,i)=>a+i.qty,0);
-    const pickItems=history.filter(h=>h.type==='pick').reduce((a,h)=>a+(h.detail.includes(sku)?1:0),0);
-    const dispatchItems=history.filter(h=>h.type==='dispatched').flatMap(d=>d.items).filter(i=>i.sku===sku).reduce((a,i)=>a+i.qty,0);
-    const returnItems=history.filter(h=>h.type==='return').reduce((a,h)=>a+(h.detail.includes(sku)?1:0),0);
+    const grnItems=windowHistory.filter(h=>h.type==='grn'&&!h.voided).flatMap(g=>(g.items||[]).filter(i=>i.sku===sku)).reduce((a,i)=>a+i.qty,0);
+    // pick/return used to count MATCHING HISTORY ENTRIES (via a string
+    // search on `detail`), not actual quantity — inconsistent with
+    // grn/dispatch, which correctly sum item qty. Returns never even
+    // recorded which SKU was restocked (see processReturn()), so this
+    // was silently always 0 for returns; now that processReturn() stores
+    // an `items` array, this picks it up for any return going forward.
+    const pickItems=windowHistory.filter(h=>h.type==='pick').flatMap(p=>(p.items||[]).filter(i=>i.sku===sku)).reduce((a,i)=>a+i.qty,0);
+    const dispatchItems=windowHistory.filter(h=>h.type==='dispatched').flatMap(d=>d.items||[]).filter(i=>i.sku===sku).reduce((a,i)=>a+i.qty,0);
+    const returnItems=windowHistory.filter(h=>h.type==='return').flatMap(r=>(r.items||[]).filter(i=>i.sku===sku&&i.grade==='A')).reduce((a,i)=>a+i.qty,0);
     currentCount.movements[key]={grnInbound:grnItems,pickOutbound:pickItems,dispatchOutbound:dispatchItems,returnInbound:returnItems,netMovement:grnItems-dispatchItems+returnItems};
   });
   
@@ -6108,7 +6151,7 @@ function downloadInboundReport(){
     const pass=g.items.filter(i=>i.qc==='PASS').reduce((a,i)=>a+i.qty,0);
     const hold=g.items.filter(i=>i.qc==='HOLD').reduce((a,i)=>a+i.qty,0);
     const reject=g.items.filter(i=>i.qc==='REJECT').reduce((a,i)=>a+i.qty,0);
-    csv+=`"${g.id}","${g.ts}","${g.asn||'N/A'}","${g.carrier||'N/A'}","${g.vehicle||'N/A'}","${g.cartons||'N/A'}",${g.items.length},${pass},${hold},${reject}\n`;
+    csv+=`"${g.id}","${g.ts}","${g.asn||'N/A'}","${g.carrier||'N/A'}","${g.vehicle||'N/A'}","${g.cartons||'N/A'}",${new Set(g.items.map(i=>i.sku)).size},${pass},${hold},${reject}\n`;
   });
   downloadCSV(`InboundReport_${new Date().toISOString().split('T')[0]}.csv`,csv);
   toast('Inbound report downloaded','s');
@@ -6136,7 +6179,7 @@ function downloadAllReports(){
     const pass=g.items.filter(i=>i.qc==='PASS').reduce((a,i)=>a+i.qty,0);
     const hold=g.items.filter(i=>i.qc==='HOLD').reduce((a,i)=>a+i.qty,0);
     const reject=g.items.filter(i=>i.qc==='REJECT').reduce((a,i)=>a+i.qty,0);
-    masterCSV+=`"${g.id}","${g.ts}","${g.asn||'N/A'}","${g.vehicle||'N/A'}","${g.cartons||'N/A'}",${g.items.length},${pass},${hold},${reject}\n`;
+    masterCSV+=`"${g.id}","${g.ts}","${g.asn||'N/A'}","${g.vehicle||'N/A'}","${g.cartons||'N/A'}",${new Set(g.items.map(i=>i.sku)).size},${pass},${hold},${reject}\n`;
   });
   
   // PICKS
@@ -6668,7 +6711,12 @@ function processReturn(){
   const gradeB=rtItemsList.filter(i=>i.grade==='B').reduce((a,i)=>a+i.qty,0);
   const gradeC=rtItemsList.filter(i=>i.grade==='C').reduce((a,i)=>a+i.qty,0);
   const rid=newId('RET');
-  history.push({id:rid,type:'return',ts:ts(),detail:`AWB: ${awb} · ${rtype} · Grade A:${gradeA} B:${gradeB} C:${gradeC} · ${gradeA} units restocked`});
+  // Store the per-SKU/grade breakdown, not just the grade totals in the
+  // detail string — without it, nothing downstream (cycle-count movement
+  // reconciliation in particular) can ever tell WHICH SKU a return
+  // affected, so restocked returns were silently invisible everywhere
+  // that needed a per-SKU return quantity.
+  history.push({id:rid,type:'return',ts:ts(),detail:`AWB: ${awb} · ${rtype} · Grade A:${gradeA} B:${gradeB} C:${gradeC} · ${gradeA} units restocked`,items:[...rtItemsList]});
   saveInv();saveHist();rtItemsList=[];renderRtItemsList();renderRtLog();
   document.getElementById('rt-awb').value='';document.getElementById('rt-orderid').value='';
   toast(`Return ${rid} processed · ${gradeA} Grade-A units restocked to inventory`,'s');
@@ -7014,7 +7062,12 @@ function renderRack(){
           const bc=pct===0?'bar-out':pct<30?'bar-low':'bar-ok';
           const lbl=it.sub.replace(/ - .*/,'').replace(/- .*/,'').trim();
           const shelfLabel=idx===0?`${r}${sh}`:'';
-          const nameSuffix=items.length>1?` <span style="color:var(--t3);font-weight:400">(${esc(it.sku)})</span>`:'';
+          // Always show the SKU + size/variant, not just when a shelf
+          // happens to hold more than one SKU — the label above (lbl)
+          // strips out gender/variant entirely, so a lone-item shelf was
+          // showing an indistinguishable "Stitched Denim" with no way to
+          // tell which size or gender it actually was.
+          const nameSuffix=` <span style="color:var(--t3);font-weight:400">(${esc(it.sku)}${it.variant?' · '+esc(it.variant):''})</span>`;
           return`<div class="rack-row"><span class="shelf-l">${shelfLabel}</span><div><div style="font-size:11px;font-weight:600;margin-bottom:3px">${lbl}${nameSuffix}</div><div class="bar-bg"><div class="bar-f ${bc}" style="width:${pct}%"></div></div></div><span class="qty-r">${it.qty}u${held>0?`<div style="font-size:9px;color:var(--wt);font-weight:600">${held} held</div>`:''}</span></div>`;
         }).join('');
       }).join('')}</div></div>`;
@@ -7311,11 +7364,18 @@ function populateWeekSelector(){
   const sorted=[...weeks].sort().reverse();
   const thisWeek=getWeekKey(now);
   const lastWeek=sorted[1]||thisWeek;
+  // Default the dropdown to THIS week, not last week. Defaulting to last
+  // week meant that as soon as any GRN/dispatch/return happened today,
+  // opening the Weekly Report showed an empty last-week report (since all
+  // the activity was in the current week) — this looked exactly like the
+  // report being broken/not picking up new records, when really it was
+  // just pointed at the wrong week by default. "Last week" is still
+  // labeled and easy to pick manually for the Monday MIS submission.
   sel.innerHTML=sorted.map(w=>{
     const {start,end}=getWeekBounds(w);
     const label=`${start.toLocaleDateString('en-IN',{day:'2-digit',month:'short'})} – ${end.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}`;
     const tag=w===thisWeek?' (This week)':w===lastWeek?' (Last week — MIS due Monday)':'';
-    return `<option value="${w}"${w===lastWeek?' selected':''}>${label}${tag}</option>`;
+    return `<option value="${w}"${w===thisWeek?' selected':''}>${label}${tag}</option>`;
   }).join('');
 }
 function getWeekHistory(weekStr){
@@ -7591,74 +7651,223 @@ function downloadWeeklyCSV(){
   downloadCSV(`CaratLane_Weekly_MIS_${weekStr}.csv`,csv);
 }
 function downloadMonthlyMasterCSV(){
-  const sel=document.getElementById('rpt-month-select');
-  const monthStr=sel?sel.value:getMonthKey(new Date());
-  const {start}=getMonthBounds(monthStr);
-  const monthLabel=start.toLocaleDateString('en-IN',{month:'long',year:'numeric'});
-  const mOrders=getMonthOrders(monthStr);
-  const mHist=getMonthHistory(monthStr);
-  const grns=mHist.filter(h=>h.type==='grn');
-  const packDispatch=history.filter(h=>h.type==='packed'||h.type==='dispatched');
-  const picks=history.filter(h=>h.type==='pick');
-  const genTime=new Date().toLocaleString('en-IN');
+  // Despite the name (kept so the existing button's onclick doesn't need
+  // touching elsewhere), this now builds a real multi-sheet .xlsx — one
+  // sheet per section plus a Dashboard overview — instead of one giant
+  // CSV with === section === dividers. Much easier to read/navigate in
+  // Excel. Reuses the xlsx.js library already lazy-loaded for reading
+  // uploaded Excel manifests (loadXLSXLib).
+  toast('Building workbook…','s');
+  loadXLSXLib(()=>{
+    const sel=document.getElementById('rpt-month-select');
+    const monthStr=sel?sel.value:getMonthKey(new Date());
+    const {start}=getMonthBounds(monthStr);
+    const monthLabel=start.toLocaleDateString('en-IN',{month:'long',year:'numeric'});
+    const mOrders=getMonthOrders(monthStr);
+    const mHist=getMonthHistory(monthStr);
+    const grns=mHist.filter(h=>h.type==='grn');
+    const monthDisps=mHist.filter(h=>h.type==='dispatched');
+    const packDispatch=history.filter(h=>h.type==='packed'||h.type==='dispatched');
+    const picks=history.filter(h=>h.type==='pick');
+    const genTime=new Date().toLocaleString('en-IN');
+    const bill=computeMonthlyBill(monthStr);
 
-  let csv=`CaratLane WMS — Monthly Master Report\n`;
-  csv+=`EPS Worldwide Integrated Logistics Mumbai\n`;
-  csv+=`Report Month:,${monthLabel}\n`;
-  csv+=`Generated:,${genTime}\n\n`;
+    const totalUnitsIn=grns.reduce((a,g)=>{const items=g.items||[];return a+items.filter(i=>i.qc==='PASS').reduce((b,i)=>b+(i.qty||0),0);},0);
+    const totalUnitsHold=grns.reduce((a,g)=>{const items=g.items||[];return a+items.filter(i=>i.qc==='HOLD').reduce((b,i)=>b+(i.qty||0),0);},0);
+    const totalUnitsReject=grns.reduce((a,g)=>{const items=g.items||[];return a+items.filter(i=>i.qc==='REJECT').reduce((b,i)=>b+(i.qty||0),0);},0);
+    const totalUnitsOut=monthDisps.reduce((a,d)=>{const items=d.items||[];return a+items.reduce((b,i)=>b+(i.qty||0),0);},0);
+    const dispatchedCount=mOrders.filter(o=>packDispatch.some(h=>h.orderId===o.id&&h.type==='dispatched')).length;
 
-  const totalUnitsIn=grns.reduce((a,g)=>{const items=g.items||[];return a+items.filter(i=>i.qc==='PASS').reduce((b,i)=>b+(i.qty||0),0);},0);
-  const dispatchedCount=mOrders.filter(o=>packDispatch.some(h=>h.orderId===o.id&&h.type==='dispatched')).length;
-  csv+=`=== SUMMARY ===\n`;
-  csv+=`Total Orders Created This Month:,${mOrders.length}\n`;
-  csv+=`Of Which Dispatched:,${dispatchedCount}\n`;
-  csv+=`Total GRNs Received This Month:,${grns.length}\n`;
-  csv+=`Total Inbound Units Received (PASS):,${totalUnitsIn}\n\n`;
+    // Month-over-month comparison — same metrics, computed for the month
+    // immediately before the selected one, so trends are visible without
+    // opening two separate reports side by side.
+    const prevMonthDate=new Date(start.getFullYear(),start.getMonth()-1,1);
+    const prevMonthStr=getMonthKey(prevMonthDate);
+    const prevMonthLabel=prevMonthDate.toLocaleDateString('en-IN',{month:'long',year:'numeric'});
+    const prevOrders=getMonthOrders(prevMonthStr);
+    const prevHist=getMonthHistory(prevMonthStr);
+    const prevGrns=prevHist.filter(h=>h.type==='grn');
+    const prevDisps=prevHist.filter(h=>h.type==='dispatched');
+    const prevUnitsIn=prevGrns.reduce((a,g)=>{const items=g.items||[];return a+items.filter(i=>i.qc==='PASS').reduce((b,i)=>b+(i.qty||0),0);},0);
+    const prevUnitsOut=prevDisps.reduce((a,d)=>{const items=d.items||[];return a+items.reduce((b,i)=>b+(i.qty||0),0);},0);
+    const prevBill=computeMonthlyBill(prevMonthStr);
+    const pctChange=(cur,prev)=>{ if(!prev) return cur?'+∞':'0%'; const p=((cur-prev)/prev*100); return (p>=0?'+':'')+p.toFixed(1)+'%'; };
 
-  csv+=`=== ORDERS MASTER ===\n`;
-  csv+=`Order ID,Customer Name,Address,Pincode,Phone,Priority,Items,Order Created At,Assigned At,Assigned Picker,Picked At,Picker,Pack Started,Pack Completed,Packer,Pack Duration,Dispatched At,AWB No,Courier Partner,Shipping Method,Status\n`;
-  mOrders.forEach(o=>{
-    const pick=picks.find(p=>p.orderId===o.id);
-    const pd=packDispatch.find(h=>h.orderId===o.id);
-    const isDispatched=pd&&pd.type==='dispatched';
-    const itemsStr=(o.items||[]).map(it=>`${it.sku} x${it.qty}`).join(' | ');
-    const createdAtStr=o.createdAt?new Date(o.createdAt).toLocaleString('en-IN'):'';
-    const assignedAtStr=o.assignedAt?new Date(o.assignedAt).toLocaleString('en-IN'):'';
-    csv+=`"${o.id}","${esc(o.customerName||'')}","${esc(o.address||'')}","${o.pincode||''}","${o.phone||''}","${o.priority||''}","${esc(itemsStr)}","${createdAtStr}","${assignedAtStr}","${esc(o.assignedPicker||'')}","${pick?pick.ts:''}","${pick?esc(pick.picker||''):''}","${pd?pd.packStartTs||'':''}","${pd?(pd.packEndTs||pd.ts||''):''}","${pd?esc(pd.packer||''):''}","${pd?pd.packDuration||'':''}","${isDispatched?pd.dispatchedAt||'':''}","${isDispatched?pd.awb||'':''}","${isDispatched?esc(pd.courierPartner||''):''}","${isDispatched?esc(pd.shippingMethod||''):''}","${esc(o.status||'')}"\n`;
-  });
-  csv+=`TOTAL ORDERS:,${mOrders.length}\n\n`;
-
-  csv+=`=== INBOUND / GRN MASTER (per SKU line) ===\n`;
-  csv+=`GRN ID,Date/Time Received,ASN,Carrier,Vehicle,SKU,Item Name,Variant,Qty Received,QC Result,Bin Location\n`;
-  let inboundLines=0;
-  grns.forEach(g=>{
-    (g.items||[]).forEach(i=>{
-      csv+=`"${g.id}","${g.ts}","${esc(g.asn||'N/A')}","${esc(g.carrier||'N/A')}","${esc(g.vehicle||'N/A')}","${i.sku}","${esc(i.name||'')}","${esc(i.variant||'')}",${i.qty||0},"${i.qc||''}","${esc(i.bin||'')}"\n`;
-      inboundLines++;
+    // Open ASN / outstanding inbound — expected shipments that still have
+    // unreceived quantity as of right now (not scoped to the report month,
+    // since an ASN can straddle months while goods keep arriving in
+    // batches). Lets the report double as a "what's still coming" list.
+    const openShipments=expectedShipments.filter(s=>s.status==='expected'||s.status==='partial'||s.status==='discrepancy');
+    const openRows=openShipments.map(s=>{
+      const receivedBySku=getReceivedSoFarByAsn(s.id);
+      const expectedBySku={};
+      (s.items||[]).forEach(it=>{ if(!expectedBySku[it.sku]) expectedBySku[it.sku]=0; expectedBySku[it.sku]+=it.qty; });
+      let totalExpected=0,totalReceived=0,totalRemaining=0,skusShort=0;
+      Object.keys(expectedBySku).forEach(sku=>{
+        const exp=expectedBySku[sku]; const got=receivedBySku[sku]||0;
+        totalExpected+=exp; totalReceived+=got;
+        const rem=Math.max(0,exp-got);
+        totalRemaining+=rem;
+        if(rem>0) skusShort++;
+      });
+      return {id:s.id,vendor:s.vendor||'',carrier:s.carrier||'',expectedDate:s.expectedDate||'',status:s.status,totalExpected,totalReceived,totalRemaining,skusShort};
     });
-  });
-  csv+=`TOTAL GRNs:,${grns.length}\n`;
-  csv+=`TOTAL SKU LINES RECEIVED:,${inboundLines}\n`;
-  csv+=`TOTAL UNITS RECEIVED (PASS):,${totalUnitsIn}\n\n`;
+    const openTotalRemaining=openRows.reduce((a,r)=>a+r.totalRemaining,0);
 
-  csv+=`=== MONTHLY INVENTORY SNAPSHOT (live — captured at report generation time, ${genTime}) ===\n`;
-  csv+=`SKU,Item Name,Variant,Rack,Shelf,Qty,Status\n`;
-  SKUS.forEach(s=>{
-    const q=(inv[s.sku]||{qty:0}).qty;
-    const st=q<=0?'Out of Stock':q<=3?'Low Stock':'In Stock';
-    // One row per physical location — see comment on the on-screen
-    // inventory snapshot table for why.
-    const locs=getSkuLocations(s.sku);
-    const rows=locs.length?locs:[{...liveLoc(s.sku),qty:0}];
-    rows.forEach(loc=>{
-      csv+=`"${s.sku}","${esc(s.sub)}","${esc(s.variant)}",${loc.rack},${loc.shelf},${loc.qty},"${st}"\n`;
+    // Courier-wise breakdown
+    const courierMap={};
+    monthDisps.forEach(d=>{
+      const c=d.courierPartner||'Unspecified';
+      if(!courierMap[c]) courierMap[c]={count:0,units:0,actualWt:0,chargeWt:0};
+      const items=d.items||[];
+      courierMap[c].count++;
+      courierMap[c].units+=items.reduce((a,i)=>a+(i.qty||0),0);
+      courierMap[c].actualWt+=parseFloat(d.actualWeight)||0;
+      courierMap[c].chargeWt+=parseFloat(d.chargeableWeight)||0;
     });
-  });
-  const totalUnitsNow=SKUS.reduce((a,s)=>a+((inv[s.sku]||{qty:0}).qty),0);
-  csv+=`TOTAL UNITS IN STOCK (as of generation):,${totalUnitsNow}\n`;
+    const courierRows=Object.keys(courierMap).sort((a,b)=>courierMap[b].count-courierMap[a].count).map(c=>({name:c,...courierMap[c]}));
 
-  downloadCSV(`CaratLane_Monthly_Master_Report_${monthStr}.csv`,csv);
-  toast('Monthly master report downloaded','s');
+    const totalUnitsNow=SKUS.reduce((a,s)=>a+((inv[s.sku]||{qty:0}).qty),0);
+    const lowStockCount=SKUS.filter(s=>{const q=(inv[s.sku]||{qty:0}).qty;return q>0&&q<=3;}).length;
+    const outOfStockCount=SKUS.filter(s=>(inv[s.sku]||{qty:0}).qty<=0).length;
+
+    const wb=XLSX.utils.book_new();
+
+    // ── Dashboard sheet ──
+    const dash=[
+      ['CaratLane WMS — Monthly Dashboard'],
+      ['EPS Worldwide Integrated Logistics Mumbai'],
+      ['Report Month',monthLabel],
+      ['Generated',genTime],
+      [],
+      ['KEY METRICS',monthLabel,prevMonthLabel,'Change'],
+      ['Orders Created',mOrders.length,prevOrders.length,pctChange(mOrders.length,prevOrders.length)],
+      ['Of Which Dispatched',dispatchedCount,'',''],
+      ['GRNs Received',grns.length,prevGrns.length,pctChange(grns.length,prevGrns.length)],
+      ['Units Received — PASS',totalUnitsIn,prevUnitsIn,pctChange(totalUnitsIn,prevUnitsIn)],
+      ['Units Received — HOLD',totalUnitsHold,'',''],
+      ['Units Received — REJECT',totalUnitsReject,'',''],
+      ['Shipments Dispatched',monthDisps.length,prevDisps.length,pctChange(monthDisps.length,prevDisps.length)],
+      ['Units Dispatched',totalUnitsOut,prevUnitsOut,pctChange(totalUnitsOut,prevUnitsOut)],
+      ['Warehouse Bill (₹)',bill.total,prevBill.total,pctChange(bill.total,prevBill.total)],
+      [],
+      ['OPEN ASN / OUTSTANDING INBOUND'],
+      ['Open ASNs (as of generation)',openShipments.length],
+      ['Units still outstanding across open ASNs',openTotalRemaining],
+      [],
+      ['TOP COURIERS THIS MONTH'],
+      ['Courier Partner','Shipments','Units'],
+      ...courierRows.slice(0,5).map(c=>[c.name,c.count,c.units]),
+      [],
+      ['CURRENT INVENTORY (as of generation)'],
+      ['Total Units In Stock',totalUnitsNow],
+      ['Low Stock SKUs (≤3 units)',lowStockCount],
+      ['Out of Stock SKUs',outOfStockCount],
+    ];
+    const wsDash=XLSX.utils.aoa_to_sheet(dash);
+    wsDash['!cols']=[{wch:32},{wch:18},{wch:18},{wch:12}];
+    XLSX.utils.book_append_sheet(wb,wsDash,'Dashboard');
+
+    // ── MoM Comparison sheet ──
+    const mom=[
+      ['Metric',monthLabel,prevMonthLabel,'Change'],
+      ['Orders Created',mOrders.length,prevOrders.length,pctChange(mOrders.length,prevOrders.length)],
+      ['GRNs Received',grns.length,prevGrns.length,pctChange(grns.length,prevGrns.length)],
+      ['Units Received (PASS)',totalUnitsIn,prevUnitsIn,pctChange(totalUnitsIn,prevUnitsIn)],
+      ['Shipments Dispatched',monthDisps.length,prevDisps.length,pctChange(monthDisps.length,prevDisps.length)],
+      ['Units Dispatched',totalUnitsOut,prevUnitsOut,pctChange(totalUnitsOut,prevUnitsOut)],
+      ['Warehouse Bill (₹)',bill.total,prevBill.total,pctChange(bill.total,prevBill.total)],
+    ];
+    const wsMom=XLSX.utils.aoa_to_sheet(mom);
+    wsMom['!cols']=[{wch:26},{wch:18},{wch:18},{wch:12}];
+    XLSX.utils.book_append_sheet(wb,wsMom,'MoM Comparison');
+
+    // ── Orders sheet ──
+    const ordersHeader=['Order ID','Customer Name','Address','Pincode','Phone','Priority','Items','Order Created At','Assigned At','Assigned Picker','Picked At','Picker','Pack Started','Pack Completed','Packer','Pack Duration','Dispatched At','AWB No','Courier Partner','Shipping Method','Status'];
+    const ordersRows=mOrders.map(o=>{
+      const pick=picks.find(p=>p.orderId===o.id);
+      const pd=packDispatch.find(h=>h.orderId===o.id);
+      const isDispatched=pd&&pd.type==='dispatched';
+      const itemsStr=(o.items||[]).map(it=>`${it.sku} x${it.qty}`).join(' | ');
+      const createdAtStr=o.createdAt?new Date(o.createdAt).toLocaleString('en-IN'):'';
+      const assignedAtStr=o.assignedAt?new Date(o.assignedAt).toLocaleString('en-IN'):'';
+      return [o.id,o.customerName||'',o.address||'',o.pincode||'',o.phone||'',o.priority||'',itemsStr,createdAtStr,assignedAtStr,o.assignedPicker||'',pick?pick.ts:'',pick?(pick.picker||''):'',pd?(pd.packStartTs||''):'',pd?(pd.packEndTs||pd.ts||''):'',pd?(pd.packer||''):'',pd?(pd.packDuration||''):'',isDispatched?(pd.dispatchedAt||''):'',isDispatched?(pd.awb||''):'',isDispatched?(pd.courierPartner||''):'',isDispatched?(pd.shippingMethod||''):'',o.status||''];
+    });
+    const wsOrders=XLSX.utils.aoa_to_sheet([ordersHeader,...ordersRows,[],['TOTAL ORDERS',mOrders.length]]);
+    wsOrders['!cols']=ordersHeader.map(()=>({wch:16}));
+    XLSX.utils.book_append_sheet(wb,wsOrders,'Orders');
+
+    // ── Inbound / GRN sheet (per SKU line) ──
+    const grnHeader=['GRN ID','Date/Time Received','ASN','Carrier','Vehicle','Cartons','SKU','Item Name','Variant','Qty Received','QC Result','Bin Location','Voided'];
+    const grnRows=[];
+    grns.forEach(g=>{
+      (g.items||[]).forEach(i=>{
+        grnRows.push([g.id,g.ts,g.asn||'N/A',g.carrier||'N/A',g.vehicle||'N/A',g.cartons||0,i.sku,i.name||'',i.variant||'',i.qty||0,i.qc||'',i.bin||'',g.voided?'YES':'']);
+      });
+    });
+    const wsGrn=XLSX.utils.aoa_to_sheet([grnHeader,...grnRows,[],['TOTAL GRNs',grns.length],['TOTAL SKU LINES',grnRows.length],['TOTAL UNITS — PASS',totalUnitsIn],['TOTAL UNITS — HOLD',totalUnitsHold],['TOTAL UNITS — REJECT',totalUnitsReject]]);
+    wsGrn['!cols']=grnHeader.map(()=>({wch:16}));
+    XLSX.utils.book_append_sheet(wb,wsGrn,'Inbound GRN');
+
+    // ── Open ASN sheet ──
+    const openHeader=['ASN ID','Vendor','Carrier','Expected Date','Status','Total Expected Qty','Total Received So Far','Total Remaining Qty','SKUs Still Short'];
+    const wsOpen=XLSX.utils.aoa_to_sheet([openHeader,...openRows.map(r=>[r.id,r.vendor,r.carrier,r.expectedDate,r.status,r.totalExpected,r.totalReceived,r.totalRemaining,r.skusShort]),[],['TOTAL OPEN ASNs',openShipments.length]]);
+    wsOpen['!cols']=openHeader.map(()=>({wch:16}));
+    XLSX.utils.book_append_sheet(wb,wsOpen,'Open ASN');
+
+    // ── Outbound / Dispatch sheet ──
+    const dispHeader=['Dispatch ID','Order ID','Date/Time Dispatched','Recipient','Pincode','AWB No','Courier Partner','Shipping Method','SKU Count','Total Units','Box Dims (LxWxH cm)','Actual Wt (kg)','Vol Wt (kg)','Chargeable Wt (kg)','Packer','Pack Duration'];
+    const dispRows=monthDisps.map(d=>{
+      const items=d.items||[];
+      const skuCount=new Set(items.map(i=>i.sku)).size;
+      const units=items.reduce((a,i)=>a+(i.qty||0),0);
+      const dims=d.boxL&&d.boxW&&d.boxH?`${d.boxL}x${d.boxW}x${d.boxH}`:'';
+      return [d.id,d.orderId||'',d.dispatchedAt||d.ts||'',d.recipientName||'',d.pincode||'',d.awb||'',d.courierPartner||'',d.shippingMethod||'',skuCount,units,dims,d.actualWeight||'',d.volWeight||'',d.chargeableWeight||'',d.packer||'',d.packDuration||''];
+    });
+    const wsDisp=XLSX.utils.aoa_to_sheet([dispHeader,...dispRows,[],['TOTAL DISPATCHES',monthDisps.length],['TOTAL UNITS DISPATCHED',totalUnitsOut]]);
+    wsDisp['!cols']=dispHeader.map(()=>({wch:16}));
+    XLSX.utils.book_append_sheet(wb,wsDisp,'Outbound Dispatch');
+
+    // ── Courier breakdown sheet ──
+    const courierHeader=['Courier Partner','Shipments','Total Units','Total Actual Wt (kg)','Total Chargeable Wt (kg)'];
+    const wsCourier=XLSX.utils.aoa_to_sheet([courierHeader,...courierRows.map(c=>[c.name,c.count,c.units,Number(c.actualWt.toFixed(2)),Number(c.chargeWt.toFixed(2))])]);
+    wsCourier['!cols']=courierHeader.map(()=>({wch:18}));
+    XLSX.utils.book_append_sheet(wb,wsCourier,'Courier Breakdown');
+
+    // ── Financial summary sheet ──
+    const finRows=[
+      ['Charge','Basis','Amount (₹)'],
+      [`Warehouse storage${bill.storageNote?' (prorated)':' (flat monthly charge)'}`,bill.storageNote||'Flat monthly rate',bill.storage],
+      ['Unloading & receiving',`${bill.totalBoxes} box(es) x ₹${costParams.unloadingPerBox||0}`,bill.unloading],
+      ['Inventory verification count',`${bill.totalBoxes} box(es) x ₹${costParams.verificationPerBox||0}`,bill.verification],
+      ['GRN creation charges',`${bill.grnCount} GRN(s) x ₹${costParams.grnCreationCharge||0}`,bill.grnCharges],
+      ['Bin putaway charges',`${bill.totalUnits} unit(s) x ₹${costParams.binPutawayPerUnit||0}`,bill.putaway],
+      ['Packaging charges',`${bill.orderCount} order(s) x ₹${costParams.packagingChargePerOrder||0}`,bill.packagingCharges],
+      ['TOTAL BILL','',bill.total],
+    ];
+    const wsFin=XLSX.utils.aoa_to_sheet(finRows);
+    wsFin['!cols']=[{wch:32},{wch:32},{wch:14}];
+    XLSX.utils.book_append_sheet(wb,wsFin,'Financial Summary');
+
+    // ── Inventory snapshot sheet ──
+    const invHeader=['SKU','Item Name','Variant','Rack','Shelf','Qty','Status'];
+    const invRows=[];
+    SKUS.forEach(s=>{
+      const q=(inv[s.sku]||{qty:0}).qty;
+      const st=q<=0?'Out of Stock':q<=3?'Low Stock':'In Stock';
+      // One row per physical location — see comment on the on-screen
+      // inventory snapshot table for why.
+      const locs=getSkuLocations(s.sku);
+      const rows=locs.length?locs:[{...liveLoc(s.sku),qty:0}];
+      rows.forEach(loc=>{ invRows.push([s.sku,s.sub,s.variant,loc.rack,loc.shelf,loc.qty,st]); });
+    });
+    const wsInv=XLSX.utils.aoa_to_sheet([invHeader,...invRows,[],['TOTAL UNITS IN STOCK',totalUnitsNow]]);
+    wsInv['!cols']=[{wch:14},{wch:24},{wch:16},{wch:8},{wch:8},{wch:8},{wch:14}];
+    XLSX.utils.book_append_sheet(wb,wsInv,'Inventory Snapshot');
+
+    XLSX.writeFile(wb,`CaratLane_Monthly_Master_Report_${monthStr}.xlsx`);
+    toast('Monthly master report downloaded','s');
+  });
 }
 function printWeeklyReport(){
   const sel=document.getElementById('rpt-week-select');
@@ -8789,7 +8998,19 @@ function parseDisplayTs(str){
   const ap=(m[5]||'').toLowerCase();
   if(ap==='pm'&&hr<12) hr+=12;
   if(ap==='am'&&hr===12) hr=0;
-  return new Date(new Date().getFullYear(),mon,day,hr,min,0).getTime();
+  // The display string never carries a year, so this anchors to the
+  // current year by default. But once the calendar rolls over (e.g.
+  // it's now Jan 2027 and we're parsing a "28 Dec, 03:00 pm" record
+  // from 2026), anchoring to "current year" would misdate it into the
+  // future. Every timestamp this app writes is stamped at the moment
+  // of creation, so it can never legitimately be in the future — if
+  // the current-year guess lands more than a day ahead of now, the
+  // record must actually belong to last year.
+  const now=new Date();
+  const year=now.getFullYear();
+  let t=new Date(year,mon,day,hr,min,0).getTime();
+  if(t>now.getTime()+86400000){ t=new Date(year-1,mon,day,hr,min,0).getTime(); }
+  return t;
 }
 
 async function renderAuditLog(){
