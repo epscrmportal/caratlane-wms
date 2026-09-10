@@ -2781,6 +2781,105 @@ ${relEntries.join('\n')}
 
   return await zip.generateAsync({type:'uint8array'});
 }
+// ── Native cell formatting (colors/borders/highlights) ──────────────────
+// Same reason as the chart injector above: the free SheetJS build silently
+// drops any cell style set via ws[ref].s (confirmed by testing — it writes
+// no fill/font info to styles.xml at all). So formatting is applied the
+// same way charts are: write a real styles.xml ourselves, and stamp each
+// target cell's <c> tag with the matching s="N" index.
+function _colToLetter(c){ let s=''; c++; while(c>0){ const m=(c-1)%26; s=String.fromCharCode(65+m)+s; c=Math.floor((c-1)/26); } return s; }
+const REPORT_STYLES_XML=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<fonts count="7">
+<font><sz val="12"/><color theme="1"/><name val="Calibri"/><family val="2"/><scheme val="minor"/></font>
+<font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/><family val="2"/></font>
+<font><b/><sz val="16"/><color rgb="FF333333"/><name val="Calibri"/><family val="2"/></font>
+<font><b/><sz val="12"/><color rgb="FF333333"/><name val="Calibri"/><family val="2"/></font>
+<font><b/><sz val="11"/><color rgb="FF2E7D32"/><name val="Calibri"/><family val="2"/></font>
+<font><b/><sz val="11"/><color rgb="FFC62828"/><name val="Calibri"/><family val="2"/></font>
+<font><b/><sz val="12"/><color rgb="FF000000"/><name val="Calibri"/><family val="2"/></font>
+</fonts>
+<fills count="4">
+<fill><patternFill patternType="none"/></fill>
+<fill><patternFill patternType="gray125"/></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FFB8860B"/><bgColor indexed="64"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FFF0F0F0"/><bgColor indexed="64"/></patternFill></fill>
+</fills>
+<borders count="3">
+<border><left/><right/><top/><bottom/><diagonal/></border>
+<border><left style="thin"><color rgb="FFBFBFBF"/></left><right style="thin"><color rgb="FFBFBFBF"/></right><top style="thin"><color rgb="FFBFBFBF"/></top><bottom style="thin"><color rgb="FFBFBFBF"/></bottom><diagonal/></border>
+<border><left/><right/><top style="thin"><color rgb="FF999999"/></top><bottom/><diagonal/></border>
+</borders>
+<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+<cellXfs count="12">
+<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+<xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"><alignment horizontal="center" vertical="center"/></xf>
+<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>
+<xf numFmtId="0" fontId="3" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1"/>
+<xf numFmtId="0" fontId="4" fillId="0" borderId="0" xfId="0" applyFont="1"/>
+<xf numFmtId="0" fontId="5" fillId="0" borderId="0" xfId="0" applyFont="1"/>
+<xf numFmtId="0" fontId="6" fillId="0" borderId="0" xfId="0" applyFont="1"/>
+<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"/>
+<xf numFmtId="0" fontId="6" fillId="0" borderId="2" xfId="0" applyFont="1" applyBorder="1"/>
+<xf numFmtId="0" fontId="4" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1"/>
+<xf numFmtId="0" fontId="5" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1"/>
+<xf numFmtId="0" fontId="6" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1"/>
+</cellXfs>
+<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+</styleSheet>`;
+const REPORT_STYLE_IDX={header:1,title:2,section:3,positive:4,negative:5,important:6,grid:7,total:8,positiveGrid:9,negativeGrid:10,importantGrid:11};
+function _patchCellStyleAttr(sheetXml,ref,styleIdx){
+  const re=new RegExp(`<c r="${ref}"([^>]*?)(/?)>`);
+  if(!re.test(sheetXml)) return sheetXml; // cell wasn't written (was empty in the AOA) — skip
+  return sheetXml.replace(re,(m,attrs,selfClose)=>{
+    let newAttrs=attrs;
+    if(/\ss="\d+"/.test(newAttrs)) newAttrs=newAttrs.replace(/\ss="\d+"/,` s="${styleIdx}"`);
+    else newAttrs=` s="${styleIdx}"`+newAttrs;
+    return `<c r="${ref}"${newAttrs}${selfClose}>`;
+  });
+}
+// changeStyleFor: maps a pctChange()-style string ("+12.3%","-4.0%","0%") to
+// the bordered highlight style to use for that cell, or null for no color.
+function changeStyleFor(str){
+  if(typeof str!=='string'||!str) return null;
+  if(str[0]==='-') return 'negativeGrid';
+  if(str[0]==='+') return 'positiveGrid';
+  return null;
+}
+// opsBySheet: {sheetName:[{ref:'A1',style:'title'}|{range:{r1,c1,r2,c2},style:'grid'}]}
+// Ops are applied in array order — later ops win on overlapping cells, so
+// callers should list broad range styles (grid) before specific overrides
+// (header, highlighted cells).
+async function applyCellStyles(buf,opsBySheet){
+  const zip=await JSZip.loadAsync(buf);
+  zip.file('xl/styles.xml',REPORT_STYLES_XML);
+  const wbXml=await zip.file('xl/workbook.xml').async('string');
+  const wbRels=await zip.file('xl/_rels/workbook.xml.rels').async('string');
+  for(const sheetName of Object.keys(opsBySheet)){
+    const sheetTagMatch=wbXml.match(new RegExp(`<sheet[^>]*name="${sheetName.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}"[^>]*/>`));
+    if(!sheetTagMatch) continue;
+    const rid=sheetTagMatch[0].match(/r:id="([^"]+)"/)[1];
+    const relTag=wbRels.match(new RegExp(`<Relationship[^>]*Id="${rid}"[^>]*/>`))[0];
+    let target=relTag.match(/Target="([^"]+)"/)[1];
+    if(!target.startsWith('xl/')) target='xl/'+target;
+    let xml=await zip.file(target).async('string');
+    for(const op of opsBySheet[sheetName]){
+      const idx=REPORT_STYLE_IDX[op.style];
+      if(idx==null) continue;
+      if(op.ref){
+        xml=_patchCellStyleAttr(xml,op.ref,idx);
+      }else if(op.range){
+        for(let r=op.range.r1;r<=op.range.r2;r++){
+          for(let c=op.range.c1;c<=op.range.c2;c++){
+            xml=_patchCellStyleAttr(xml,_colToLetter(c)+r,idx);
+          }
+        }
+      }
+    }
+    zip.file(target,xml);
+  }
+  return await zip.generateAsync({type:'uint8array'});
+}
 function _normHeader(h){ return String(h||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
 function _findExcelCol(headerRow, matchFn){
   for(let i=0;i<headerRow.length;i++){ if(matchFn(_normHeader(headerRow[i]))) return i; }
@@ -8017,6 +8116,86 @@ function downloadMonthlyMasterCSV(){
     wsInv['!cols']=[{wch:14},{wch:24},{wch:16},{wch:8},{wch:8},{wch:8},{wch:14}];
     XLSX.utils.book_append_sheet(wb,wsInv,'Inventory Snapshot');
 
+    // ── Cell formatting (colors/borders/highlighted numbers) ──
+    // Row numbers below are derived directly from the array literals built
+    // above (dash/mom/*Header+*Rows) — every sheet but Dashboard has a
+    // single header row at row 1, so its ranges are just "however many rows
+    // I pushed". Dashboard has multiple stacked sections, so those offsets
+    // are computed from the same fixed/variable structure as the `dash`
+    // array itself (KEY METRICS block is always rows 6-15; only the TOP
+    // COURIERS section grows with courierRows.length).
+    const courierTopN=Math.min(5,courierRows.length);
+    const rowInvHdr=24+courierTopN, rowInvData1=25+courierTopN, rowInvData2=27+courierTopN;
+    const styleOpsBySheet={
+      'Dashboard':[
+        {range:{r1:6,c1:0,r2:15,c2:3},style:'grid'},
+        {range:{r1:18,c1:0,r2:19,c2:1},style:'grid'},
+        {range:{r1:22,c1:0,r2:22+courierTopN,c2:2},style:'grid'},
+        {range:{r1:rowInvData1,c1:0,r2:rowInvData2,c2:1},style:'grid'},
+        {ref:'A1',style:'title'},
+        {ref:'A17',style:'section'},{ref:'A21',style:'section'},{ref:`A${rowInvHdr}`,style:'section'},
+        {range:{r1:6,c1:0,r2:6,c2:3},style:'header'},
+        {range:{r1:22,c1:0,r2:22,c2:2},style:'header'},
+        {ref:'A15',style:'importantGrid'},{ref:'B15',style:'importantGrid'},{ref:'C15',style:'importantGrid'},
+      ],
+      'MoM Comparison':[
+        {range:{r1:1,c1:0,r2:7,c2:3},style:'grid'},
+        {range:{r1:1,c1:0,r2:1,c2:3},style:'header'},
+        {ref:'A7',style:'importantGrid'},{ref:'B7',style:'importantGrid'},{ref:'C7',style:'importantGrid'},
+      ],
+      'Orders':[
+        {range:{r1:1,c1:0,r2:1+ordersRows.length,c2:ordersHeader.length-1},style:'grid'},
+        {range:{r1:1,c1:0,r2:1,c2:ordersHeader.length-1},style:'header'},
+        {ref:`A${3+ordersRows.length}`,style:'total'},{ref:`B${3+ordersRows.length}`,style:'total'},
+      ],
+      'Inbound GRN':[
+        {range:{r1:1,c1:0,r2:1+grnRows.length,c2:grnHeader.length-1},style:'grid'},
+        {range:{r1:1,c1:0,r2:1,c2:grnHeader.length-1},style:'header'},
+        ...[0,1,2,3,4].map(i=>({ref:`A${3+grnRows.length+i}`,style:'total'})),
+        ...[0,1,2,3,4].map(i=>({ref:`B${3+grnRows.length+i}`,style:'total'})),
+      ],
+      'Open ASN':[
+        {range:{r1:1,c1:0,r2:1+openRows.length,c2:openHeader.length-1},style:'grid'},
+        {range:{r1:1,c1:0,r2:1,c2:openHeader.length-1},style:'header'},
+        {ref:`A${3+openRows.length}`,style:'total'},{ref:`B${3+openRows.length}`,style:'total'},
+      ],
+      'Outbound Dispatch':[
+        {range:{r1:1,c1:0,r2:1+dispRows.length,c2:dispHeader.length-1},style:'grid'},
+        {range:{r1:1,c1:0,r2:1,c2:dispHeader.length-1},style:'header'},
+        {ref:`A${3+dispRows.length}`,style:'total'},{ref:`B${3+dispRows.length}`,style:'total'},
+        {ref:`A${4+dispRows.length}`,style:'total'},{ref:`B${4+dispRows.length}`,style:'total'},
+      ],
+      'Courier Breakdown':[
+        {range:{r1:1,c1:0,r2:1+courierRows.length,c2:courierHeader.length-1},style:'grid'},
+        {range:{r1:1,c1:0,r2:1,c2:courierHeader.length-1},style:'header'},
+      ],
+      'Financial Summary':[
+        {range:{r1:1,c1:0,r2:8,c2:2},style:'grid'},
+        {range:{r1:1,c1:0,r2:1,c2:2},style:'header'},
+        {ref:'A8',style:'total'},{ref:'B8',style:'total'},{ref:'C8',style:'total'},
+      ],
+      'Inventory Snapshot':[
+        {range:{r1:1,c1:0,r2:1+invRows.length,c2:invHeader.length-1},style:'grid'},
+        {range:{r1:1,c1:0,r2:1,c2:invHeader.length-1},style:'header'},
+        {ref:`A${3+invRows.length}`,style:'total'},{ref:`B${3+invRows.length}`,style:'total'},
+      ],
+    };
+    // Change%/positive-negative highlights — computed from the same
+    // pctChange() calls used to build the dash/mom rows, so a cell is
+    // colored if and only if its printed value actually starts with + or -.
+    const changeOps=[
+      {dashRow:7,momRow:2,val:pctChange(mOrders.length,prevOrders.length)},
+      {dashRow:9,momRow:3,val:pctChange(grns.length,prevGrns.length)},
+      {dashRow:10,momRow:4,val:pctChange(totalUnitsIn,prevUnitsIn)},
+      {dashRow:13,momRow:5,val:pctChange(monthDisps.length,prevDisps.length)},
+      {dashRow:14,momRow:6,val:pctChange(totalUnitsOut,prevUnitsOut)},
+      {dashRow:15,momRow:7,val:pctChange(bill.total,prevBill.total)},
+    ];
+    changeOps.forEach(({dashRow,momRow,val})=>{
+      const st=changeStyleFor(val);
+      if(st){ styleOpsBySheet['Dashboard'].push({ref:`D${dashRow}`,style:st}); styleOpsBySheet['MoM Comparison'].push({ref:`D${momRow}`,style:st}); }
+    });
+
     // ── Native charts on the Dashboard sheet ──
     // Built from the fixed-position MoM/Courier/chart-data ranges above so
     // they stay live/editable if the user tweaks the underlying numbers.
@@ -8052,16 +8231,17 @@ function downloadMonthlyMasterCSV(){
           anchor:{from:{col:15,row:17},to:{col:21,row:33}} });
         const rawBuf=XLSX.write(wb,{bookType:'xlsx',type:'array'});
         const chartedBuf=await injectNativeCharts(rawBuf,'Dashboard',charts);
-        const blob=new Blob([chartedBuf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+        const styledBuf=await applyCellStyles(chartedBuf,styleOpsBySheet);
+        const blob=new Blob([styledBuf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
         const url=URL.createObjectURL(blob);
         const a=document.createElement('a');
         a.href=url;a.download=filename;document.body.appendChild(a);a.click();
         setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},500);
         toast('Monthly master report downloaded','s');
       }catch(err){
-        console.error('Chart injection failed, falling back to plain workbook',err);
+        console.error('Chart/style injection failed, falling back to plain workbook',err);
         XLSX.writeFile(wb,filename);
-        toast('Monthly master report downloaded (without charts — see console)','w');
+        toast('Monthly master report downloaded (without charts/formatting — see console)','w');
       }
     });
   });
