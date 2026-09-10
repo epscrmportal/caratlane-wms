@@ -1153,6 +1153,20 @@ function reconcileAgainstExpected(asn, receivedItems){
   // this) rather than only the items passed in from this one batch.
   return recomputeShipmentTally(s);
 }
+function refreshShipmentTally(id){
+  // The tally shown on this board (s.receivedSummary) is only recomputed
+  // when a GRN is created/voided against this ASN, or when the shipment
+  // is edited and saved — it is NOT live. That means a logic fix to
+  // recomputeShipmentTally() (like the per-SKU aggregation fix) doesn't
+  // retroactively correct an already-stored summary until something
+  // triggers a recompute. This button does that on demand, without
+  // needing to raise/void a GRN or touch the item list.
+  const s=expectedShipments.find(x=>x.id===id);
+  if(!s){ toast('Shipment not found','w'); return; }
+  recomputeShipmentTally(s);
+  renderExpShipmentsBoard();
+  toast(`${id} tally refreshed`,'s');
+}
 function renderExpShipmentsBoard(){
   const el=document.getElementById('exp-shipments-board');
   if(!el) return;
@@ -1167,7 +1181,8 @@ function renderExpShipmentsBoard(){
         return `<div style="font-size:10px;color:${color}">${esc(r.sku)}: ${r.received}/${r.expected} (${label})</div>`;
       }).join('');
     }
-    return `<tr><td class="mono">${esc(s.id)}</td><td style="font-size:11px">${esc(s.vendor||'—')}</td><td>${s.items.length} SKU(s)</td><td><span class="pill ${statusPill[s.status]||'p-info'}">${s.status}</span></td><td>${tally}</td><td style="white-space:nowrap"><button class="btn-sm" onclick="printTallySheet('${esc(s.id)}')"><i class="ti ti-printer"></i>Print</button> <button class="btn-sm" onclick="startEditExpectedShipment('${esc(s.id)}')"><i class="ti ti-edit"></i>View/Edit</button></td></tr>`;
+    const uniqueSkus=new Set(s.items.map(it=>it.sku)).size;
+    return `<tr><td class="mono">${esc(s.id)}</td><td style="font-size:11px">${esc(s.vendor||'—')}</td><td>${uniqueSkus} SKU(s)</td><td><span class="pill ${statusPill[s.status]||'p-info'}">${s.status}</span></td><td>${tally}</td><td style="white-space:nowrap"><button class="btn-sm" onclick="printTallySheet('${esc(s.id)}')"><i class="ti ti-printer"></i>Print</button> <button class="btn-sm" onclick="refreshShipmentTally('${esc(s.id)}')" title="Recalculate the tally from current GRN data"><i class="ti ti-refresh"></i>Refresh</button> <button class="btn-sm" onclick="startEditExpectedShipment('${esc(s.id)}')"><i class="ti ti-edit"></i>View/Edit</button></td></tr>`;
   }).join('')}</tbody></table></div>`;
 }
 function pdfDownloadSnippet(filename,orientation){
