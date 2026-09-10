@@ -2878,9 +2878,15 @@ async function saveExpectedShipmentForm(){
 function populateExpectedSelect(){
   const sel=document.getElementById('ib-load-expected');
   if(!sel) return;
-  const open=expectedShipments.filter(s=>s.status==='expected'||s.status==='partial');
+  // 'discrepancy' status (an overage or an unexpected SKU on some earlier
+  // batch) must NOT hide the ASN here — a discrepancy is just a flag, not
+  // "done". Excluding it blocked raising the 2nd/3rd GRN for a multi-batch
+  // delivery the moment any single-line mismatch was detected on batch 1.
+  // Only a fully 'received' (everything matched, nothing outstanding)
+  // shipment should drop off this list.
+  const open=expectedShipments.filter(s=>s.status==='expected'||s.status==='partial'||s.status==='discrepancy');
   sel.innerHTML='<option value="">— None, receive ad-hoc —</option>'+
-    open.map(s=>`<option value="${esc(s.id)}">${esc(s.id)}${s.vendor?' — '+esc(s.vendor):''} (${s.items.length} SKU(s))</option>`).join('');
+    open.map(s=>{const uniqueSkus=new Set(s.items.map(it=>it.sku)).size; return `<option value="${esc(s.id)}">${esc(s.id)}${s.vendor?' — '+esc(s.vendor):''} (${uniqueSkus} SKU(s))${s.status==='discrepancy'?' ⚠':''}</option>`;}).join('');
 }
 function loadExpectedIntoGRN(){
   const id=document.getElementById('ib-load-expected').value;
@@ -2905,7 +2911,17 @@ function loadExpectedIntoGRN(){
   renderIbItemsList();
   const receivedSoFar=getReceivedSoFarByAsn(id);
   const anyPriorReceiving=Object.keys(receivedSoFar).length>0;
-  ibExpectedRemaining=s.items.map(it=>({sku:it.sku,name:it.name,variant:it.variant,remaining:Math.max(0,it.qty-(receivedSoFar[it.sku]||0))})).filter(it=>it.remaining>0);
+  // Same fix as recomputeShipmentTally(): aggregate s.items (one line per
+  // carton/box) to a single expected total per SKU BEFORE subtracting
+  // what's already been received — otherwise a partially-received SKU
+  // whose received-so-far exceeds any single line's qty (but not the
+  // SKU's true total) shows as fully outstanding on every line.
+  const expectedBySku={};
+  s.items.forEach(it=>{
+    if(!expectedBySku[it.sku]) expectedBySku[it.sku]={sku:it.sku,name:it.name,variant:it.variant,qty:0};
+    expectedBySku[it.sku].qty+=it.qty;
+  });
+  ibExpectedRemaining=Object.values(expectedBySku).map(it=>({sku:it.sku,name:it.name,variant:it.variant,remaining:Math.max(0,it.qty-(receivedSoFar[it.sku]||0))})).filter(it=>it.remaining>0);
   renderIbExpectedReference();
   toast(`${s.id} loaded — ${ibExpectedRemaining.length} SKU(s) still outstanding (see reference list below)${anyPriorReceiving?'. Earlier batch(es) already accounted for':''}. Add each item below as you physically count it.`,'s');
 }
@@ -2946,7 +2962,19 @@ function recomputeShipmentTally(s){
     return {status:s.status, summary:null, anyShortage:false, anyOverage:false};
   }
   const receivedBySku=getReceivedSoFarByAsn(s.id);
-  const summary=s.items.map(exp=>{
+  // s.items frequently has MULTIPLE lines for the same SKU — one per
+  // carton/box (an Excel-uploaded manifest lists each box's contents as
+  // its own row). Aggregate to a single expected total per SKU before
+  // comparing — otherwise a SKU's total received qty gets compared
+  // against just its FIRST line's qty (producing a false huge "over"),
+  // then deleted from the bucket, so every OTHER line for that same SKU
+  // wrongly shows 0 received / fully "short".
+  const expectedBySku={};
+  s.items.forEach(exp=>{
+    if(!expectedBySku[exp.sku]) expectedBySku[exp.sku]={sku:exp.sku,name:exp.name,qty:0};
+    expectedBySku[exp.sku].qty+=exp.qty;
+  });
+  const summary=Object.values(expectedBySku).map(exp=>{
     const got=receivedBySku[exp.sku]||0;
     delete receivedBySku[exp.sku];
     return {sku:exp.sku, name:exp.name, expected:exp.qty, received:got, diff:got-exp.qty};
