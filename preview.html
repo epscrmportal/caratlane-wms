@@ -132,6 +132,7 @@ tr:hover td{background:var(--s2)}
 .p-ga{background:var(--sbg);color:var(--st)}
 .p-gb{background:var(--wbg);color:var(--wt)}
 .p-gc{background:var(--dbg);color:var(--dt)}
+.p-closed{background:var(--s3);color:var(--t2)}
 
 /* RACK */
 .rack-wrap{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
@@ -145,6 +146,7 @@ tr:hover td{background:var(--s2)}
 .bar-f{height:100%;border-radius:3px;transition:width .3s}
 .bar-ok{background:#4C9A2A}.bar-low{background:#C6811A}.bar-out{background:#D6483F}
 .qty-r{text-align:right;color:var(--t2);font-size:10px}
+.rack-row-hit{outline:2px solid var(--gold);outline-offset:-2px;background:var(--gold-l) !important}
 
 /* PANEL */
 .panel{border:0.5px solid var(--b);border-radius:var(--rl);overflow:hidden;margin-bottom:12px;background:var(--s);box-shadow:var(--shadow-sm)}
@@ -344,6 +346,9 @@ tr:hover td{background:var(--s2)}
     </div>
   </div>
 </div>
+
+<!-- ═══ SHAREABLE ORDER TRACKING (no login required) ═══ -->
+<div id="track-screen" style="display:none;position:fixed;inset:0;background:radial-gradient(circle at 20% 15%,#2A3547 0%,var(--navy) 45%,var(--navy3) 100%);z-index:9999;align-items:center;justify-content:center;padding:20px;overflow-y:auto"></div>
 
 <div class="app-shell">
 <div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleSidebar()"></div>
@@ -1034,6 +1039,11 @@ tr:hover td{background:var(--s2)}
 <!-- ═══ RACK VIEW ═══ -->
 <div id="page-rack" class="page">
   <div class="info-box"><i class="ti ti-info-circle"></i>15 racks (A–O), 6 shelves each. Racks with no items placed yet show as available capacity.</div>
+  <div id="rack-summary-bar"></div>
+  <div class="tb">
+    <div class="sw"><i class="ti ti-search"></i><input type="text" id="rack-search" placeholder="Jump to a bin (e.g. C4), or search by SKU / product name..." oninput="filterRackView()"></div>
+    <div id="rack-search-status" style="font-size:11px;color:var(--t2);white-space:nowrap"></div>
+  </div>
   <div id="rack-view-container"></div>
 </div>
 
@@ -2606,7 +2616,8 @@ async function loadExpectedShipments(){
     expectedShipments=(data||[]).map(r=>({
       id:r.id, vendor:r.vendor, carrier:r.carrier, expectedDate:r.expected_date,
       items:r.items||[], status:r.status, notes:r.notes, createdBy:r.created_by,
-      createdAt:r.created_at, receivedAt:r.received_at, receivedSummary:r.received_summary||null
+      createdAt:r.created_at, receivedAt:r.received_at, receivedSummary:r.received_summary||null,
+      closed:!!r.closed, closedBy:r.closed_by||null, closedAt:r.closed_at||null, closeReason:r.close_reason||null
     }));
   }catch(e){ console.error('loadExpectedShipments failed:',e.message||e); }
 }
@@ -2615,7 +2626,8 @@ async function saveExpectedShipmentRow(s){
     const row={
       id:s.id, vendor:s.vendor||null, carrier:s.carrier||null, expected_date:s.expectedDate||null,
       items:s.items||[], status:s.status, notes:s.notes||null, created_by:s.createdBy||null,
-      received_at:s.receivedAt||null, received_summary:s.receivedSummary||null
+      received_at:s.receivedAt||null, received_summary:s.receivedSummary||null,
+      closed:!!s.closed, closed_by:s.closedBy||null, closed_at:s.closedAt||null, close_reason:s.closeReason||null
     };
     const {error}=await supa.from('expected_shipments').upsert(row,{onConflict:'id'});
     if(error) throw error;
@@ -3284,10 +3296,55 @@ function recomputeShipmentTally(s){
   if(anyOverage){ s.status='discrepancy'; }
   else if(anyShortage){ s.status='partial'; }
   else { s.status='received'; }
+  // An admin override always wins over the recomputed status — otherwise
+  // a stray/duplicate GRN raised against an already-closed ASN would
+  // silently reopen a discrepancy someone already signed off on. The
+  // tally numbers themselves still refresh for reference.
+  if(s.closed) s.status='closed';
   s.receivedAt=new Date().toISOString();
   s.receivedSummary=summary;
   saveExpectedShipmentRow(s);
   return {status:s.status, summary, anyShortage, anyOverage};
+}
+// Lets an admin acknowledge a genuine, confirmed discrepancy (short or
+// over vs the ASN) and close the shipment out, so it stops sitting in
+// the open Inbound Tally list and the "load expected" picker forever.
+// Requires a reason on record — this is a deliberate sign-off, not a
+// way to silently make a discrepancy disappear.
+async function closeShipmentOverride(id){
+  if(currentProfile?.role!=='admin'){ toast('Only an admin can override and close a discrepancy','w'); return; }
+  const s=expectedShipments.find(x=>x.id===id);
+  if(!s){ toast('Shipment not found','w'); return; }
+  if(s.status==='received'){ toast('This shipment already matched in full — nothing to override','w'); return; }
+  if(s.status==='closed'){ toast('Already closed','w'); return; }
+  const reason=prompt(`Close ${id} despite the discrepancy?\n\nThis stops it appearing as outstanding. Enter the reason (e.g. "Confirmed 3-unit shortage, claim raised with CaratLane DC ref #...").`);
+  if(!reason || !reason.trim()){ toast('A reason is required to close with a discrepancy','w'); return; }
+  const priorStatus=s.status;
+  s.closed=true;
+  s.closedBy=currentProfile?.full_name||'Unknown';
+  s.closedAt=new Date().toISOString();
+  s.closeReason=reason.trim();
+  s.status='closed';
+  const ok=await saveExpectedShipmentRow(s);
+  if(!ok){ s.closed=false; s.status=priorStatus; return; }
+  logAudit('CLOSE_SHIPMENT_OVERRIDE','expected_shipments',id,{status:priorStatus},{status:'closed',reason:reason.trim()});
+  renderExpShipmentsBoard();
+  populateExpectedSelect();
+  toast(`${id} closed — ${reason.trim()}`,'w');
+}
+// Undo an override, in case it was closed by mistake — puts the shipment
+// back in the open list and re-derives its real status from the tally.
+async function reopenShipmentOverride(id){
+  if(currentProfile?.role!=='admin'){ toast('Only an admin can reopen a closed shipment','w'); return; }
+  const s=expectedShipments.find(x=>x.id===id);
+  if(!s || !s.closed) return;
+  if(!confirm(`Reopen ${id}? It will go back to showing as outstanding based on its actual tally.`)) return;
+  s.closed=false; s.closedBy=null; s.closedAt=null; s.closeReason=null;
+  recomputeShipmentTally(s);
+  logAudit('REOPEN_SHIPMENT_OVERRIDE','expected_shipments',id,{status:'closed'},{status:s.status});
+  renderExpShipmentsBoard();
+  populateExpectedSelect();
+  toast(`${id} reopened`,'s');
 }
 function reconcileAgainstExpected(asn, receivedItems){
   const s=expectedShipments.find(x=>x.id.toLowerCase()===(asn||'').toLowerCase());
@@ -3315,7 +3372,8 @@ function renderExpShipmentsBoard(){
   const el=document.getElementById('exp-shipments-board');
   if(!el) return;
   if(!expectedShipments.length){ el.innerHTML='<div class="empty">No expected shipments logged yet</div>'; return; }
-  const statusPill={expected:'p-info',partial:'p-hold',received:'p-pass',discrepancy:'p-out'};
+  const statusPill={expected:'p-info',partial:'p-hold',received:'p-pass',discrepancy:'p-out',closed:'p-closed'};
+  const isAdmin=currentProfile?.role==='admin';
   el.innerHTML=`<div class="tw"><table><thead><tr><th>ASN</th><th>Vendor</th><th>Expected</th><th>Status</th><th>Tally</th><th>Action</th></tr></thead><tbody>${expectedShipments.map(s=>{
     let tally='<span style="color:var(--t3);font-size:10px">Not yet received</span>';
     if(s.receivedSummary){
@@ -3325,8 +3383,18 @@ function renderExpShipmentsBoard(){
         return `<div style="font-size:10px;color:${color}">${esc(r.sku)}: ${r.received}/${r.expected} (${label})</div>`;
       }).join('');
     }
+    if(s.closed){
+      tally+=`<div style="font-size:10px;color:var(--t2);margin-top:4px;padding-top:4px;border-top:0.5px dashed var(--b)"><i class="ti ti-lock"></i> Closed by ${esc(s.closedBy||'admin')} · ${esc(s.closeReason||'')}</div>`;
+    }
     const uniqueSkus=new Set(s.items.map(it=>it.sku)).size;
-    return `<tr><td class="mono">${esc(s.id)}</td><td style="font-size:11px">${esc(s.vendor||'—')}</td><td>${uniqueSkus} SKU(s)</td><td><span class="pill ${statusPill[s.status]||'p-info'}">${s.status}</span></td><td>${tally}</td><td style="white-space:nowrap"><button class="btn-sm" onclick="printTallySheet('${esc(s.id)}')"><i class="ti ti-printer"></i>Print</button> <button class="btn-sm" onclick="refreshShipmentTally('${esc(s.id)}')" title="Recalculate the tally from current GRN data"><i class="ti ti-refresh"></i>Refresh</button> <button class="btn-sm" onclick="startEditExpectedShipment('${esc(s.id)}')"><i class="ti ti-edit"></i>View/Edit</button></td></tr>`;
+    // Admin-only: a genuinely confirmed discrepancy (short or over vs the
+    // ASN) can be signed off and closed so it stops sitting in the open
+    // list forever — reopenable if it was closed by mistake.
+    const overrideBtn=isAdmin&&(s.status==='partial'||s.status==='discrepancy')
+      ?` <button class="btn-sm" onclick="closeShipmentOverride('${esc(s.id)}')" title="Acknowledge the discrepancy and close this shipment" style="color:var(--dt)"><i class="ti ti-lock"></i>Override & Close</button>`:'';
+    const reopenBtn=isAdmin&&s.closed
+      ?` <button class="btn-sm" onclick="reopenShipmentOverride('${esc(s.id)}')" title="Reopen — undo the override"><i class="ti ti-lock-open"></i>Reopen</button>`:'';
+    return `<tr><td class="mono">${esc(s.id)}</td><td style="font-size:11px">${esc(s.vendor||'—')}</td><td>${uniqueSkus} SKU(s)</td><td><span class="pill ${statusPill[s.status]||'p-info'}">${s.status}</span></td><td>${tally}</td><td style="white-space:nowrap"><button class="btn-sm" onclick="printTallySheet('${esc(s.id)}')"><i class="ti ti-printer"></i>Print</button> <button class="btn-sm" onclick="refreshShipmentTally('${esc(s.id)}')" title="Recalculate the tally from current GRN data"><i class="ti ti-refresh"></i>Refresh</button> <button class="btn-sm" onclick="startEditExpectedShipment('${esc(s.id)}')"><i class="ti ti-edit"></i>View/Edit</button>${overrideBtn}${reopenBtn}</td></tr>`;
   }).join('')}</tbody></table></div>`;
 }
 function pdfDownloadSnippet(filename,orientation){
@@ -3967,7 +4035,7 @@ async function loadOrders(){
       id:r.id, customerName:r.customer_name, address:r.address, pincode:r.pincode, phone:r.phone,
       priority:r.priority, method:r.method, items:r.items||[], assignedPicker:r.assigned_picker,
       status:r.status, notes:r.notes, createdBy:r.created_by, createdAt:r.created_at,
-      assignedAt:r.assigned_at, pickedTaskId:r.picked_task_id
+      assignedAt:r.assigned_at, pickedTaskId:r.picked_task_id, trackingToken:r.tracking_token||null
     }));
   }catch(e){ console.error('loadOrders failed:',e.message||e); }
 }
@@ -7310,6 +7378,7 @@ function getUnplacedSKUs(){
 function renderRack(){
   const container=document.getElementById('rack-view-container');
   if(!container) return;
+  const canEditBin=getPerms().canEdit;
   const byRack={};
   RACK_LETTERS.forEach(r=>byRack[r]={});
   SKUS.forEach(s=>{
@@ -7334,6 +7403,7 @@ function renderRack(){
     if(!homeByBin[key]) homeByBin[key]=[];
     homeByBin[key].push(s);
   });
+  let totalOccupiedBins=0;
   const rackHTML=RACK_LETTERS.map(r=>{
     const data=byRack[r]||{};
     // Every rack now always shows its full SHELVES_PER_RACK shelves —
@@ -7341,6 +7411,7 @@ function renderRack(){
     // "Available" slot instead of just vanishing. A shelf that's out of
     // stock isn't the same as a shelf nobody can ever use again.
     const occupiedCount=Array.from({length:SHELVES_PER_RACK},(_,i)=>String(i+1)).filter(sh=>data[sh]&&data[sh].length).length;
+    totalOccupiedBins+=occupiedCount;
     const rows=Array.from({length:SHELVES_PER_RACK},(_,i)=>String(i+1)).map(sh=>{
       const items=data[sh];
       if(items && items.length){
@@ -7362,7 +7433,7 @@ function renderRack(){
           // showing an indistinguishable "Stitched Denim" with no way to
           // tell which size or gender it actually was.
           const nameSuffix=` <span style="color:var(--t3);font-weight:400">(${esc(it.sku)}${it.variant?' · '+esc(it.variant):''})</span>`;
-          return`<div class="rack-row"><span class="shelf-l">${shelfLabel}</span><div><div style="font-size:11px;font-weight:600;margin-bottom:3px">${lbl}${nameSuffix}</div><div class="bar-bg"><div class="bar-f ${bc}" style="width:${pct}%"></div></div></div><span class="qty-r">${it.qty}u${held>0?`<div style="font-size:9px;color:var(--wt);font-weight:600">${held} held</div>`:''}</span></div>`;
+          return`<div class="rack-row" data-bin="${r}${sh}"><span class="shelf-l">${shelfLabel}</span><div><div style="font-size:11px;font-weight:600;margin-bottom:3px">${lbl}${nameSuffix}</div><div class="bar-bg"><div class="bar-f ${bc}" style="width:${pct}%"></div></div></div><span class="qty-r">${it.qty}u${held>0?`<div style="font-size:9px;color:var(--wt);font-weight:600">${held} held</div>`:''}</span></div>`;
         }).join('');
       }
       // AVAILABLE — nothing currently stocked here. Shown distinctly
@@ -7371,10 +7442,11 @@ function renderRack(){
       // brand new.
       const homeSkus=homeByBin[r+'-'+sh]||[];
       const hint=homeSkus.length?`Was home to ${homeSkus.map(s=>esc(s.sku)).join(', ')}`:'Never assigned';
-      return `<div class="rack-row" style="background:var(--sbg)">
+      const assignBtn=canEditBin?`<button title="Assign a product to this bin" onclick="openAssignBin('${r}','${sh}')" style="width:34px;height:24px;border:none;border-radius:5px;background:var(--st);color:#fff;cursor:pointer;font-size:13px;line-height:1"><i class="ti ti-plus"></i></button>`:'';
+      return `<div class="rack-row" data-bin="${r}${sh}" style="background:var(--sbg)">
         <span class="shelf-l">${r}${sh}</span>
         <div><div style="font-size:11px;font-weight:700;color:var(--st)">Available</div><div style="font-size:9px;color:var(--t3)">${hint}</div></div>
-        <span class="qty-r"><button title="Assign a product to this bin" onclick="openAssignBin('${r}','${sh}')" style="width:34px;height:24px;border:none;border-radius:5px;background:var(--st);color:#fff;cursor:pointer;font-size:13px;line-height:1"><i class="ti ti-plus"></i></button></span>
+        <span class="qty-r">${assignBtn}</span>
       </div>`;
     }).join('');
     // Each rack is its own single bay (physically 1 rack = 1 bay, 6
@@ -7392,6 +7464,56 @@ function renderRack(){
       </div>
     </div>`:'';
   container.innerHTML=rackHTML+unplacedHTML;
+  renderRackSummaryBar(totalOccupiedBins);
+  filterRackView();
+}
+// Warehouse-wide occupancy — each rack card already shows its own
+// occupied/available count, but with 15 racks there was no single total
+// to answer "how full are we overall" without scrolling through all of
+// them and adding it up by hand.
+function renderRackSummaryBar(totalOccupiedBins){
+  const el=document.getElementById('rack-summary-bar');
+  if(!el) return;
+  const totalBins=RACK_LETTERS.length*SHELVES_PER_RACK;
+  const available=totalBins-totalOccupiedBins;
+  const pct=totalBins?Math.round(totalOccupiedBins/totalBins*100):0;
+  el.innerHTML=`<div class="sgrid" style="margin-bottom:14px">
+    <div class="sc"><div class="sl"><i class="ti ti-building-warehouse"></i>Total Bins</div><div class="sv">${totalBins}</div></div>
+    <div class="sc"><div class="sl" style="color:var(--dt)"><i class="ti ti-box"></i>Occupied</div><div class="sv" style="color:var(--dt)">${totalOccupiedBins}</div></div>
+    <div class="sc"><div class="sl" style="color:var(--st)"><i class="ti ti-circle-check"></i>Available</div><div class="sv" style="color:var(--st)">${available}</div></div>
+    <div class="sc"><div class="sl"><i class="ti ti-percentage"></i>Utilization</div><div class="sv">${pct}%</div></div>
+  </div>`;
+}
+// Rack View search — jump to a specific bin (e.g. "C4"), or filter by
+// SKU / product name across all 90 bins, instead of scrolling through
+// all 15 racks by hand. Runs as a highlight pass over the already
+// rendered rows rather than a re-render, so it's cheap to call on every
+// keystroke and safe to re-apply after any renderRack() refresh.
+function filterRackView(){
+  const input=document.getElementById('rack-search');
+  const statusEl=document.getElementById('rack-search-status');
+  const container=document.getElementById('rack-view-container');
+  if(!input||!container) return;
+  const raw=(input.value||'').trim();
+  const q=raw.toLowerCase();
+  const rows=container.querySelectorAll('.rack-row');
+  rows.forEach(r=>r.classList.remove('rack-row-hit'));
+  if(!q){ if(statusEl) statusEl.textContent=''; return; }
+  // A bin-code query ("C4", "c-4", "C 4") matches the shelf's data-bin
+  // exactly (order/spacing-insensitive); anything else does a substring
+  // match against the row's visible text (SKU, product name, variant).
+  const binMatch=q.replace(/[^a-z0-9]/g,'');
+  const hits=[];
+  rows.forEach(row=>{
+    const bin=(row.dataset.bin||'').toLowerCase();
+    const text=row.textContent.toLowerCase();
+    if(bin===binMatch || text.includes(q)){
+      row.classList.add('rack-row-hit');
+      hits.push(row);
+    }
+  });
+  if(statusEl) statusEl.textContent=hits.length?`${hits.length} match${hits.length===1?'':'es'}`:'No matches';
+  if(hits.length) hits[0].scrollIntoView({behavior:'smooth',block:'center'});
 }
 
 // ── Bin reassignment ──────────────────────────────────────────────────
@@ -7594,7 +7716,23 @@ async function lookupOrderStatus(){
       </div>
     </div>`;
   }
-  el.innerHTML=`<div class="panel"><div class="ph"><i class="ti ti-package"></i>Order ${esc(oid)}</div><div class="pb">${rows}</div></div>`;
+  const shareBtn=(order&&order.trackingToken)?`<button class="btn-sm" style="margin-left:auto" onclick="copyTrackingLink('${esc(order.id)}')" title="Copy a no-login link anyone can use to view this order's status"><i class="ti ti-link"></i>Copy tracking link</button>`:'';
+  el.innerHTML=`<div class="panel"><div class="ph"><i class="ti ti-package"></i>Order ${esc(oid)}${shareBtn}</div><div class="pb">${rows}</div></div>`;
+}
+// Copies a no-login shareable link (?track=<random token>) that opens a
+// standalone, read-only tracking page for this one order — see
+// renderTrackingPage(). The token is looked up via a SECURITY DEFINER
+// Supabase function, so this never exposes any other order or requires
+// weakening RLS on the underlying tables.
+function copyTrackingLink(orderId){
+  const order=orders.find(o=>o.id===orderId);
+  if(!order||!order.trackingToken){ toast('No tracking link available for this order yet — run the tracking-link migration first','w'); return; }
+  const url=`${location.origin}${location.pathname}?track=${order.trackingToken}`;
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(url).then(()=>toast('Tracking link copied to clipboard','s')).catch(()=>{ window.prompt('Copy this tracking link:',url); });
+  } else {
+    window.prompt('Copy this tracking link:',url);
+  }
 }
 
 // REPORTS
@@ -9925,6 +10063,103 @@ async function bootWMS(){
   initBarcodeScanner();
   updateOfflineQueueBadge();
   flushOfflineQueue();
+}
+// ── Shareable order tracking (no login) ─────────────────────────────────
+// Mirrored here for parity with index.html/app.js. Preview mode boots
+// straight into previewBoot() with local sample data and never calls
+// initAuth(), so there's no login gate for a ?track= link to bypass —
+// this function isn't wired into preview.html's bootstrap, it just keeps
+// the function inventory identical across all three files.
+async function renderTrackingPage(token){
+  document.getElementById('auth-screen').style.display='none';
+  const el=document.getElementById('track-screen');
+  el.style.display='flex';
+  el.innerHTML='<div class="auth-card" style="max-width:480px;width:100%"><div class="empty">Loading order status…</div></div>';
+  try{
+    const {data,error}=await supa.rpc('get_order_tracking',{p_token:token});
+    if(error) throw error;
+    if(!data||!data.order){
+      el.innerHTML=`<div class="auth-card" style="max-width:480px;width:100%">
+        <div class="auth-logo"><div class="auth-gem">CL</div><div><div class="auth-title">CaratLane WMS</div><div class="auth-sub">Order Tracking</div></div></div>
+        <div class="empty">This tracking link is invalid or no longer active. Please check the link or contact CaratLane for an updated one.</div>
+      </div>`;
+      return;
+    }
+    renderTrackingResult(data);
+  }catch(e){
+    console.error('Tracking lookup failed:',e.message||e);
+    el.innerHTML=`<div class="auth-card" style="max-width:480px;width:100%">
+      <div class="auth-logo"><div class="auth-gem">CL</div><div><div class="auth-title">CaratLane WMS</div><div class="auth-sub">Order Tracking</div></div></div>
+      <div class="empty">Couldn't load this order right now. Please try again shortly.</div>
+    </div>`;
+  }
+}
+function renderTrackingResult(data){
+  const o=data.order||{}, hist=data.history||[], events=data.events||[];
+  const stageIcon={pick:'ti-scan',packed:'ti-box',dispatched:'ti-truck-delivery',exception:'ti-alert-triangle'};
+  const stageLabel={pick:'Picking complete',packed:'Packing complete',dispatched:'Dispatched',exception:'Exception / QC'};
+  const stageColor={pick:'var(--st)',packed:'var(--gold)',dispatched:'var(--navy)',exception:'var(--dt)'};
+  const evMeta={
+    tote_scanned:{icon:'ti-package',bg:'#6a1b9a',label:'Tote bag scanned'},
+    shelf_scanned:{icon:'ti-map-pin',bg:'var(--it)',label:'Shelf location scanned'},
+    item_scanned:{icon:'ti-barcode',bg:'var(--st)',label:'Item scanned'},
+    pack_started:{icon:'ti-player-play',bg:'var(--gold)',label:'Packing started'},
+    pack_item_verified:{icon:'ti-check',bg:'var(--st)',label:'Item verified (packing)'}
+  };
+  const timeline=[];
+  timeline.push({sortTs:o.created_at?new Date(o.created_at).getTime():0,
+    ts:o.created_at?new Date(o.created_at).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'',
+    iconBg:'var(--t3)',icon:'ti-clipboard-list',title:'Order created',
+    sub:`${(o.items||[]).length} SKU(s) · ${o.priority||''} · ${o.method||''}${o.customer_name?' · '+esc(o.customer_name):''}`,
+    meta:o.created_by?'Created by '+esc(o.created_by):''});
+  if(o.assigned_picker){
+    timeline.push({sortTs:o.assigned_at?new Date(o.assigned_at).getTime():0.5,
+      ts:o.assigned_at?new Date(o.assigned_at).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'',
+      iconBg:'var(--navy)',icon:'ti-user-check',title:'Assigned to picker',sub:esc(o.assigned_picker),meta:''});
+  }
+  if(o.status==='cancelled'){
+    timeline.push({sortTs:Number.MAX_SAFE_INTEGER,ts:'',iconBg:'var(--dt)',icon:'ti-x',title:'Order cancelled',sub:'',meta:''});
+  }
+  hist.forEach(h=>{
+    let hSub=h.detail||'';
+    if(h.type==='dispatched') hSub+=` · AWB: ${h.awb||'—'} · Courier: ${h.courier_partner||'—'}`;
+    timeline.push({
+      sortTs:h.created_at?new Date(h.created_at).getTime():0, ts:h.ts||'',
+      iconBg:stageColor[h.type]||'var(--t3)', icon:stageIcon[h.type]||'ti-circle',
+      title:stageLabel[h.type]||h.type, sub:esc(hSub), meta:''
+    });
+  });
+  events.forEach(e=>{
+    const m=evMeta[e.event_type]||{icon:'ti-circle',bg:'var(--t3)',label:e.event_type};
+    const d=e.detail||{};
+    let sub='';
+    if(e.event_type==='tote_scanned') sub=`Tote ${esc(d.toteId||'')}`;
+    else if(e.event_type==='shelf_scanned') sub=`Rack ${esc(d.rack||'')} · Shelf ${esc(d.shelf||'')}`;
+    else if(e.event_type==='item_scanned') sub=`${esc(d.sku||'')}${d.manual?' (manual entry)':' (scanned)'}${d.qty?' × '+d.qty:''}`;
+    else if(e.event_type==='pack_item_verified') sub=`${esc(d.sku||'')} verified`;
+    else if(e.event_type==='pack_started') sub='Timer started';
+    timeline.push({sortTs:e.created_at?new Date(e.created_at).getTime():0,
+      ts:e.created_at?new Date(e.created_at).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',second:'2-digit'}):'',
+      iconBg:m.bg, icon:m.icon, title:m.label, sub, meta:e.actor?esc(e.actor):''});
+  });
+  timeline.sort((a,b)=>a.sortTs-b.sortTs);
+  const rows=timeline.map(t=>`
+    <div style="display:flex;gap:12px;padding:12px 0;border-bottom:0.5px solid var(--b)">
+      <div style="width:32px;height:32px;border-radius:50%;background:${t.iconBg};color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="ti ${t.icon}"></i></div>
+      <div style="flex:1">
+        <div style="font-weight:700;font-size:12px">${esc(t.title)}</div>
+        ${t.sub?`<div style="font-size:11px;color:var(--t2);margin-top:2px">${t.sub}</div>`:''}
+        <div style="font-size:10px;color:var(--t3);margin-top:2px">${esc(t.ts)}${t.meta?' · '+t.meta:''}</div>
+      </div>
+    </div>`).join('');
+  const statusLabel={unassigned:'Unassigned',assigned:'Assigned to picker',picked:'Picked',packed:'Packed — awaiting dispatch',dispatched:'Dispatched',cancelled:'Cancelled'};
+  const el=document.getElementById('track-screen');
+  el.innerHTML=`<div class="auth-card" style="max-width:480px;width:100%;max-height:90vh;overflow-y:auto">
+    <div class="auth-logo"><div class="auth-gem">CL</div><div><div class="auth-title">Order ${esc(o.id||'')}</div><div class="auth-sub">${esc(statusLabel[o.status]||o.status||'')}</div></div></div>
+    ${o.address?`<div style="font-size:11px;color:var(--t2);margin-bottom:10px">${esc(o.customer_name||'')}${o.customer_name?' · ':''}${esc(o.address||'')}${o.pincode?' — '+esc(o.pincode):''}</div>`:''}
+    <div>${rows||'<div class="empty">No activity recorded yet</div>'}</div>
+    <div style="margin-top:16px;text-align:center;font-size:10px;color:var(--t3)">CaratLane WMS · EPS Worldwide Integrated Logistics</div>
+  </div>`;
 }
 async function previewBoot(){
   window.saveInv=async function(){};
