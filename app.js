@@ -571,11 +571,31 @@ function renderDispatchSameDayAlert(){
     </div>
   `;
 }
-function showClearDataModal(){
+// A stale/missing backup blocks Clear All Data outright — the CLEAR
+// confirm phrase alone only protects against a careless click, not
+// against an admin genuinely meaning to clear without a safety net.
+// 24h keeps the gate tight (a "recent" backup, not just "some" backup)
+// while still being easy to satisfy: Download Full Backup, then clear.
+const CLEAR_DATA_BACKUP_MAX_AGE_HOURS=24;
+function hoursSinceLastBackup(info){
+  if(!info||!info.lastBackupAt) return Infinity;
+  return (Date.now()-new Date(info.lastBackupAt).getTime())/3600000;
+}
+async function showClearDataModal(){
   if(currentProfile?.role!=='admin'){ toast('Only an admin can clear WMS data','w'); return; }
   document.getElementById('dropdown-menu').style.display='none';
+  const info=await getLastBackupInfo();
+  const hrs=hoursSinceLastBackup(info);
+  if(hrs>CLEAR_DATA_BACKUP_MAX_AGE_HOURS){
+    toast(info&&info.lastBackupAt
+      ? `Blocked for safety — last backup was ${Math.round(hrs)}h ago. Download a fresh backup (More menu) before clearing data.`
+      : 'Blocked for safety — no backup has ever been taken. Download a full backup (More menu) before clearing data.','w');
+    return;
+  }
   const overlay=document.getElementById('clear-modal-overlay');
   overlay.style.display='flex';
+  const statusEl=document.getElementById('clear-modal-backup-status');
+  if(statusEl) statusEl.innerHTML=`<i class="ti ti-shield-check" style="color:var(--st)"></i> Backup on file from ${Math.round(hrs)===0?'less than an hour':Math.round(hrs)+'h'} ago${info.lastBackupBy?' (by '+esc(info.lastBackupBy)+')':''}`;
   document.getElementById('clear-confirm-input').value='';
   document.getElementById('clear-confirm-btn').disabled=true;
   document.getElementById('clear-confirm-btn').style.background='var(--b)';
@@ -589,7 +609,7 @@ function closeClearModal(){
 function validateClearInput(){
   const val=document.getElementById('clear-confirm-input').value.trim();
   const btn=document.getElementById('clear-confirm-btn');
-  const valid=val==='CLEAR';
+  const valid=val==='DELETE ALL DATA';
   btn.disabled=!valid;
   btn.style.background=valid?'var(--dt)':'var(--b)';
   btn.style.color=valid?'#fff':'var(--t3)';
@@ -597,6 +617,15 @@ function validateClearInput(){
 }
 async function executeFullClear(){
   if(currentProfile?.role!=='admin'){ toast('Only an admin can clear WMS data','w'); closeClearModal(); return; }
+  // Re-check backup freshness at execution time too (not just when the
+  // modal opened) — defense-in-depth against a direct console call, and
+  // against someone leaving the modal open past the 24h window.
+  const info=await getLastBackupInfo();
+  if(hoursSinceLastBackup(info)>CLEAR_DATA_BACKUP_MAX_AGE_HOURS){
+    toast('Blocked for safety — no backup on file from the last 24h. Download a fresh backup first.','w');
+    closeClearModal();
+    return;
+  }
   if(!rateLimit('clear',10000)){toast('Please wait before trying again','w');return;}
   logAudit('CLEAR_ALL_DATA','system',null,null,{clearedBy:currentProfile?.full_name||'Unknown',ts:new Date().toISOString()});
   // Clear localStorage
