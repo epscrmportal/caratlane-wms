@@ -1606,6 +1606,68 @@ tr:hover td{background:var(--s2)}
 <div id="page-sop" class="page">
   <div class="stitle">EPS-WH-SOP-001 v1.0 — Full SOP quick reference (all 7 sections)</div>
 
+  <div class="info-box"><i class="ti ti-info-circle"></i>New here, or not sure where to click? Start with <b>Quick Help</b> below — it walks through every screen in this system in plain language. §0–§7 further down are the formal warehouse SOP (the physical process CaratLane requires) — Quick Help is how to actually operate the software that supports it.</div>
+
+  <div class="sop-section">
+    <div class="sop-head" onclick="toggleSop(this)">
+      <div class="sop-title"><i class="ti ti-help-circle"></i>Quick Help — how to use this WMS (start here)</div>
+      <i class="ti ti-chevron-down chevron open"></i>
+    </div>
+    <div class="sop-body open">
+      <p style="font-size:12px;line-height:1.7;margin-bottom:10px">This system is organised the same way as the sidebar on the left: <b>Overview</b>, <b>Operations</b> (day-to-day warehouse work), <b>Inventory</b>, <b>Insights</b> (reports/analytics), and <b>Reference &amp; Admin</b>. If you're stuck mid-task, find the matching screen below — it explains what it's for and how to do the thing you're trying to do. Screens/buttons marked <span class="pill p-info" style="font-size:9px">role-restricted</span> only appear for certain roles (Admin, Supervisor, etc.) — if you can't see something mentioned here, you likely don't have that permission; ask your supervisor.</p>
+
+      <div style="font-size:11px;font-weight:700;color:var(--t2);margin:14px 0 6px;text-transform:uppercase;letter-spacing:.5px">Top bar (every screen)</div>
+      <table class="sop-table"><thead><tr><th>What you see</th><th>What it does</th></tr></thead><tbody>
+        <tr><td><i class="ti ti-cloud"></i> Sync status (top right)</td><td>Shows whether your changes are saving to the cloud. If it ever says <b>Offline</b> or <b>Error</b> instead of connected, your recent actions may not be saved yet — don't close the tab; wait for it to reconnect, or tell your supervisor if it stays stuck.</td></tr>
+        <tr><td><i class="ti ti-bell"></i> Bell icon</td><td>Click for a dropdown of everything needing attention right now: out-of-stock SKUs, low-stock SKUs, and orders packed but not yet dispatched. Click any line to jump straight to it.</td></tr>
+        <tr><td>Red badge on <b>Inbound</b> tab</td><td>Count of exceptions + low-stock SKUs. Click it to jump straight to the Alerts &amp; Exceptions panel on Analytics &amp; Compliance.</td></tr>
+        <tr><td>User menu (top right)</td><td>Shows your name and role. From here: Audit Trail, Manage Users (Admin only), and Sign Out.</td></tr>
+        <tr><td>"More" button (bottom of sidebar)</td><td>Only real option here is <b>Clear All Data</b> — <span style="color:var(--dt);font-weight:700">Admin only, irreversible, wipes every GRN/pick/pack/dispatch/return/count record and resets stock to zero</span>. This is for testing/reset only — never use it on live data without being absolutely certain.</td></tr>
+      </tbody></table>
+
+      <div style="font-size:11px;font-weight:700;color:var(--t2);margin:16px 0 6px;text-transform:uppercase;letter-spacing:.5px">Overview</div>
+      <table class="sop-table"><thead><tr><th>Screen</th><th>What it's for</th><th>If you're stuck</th></tr></thead><tbody>
+        <tr><td><b>Dashboard</b></td><td>Landing page — today's KPI numbers, low/out-of-stock alerts, recent movements, a rack-occupancy snapshot, and banners for same-day dispatch and aging orders.</td><td>This is a summary only — nothing is editable here. To act on something (e.g. a low-stock SKU), click it or go to the relevant tab (Inventory, Orders, etc.).</td></tr>
+      </tbody></table>
+
+      <div style="font-size:11px;font-weight:700;color:var(--t2);margin:16px 0 6px;text-transform:uppercase;letter-spacing:.5px">Operations (day-to-day warehouse work)</div>
+      <table class="sop-table"><thead><tr><th>Screen</th><th>What it's for</th><th>How to do the common task</th></tr></thead><tbody>
+        <tr><td><b>Inbound</b> (§1)</td><td>Log incoming shipments (ASNs) and turn them into GRNs when goods physically arrive.</td><td>1) <b>Log an Expected Shipment</b> first (vendor, carrier, expected date, item list — or upload an Excel manifest) so it shows on the Inbound Tally board. 2) When goods arrive, pick that ASN from "load expected" (or receive ad-hoc without one), and add each item <i>as you physically count it</i> — don't pre-fill the full expected list. 3) Submit to create the GRN, which assigns BIN locations.<br><br>The Inbound Tally board shows every shipment's status: <b>Expected</b> (not yet received), <b>Partial</b> (short vs ASN — more may still be coming), <b>Discrepancy</b> (over vs ASN, or an unexpected SKU), <b>Received</b> (fully matched), or <b>Closed</b> (an Admin signed off on a confirmed shortage/overage — see below). Use <b>Refresh</b> to recalculate a stale tally, <b>Print</b> for a physical tally sheet, <b>View/Edit</b> to fix the expected item list.<br><br><span class="pill p-info" style="font-size:9px">role-restricted</span> If a shortage/overage is confirmed real (not a counting error) and nothing more is coming, an <b>Admin</b> can click <b>Override &amp; Close</b> on that shipment, type a reason, and it drops off the open list for good instead of nagging forever. <b>Reopen</b> undoes that if it was closed by mistake.</td></tr>
+        <tr><td><b>Orders</b></td><td>Create customer orders and assign them to pickers.</td><td>Create one order at a time via the form, or use <b>Bulk Import via CSV</b> for many at once. New orders start <b>Unassigned</b> — assign a picker to move them into the pick queue. Only <b>Unassigned</b> orders can be edited (unassign first if you need to fix one that's already assigned). Orders sitting unassigned/unpicked too long show an aging warning on the Dashboard.</td></tr>
+        <tr><td><b>Picking</b> (§2)</td><td>Where pickers work through their assigned orders.</td><td>Pickers see only their own assigned queue; Admin/Supervisor see everyone's. Picking is scan-gated in a strict order: scan the <b>tote</b> first, then the <b>shelf/BIN label</b>, then the <b>item SKU</b> — you cannot skip ahead. A scan mismatch means <b>stop, don't pick</b> — it's flagging a real location or product error.</td></tr>
+        <tr><td><b>Packing</b> (§3)</td><td>Verify and pack a picked order before it ships.</td><td>Scan the <b>tote barcode</b> to auto-open the matching order — this replaces hunting for the right order manually. Verify every item by scan, record packaging materials and box weight/dimensions, then print the packing slip. Order moves to the Dispatch queue automatically.</td></tr>
+        <tr><td><b>Dispatch</b> (§3 Stage D)</td><td>Hand packed orders off to the courier.</td><td>Stage packed orders by zone, enter the courier partner and AWB number, and mark dispatched. All orders packed today must be dispatched the same day (EOD rule: Picked = Packed = Dispatched) — the Dashboard's same-day banner flags anything still pending.</td></tr>
+        <tr><td><b>Returns</b> (§4)</td><td>Process RMA/RTO returns coming back from customers/courier.</td><td>Log the return against its RMA/RTO reference, grade the item using the QC grading guide (Grade A/B/C — see §4 below), then restock Grade A items to a BIN. Grade B/C hold for a CaratLane decision — don't restock those yourself.</td></tr>
+        <tr><td><b>Mobile Dashboard</b></td><td>The scan-driven picking/packing interface built for handheld scanners (e.g. HT20 Pro) on the warehouse floor.</td><td>Works the same tote→shelf→item scan order as desktop Picking. If you lose signal mid-scan, keep working — scans queue locally and sync automatically once you're back online; you don't need to redo anything.</td></tr>
+      </tbody></table>
+
+      <div style="font-size:11px;font-weight:700;color:var(--t2);margin:16px 0 6px;text-transform:uppercase;letter-spacing:.5px">Inventory</div>
+      <table class="sop-table"><thead><tr><th>Screen</th><th>What it's for</th><th>How to do the common task</th></tr></thead><tbody>
+        <tr><td><b>Inventory</b></td><td>The full SKU catalog — search, filter, and edit stock.</td><td>Search/filter by category or stock status. The <b>BIN</b> column is editable (click it to split one SKU across multiple bins with an explicit qty per row — at least one row must be &gt;0; to zero out a SKU entirely, use <b>Adjust Qty</b> instead, not the bin editor). <b>Add product</b> creates a brand-new SKU. Past snapshots are kept in Version History at the bottom.</td></tr>
+        <tr><td><b>Rack View</b></td><td>Visual map of all 15 racks (A–O) × 6 shelves = 90 physical bins.</td><td>Occupied bins show the product, quantity, and a stock-level bar. Empty bins show <b>Available</b> — <span class="pill p-info" style="font-size:9px">role-restricted</span> click the <b>+</b> button to hand that bin to an out-of-stock SKU as its new default location, or to a brand-new product. Use the <b>search box</b> above the racks to jump straight to a bin code (e.g. "C4") or find a SKU/product by name instead of scrolling all 90 bins. The summary bar at the top shows total/occupied/available bins and overall utilization %.</td></tr>
+        <tr><td><b>Inventory Count</b></td><td>Physical stock counts (cycle counts) reconciled against the system.</td><td>Run a Reconciliation Count to compare system quantity vs what you physically counted. Past counts are listed below for reference.</td></tr>
+        <tr><td><b>Label Printer</b></td><td>Print barcode labels — for SKUs, shelf/BIN locations, and tote bags.</td><td>Search or filter to find what you need, pick a label size, and print. Shelf and tote labels are what picking/packing scan against, so reprint immediately if one gets damaged.</td></tr>
+      </tbody></table>
+
+      <div style="font-size:11px;font-weight:700;color:var(--t2);margin:16px 0 6px;text-transform:uppercase;letter-spacing:.5px">Insights (reports &amp; analytics)</div>
+      <table class="sop-table"><thead><tr><th>Screen</th><th>What it's for</th><th>How to do the common task</th></tr></thead><tbody>
+        <tr><td><b>Order Status</b></td><td>Look up any single order's full history — a customer-service / "where's my order" tool.</td><td>Type or scan the Order ID (or click a Recent Order chip) to see its complete timeline: created, assigned, every tote/shelf/item scan, packed, dispatched, any exceptions. Click <b>Copy tracking link</b> to copy a link that opens this same timeline <i>without needing to log in</i> — useful for sharing an order's status with CaratLane directly.</td></tr>
+        <tr><td><b>Reports</b></td><td>Weekly/monthly operational reports, including a full formatted Monthly Master Report (Excel, with charts) and the CaratLane MIS email.</td><td>Download the Monthly Master Report for a given month. In the MIS email panel, set the "send to"/CC addresses and either send immediately or turn on auto-send every Monday at 10:00 AM.</td></tr>
+        <tr><td><b>Analytics &amp; Compliance</b></td><td>The Alerts &amp; Exceptions panel the bell icon and Inbound badge both link to, plus ABC analysis, low-stock list, performance metrics, cycle times, and the compliance log.</td><td>This is where to actually resolve what the bell/badge are warning about — scroll to Alerts &amp; Exceptions for the live list.</td></tr>
+        <tr><td><b>Finance &amp; Capacity</b></td><td>Billing (packaging charges, prorated storage) and warehouse-wide rack capacity.</td><td>Use this for CaratLane billing figures and to see overall rack utilization across the whole warehouse at once.</td></tr>
+      </tbody></table>
+
+      <div style="font-size:11px;font-weight:700;color:var(--t2);margin:16px 0 6px;text-transform:uppercase;letter-spacing:.5px">Reference &amp; Admin</div>
+      <table class="sop-table"><thead><tr><th>Screen</th><th>What it's for</th></tr></thead><tbody>
+        <tr><td><b>SOP Reference</b></td><td>This page — Quick Help (above) for using the software, §0–§7 (below) for the formal warehouse process CaratLane requires.</td></tr>
+        <tr><td><b>Audit Trail</b> <span class="pill p-info" style="font-size:9px">Admin/Supervisor</span></td><td>Every consequential action in the system, logged with who/when/what — bin reassignments, discrepancy overrides, voided GRNs, and more. Use this to answer "who changed this and when."</td></tr>
+        <tr><td><b>Users</b> <span class="pill p-info" style="font-size:9px">Admin only</span></td><td>Manage staff accounts and roles. Each role (Admin, Supervisor, Picker, Packer, Viewer, Packaging Viewer) sees a different set of tabs and can/can't edit different things — if a teammate is missing a button mentioned in this guide, check their role here first.</td></tr>
+      </tbody></table>
+
+      <div style="margin-top:14px;padding:10px 12px;background:var(--wbg);border-radius:8px;font-size:11px;color:var(--wt);line-height:1.6"><i class="ti ti-alert-triangle"></i> Still stuck after checking here? Don't guess on anything that touches stock quantities, dispatch, or a discrepancy override — ask your Supervisor or Admin. Getting it wrong is far more work to undo than asking a quick question.</div>
+    </div>
+  </div>
+
   <div class="sop-section">
     <div class="sop-head" onclick="toggleSop(this)">
       <div class="sop-title"><i class="ti ti-file-description"></i>§0 — Purpose, scope &amp; key definitions</div>
