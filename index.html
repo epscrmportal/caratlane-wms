@@ -401,7 +401,10 @@ tr:hover td{background:var(--s2)}
 
 <!-- Dropdown Menu (More) -->
 <div id="dropdown-menu" style="display:none;position:fixed;background:var(--s);border:0.5px solid var(--b);border-radius:10px;min-width:200px;z-index:2000;box-shadow:var(--shadow-lg);bottom:16px;left:16px">
-  <div onclick="showClearDataModal();toggleMenu()" style="padding:12px 16px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--dt);white-space:nowrap;transition:all 0.2s;font-weight:600;border-radius:10px" onmouseover="this.style.backgroundColor='var(--dbg)'" onmouseout="this.style.backgroundColor='transparent'">
+  <div id="backup-menu-item" onclick="downloadFullBackup();toggleMenu()" style="padding:12px 16px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--t);white-space:nowrap;transition:all 0.2s;font-weight:600;border-radius:10px" onmouseover="this.style.backgroundColor='var(--dbg)'" onmouseout="this.style.backgroundColor='transparent'">
+    <i class="ti ti-download"></i>Download Full Backup
+  </div>
+  <div id="clear-data-menu-item" onclick="showClearDataModal();toggleMenu()" style="padding:12px 16px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--dt);white-space:nowrap;transition:all 0.2s;font-weight:600;border-radius:10px" onmouseover="this.style.backgroundColor='var(--dbg)'" onmouseout="this.style.backgroundColor='transparent'">
     <i class="ti ti-trash"></i>Clear All Data
   </div>
 </div>
@@ -500,6 +503,7 @@ tr:hover td{background:var(--s2)}
 <!-- ═══ DASHBOARD ═══ -->
 <div id="page-dashboard" class="page active">
   <div id="same-day-dispatch-banner"></div>
+  <div id="backup-reminder-banner"></div>
   <div id="order-aging-banner"></div>
   <div class="sgrid" id="stat-cards"></div>
   <div class="fg2">
@@ -2158,6 +2162,25 @@ async function loadInventoryHistory(){
     return data||[];
   } catch(e){ return []; }
 }
+// Finds the most recent inventory snapshot at or before a given instant —
+// used to reconstruct "what was stock as of the start/end of month X"
+// for the Monthly Master Report's Inventory Movement sheet. A snapshot
+// is saved automatically on every saveInv() call (GRN receipt, dispatch,
+// qty adjustment, bin reassignment, etc.), so this is real historical
+// data, not an estimate. Returns null if no snapshot exists yet at/before
+// that instant (e.g. reporting on a month before the app went live) —
+// callers should treat that as "0 for every SKU", which is correct.
+async function getInventorySnapshotAsOf(isoDateTime){
+  try {
+    const {data,error}=await supa.from('inventory_snapshots')
+      .select('id,ts,items,created_at')
+      .lte('created_at',isoDateTime)
+      .order('created_at',{ascending:false})
+      .limit(1);
+    if(error) throw error;
+    return (data&&data[0])?data[0]:null;
+  } catch(e){ console.warn('getInventorySnapshotAsOf failed:',e.message||e); return null; }
+}
 async function loadHist(){
   setSyncStatus('syncing');
   if(typeof supabase === 'undefined' || !supa){
@@ -2362,6 +2385,15 @@ function toggleMenu(){
   const menu=document.getElementById('dropdown-menu');
   if(!menu)return;
   const isVisible=menu.style.display==='block';
+  if(!isVisible){
+    // Clear All Data is destructive and irreversible — admin only.
+    // Backup is safe to offer to anyone who can already see the full
+    // data (admin/supervisor), matching the Audit Trail access level.
+    const clearItem=document.getElementById('clear-data-menu-item');
+    if(clearItem) clearItem.style.display=(currentProfile?.role==='admin')?'flex':'none';
+    const backupItem=document.getElementById('backup-menu-item');
+    if(backupItem) backupItem.style.display=getPerms().canAudit?'flex':'none';
+  }
   menu.style.display=isVisible?'none':'block';
 }
 
@@ -2498,6 +2530,7 @@ function renderDispatchSameDayAlert(){
   `;
 }
 function showClearDataModal(){
+  if(currentProfile?.role!=='admin'){ toast('Only an admin can clear WMS data','w'); return; }
   document.getElementById('dropdown-menu').style.display='none';
   const overlay=document.getElementById('clear-modal-overlay');
   overlay.style.display='flex';
@@ -2521,7 +2554,9 @@ function validateClearInput(){
   btn.style.cursor=valid?'pointer':'not-allowed';
 }
 async function executeFullClear(){
+  if(currentProfile?.role!=='admin'){ toast('Only an admin can clear WMS data','w'); closeClearModal(); return; }
   if(!rateLimit('clear',10000)){toast('Please wait before trying again','w');return;}
+  logAudit('CLEAR_ALL_DATA','system',null,null,{clearedBy:currentProfile?.full_name||'Unknown',ts:new Date().toISOString()});
   // Clear localStorage
   localStorage.removeItem('cl_wms_inv2');
   localStorage.removeItem('cl_wms_hist2');
@@ -2549,6 +2584,177 @@ async function executeFullClear(){
   // Refresh all visible pages
   nav('dashboard');
   toast('All data cleared — WMS reset to zero','s');
+}
+
+// ═══════════════════════════════════════════
+// FULL DATA BACKUP (admin/supervisor)
+// ═══════════════════════════════════════════
+// Manual, on-demand export of every table in the WMS, as both a raw JSON
+// file (for a full restore/inspection) and a multi-sheet Excel workbook
+// (for a human to skim). Read-only — never touches any data. Any table
+// that doesn't exist yet on this database (e.g. order_events pre-migration)
+// is skipped rather than failing the whole export.
+const BACKUP_TABLES=['skus','inventory','inventory_snapshots','history','orders','expected_shipments','order_events','packing_queue','audit_log'];
+async function _fetchBackupTable(name){
+  try {
+    const {data,error}=await supa.from(name).select('*');
+    if(error) throw error;
+    return data||[];
+  } catch(e){
+    console.warn(`Backup: skipped table "${name}" —`,e.message||e);
+    return null; // distinguish "table missing/unreadable" from "table empty"
+  }
+}
+async function downloadFullBackup(){
+  if(!getPerms().canAudit){ toast('Only an admin or supervisor can download a full data backup','w'); return; }
+  if(!rateLimit('backup',5000)){ toast('Please wait before trying again','w'); return; }
+  toast('Preparing backup — this may take a few seconds…','s');
+  try {
+    const tables={};
+    for(const t of BACKUP_TABLES){
+      const rows=await _fetchBackupTable(t);
+      if(rows!==null) tables[t]=rows;
+    }
+    // user_profiles: trimmed to non-sensitive fields only (no emails/auth ids
+    // beyond what's needed to identify who did what in history/audit rows).
+    const profiles=await _fetchBackupTable('user_profiles');
+    if(profiles!==null) tables['user_profiles']=profiles.map(p=>({id:p.id,full_name:p.full_name,role:p.role}));
+
+    const exportedAt=new Date().toISOString();
+    const exportedBy=currentProfile?.full_name||currentUser?.email||'Unknown';
+    const payload={exportedAt,exportedBy,source:'CaratLane WMS',tables};
+
+    // 1) JSON download — full-fidelity, safe for a future restore/import.
+    const jsonBlob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+    const jsonUrl=URL.createObjectURL(jsonBlob);
+    const jsonLink=document.createElement('a');
+    jsonLink.href=jsonUrl;
+    jsonLink.download=`caratlane-wms-backup-${exportedAt.slice(0,10)}.json`;
+    document.body.appendChild(jsonLink); jsonLink.click(); jsonLink.remove();
+    setTimeout(()=>URL.revokeObjectURL(jsonUrl),2000);
+
+    // 2) Excel workbook — one sheet per table, for a human to skim/filter.
+    loadXLSXLib(()=>{
+      try {
+        const wb=XLSX.utils.book_new();
+        const infoRows=[
+          ['CaratLane WMS — Full Data Backup'],
+          ['Exported',exportedAt],
+          ['Exported by',exportedBy],
+          [],
+          ['Sheet','Row Count'],
+          ...Object.keys(tables).map(t=>[t,tables[t].length]),
+        ];
+        const wsInfo=XLSX.utils.aoa_to_sheet(infoRows);
+        wsInfo['!cols']=[{wch:22},{wch:24}];
+        XLSX.utils.book_append_sheet(wb,wsInfo,'Backup Info');
+        Object.keys(tables).forEach(t=>{
+          const rows=tables[t];
+          const ws=rows.length?XLSX.utils.json_to_sheet(rows):XLSX.utils.aoa_to_sheet([['(no rows)']]);
+          // Excel sheet names: max 31 chars, no []:*?/\
+          const safeName=t.replace(/[\[\]:*?/\\]/g,'').slice(0,31);
+          XLSX.utils.book_append_sheet(wb,ws,safeName);
+        });
+        const xlsxBuf=XLSX.write(wb,{type:'array',bookType:'xlsx'});
+        const xlsxBlob=new Blob([xlsxBuf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+        const xlsxUrl=URL.createObjectURL(xlsxBlob);
+        const xlsxLink=document.createElement('a');
+        xlsxLink.href=xlsxUrl;
+        xlsxLink.download=`caratlane-wms-backup-${exportedAt.slice(0,10)}.xlsx`;
+        document.body.appendChild(xlsxLink); xlsxLink.click(); xlsxLink.remove();
+        setTimeout(()=>URL.revokeObjectURL(xlsxUrl),2000);
+        toast('Backup downloaded — JSON + Excel','s');
+      } catch(e){
+        console.error('Backup Excel build failed:',e);
+        toast('JSON backup downloaded, but the Excel copy failed to build','w');
+      }
+    });
+
+    logAudit('DOWNLOAD_FULL_BACKUP','system',null,null,{tables:Object.keys(tables),rowCounts:Object.fromEntries(Object.keys(tables).map(t=>[t,tables[t].length]))});
+    _backupReminderInfo={lastBackupAt:exportedAt,daysSince:0,lastBackupBy:exportedBy};
+    renderBackupReminderBanner();
+  } catch(e){
+    console.error('Backup failed:',e);
+    toast('Backup failed — check your connection and try again','d');
+  }
+}
+
+// ── Backup reminder (admin/supervisor) ──────────────────────────────────
+// "Monthly" backup nudge, driven off the audit trail rather than a new
+// table — every successful downloadFullBackup() already writes a
+// DOWNLOAD_FULL_BACKUP row to audit_log, so the latest one of those IS
+// the last-backup timestamp. No separate schema/state to keep in sync.
+const BACKUP_REMINDER_DAYS=30;
+let _backupReminderInfo=null;
+async function getLastBackupInfo(){
+  try{
+    const {data,error}=await supa.from('audit_log')
+      .select('created_at,user_name')
+      .eq('action','DOWNLOAD_FULL_BACKUP')
+      .order('created_at',{ascending:false})
+      .limit(1);
+    if(error) throw error;
+    if(!data||!data[0]) return {lastBackupAt:null,daysSince:null,lastBackupBy:null};
+    const lastBackupAt=data[0].created_at;
+    const daysSince=Math.floor((Date.now()-new Date(lastBackupAt).getTime())/86400000);
+    return {lastBackupAt,daysSince,lastBackupBy:data[0].user_name||null};
+  }catch(e){
+    console.warn('getLastBackupInfo failed:',e.message||e);
+    return {lastBackupAt:null,daysSince:null,lastBackupBy:null,error:true};
+  }
+}
+function isBackupOverdue(info){
+  if(!info||info.error) return false; // don't nag if we couldn't even check
+  if(info.daysSince===null) return true; // never backed up
+  return info.daysSince>=BACKUP_REMINDER_DAYS;
+}
+// Checked once per login (bootWMS) and again every hour the tab stays
+// open, so the warning appears the moment a session crosses the
+// 30-day line without needing a page refresh.
+async function checkBackupReminder(){
+  if(!getPerms().canAudit) return; // only admin/supervisor can act on this
+  _backupReminderInfo=await getLastBackupInfo();
+  renderBackupReminderBanner();
+  maybeToastBackupReminder();
+}
+function renderBackupReminderBanner(){
+  const el=document.getElementById('backup-reminder-banner');
+  if(!el) return;
+  const info=_backupReminderInfo;
+  if(!isBackupOverdue(info)){ el.innerHTML=''; return; }
+  const never=info.daysSince===null;
+  const msg=never
+    ? 'No backup has ever been downloaded for this WMS.'
+    : `Last backup was ${info.daysSince} days ago${info.lastBackupBy?' (by '+esc(info.lastBackupBy)+')':''}.`;
+  el.innerHTML=`
+    <div style="background:var(--dbg);border:1.5px solid var(--dt);border-radius:10px;padding:14px 16px;margin-bottom:14px;cursor:pointer" onclick="downloadFullBackup()">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:40px;height:40px;background:var(--dt);border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <i class="ti ti-alert-triangle" style="font-size:20px;color:#fff"></i>
+          </div>
+          <div>
+            <div style="font-weight:700;font-size:13px;color:var(--dt)">⚠️ Backup overdue — do this ASAP</div>
+            <div style="font-size:11px;color:var(--t2);margin-top:2px">${msg} Click to download a full backup now.</div>
+          </div>
+        </div>
+        <span style="font-size:11px;color:var(--dt);font-weight:600">Download Backup Now →</span>
+      </div>
+    </div>`;
+}
+// Once-per-day (per browser) toast nudge, so it re-surfaces every time an
+// admin/supervisor opens the app while overdue without spamming them on
+// every single nav click within the same day.
+function maybeToastBackupReminder(){
+  const info=_backupReminderInfo;
+  if(!isBackupOverdue(info)) return;
+  const todayStr=new Date().toDateString();
+  if(localStorage.getItem('backup_reminder_shown')===todayStr) return;
+  localStorage.setItem('backup_reminder_shown',todayStr);
+  const never=info.daysSince===null;
+  toast(never
+    ? '⚠️ No WMS backup has ever been taken — download one from the More menu'
+    : `⚠️ Last backup was ${info.daysSince} days ago — download a fresh one from the More menu`,'w');
 }
 const ORDER_SLA_HOURS = {
   'Express':    { unassigned: 1,  assigned: 3  },
@@ -2597,6 +2803,7 @@ function renderDash(){
   const pendingDispatch=history.filter(h=>h.type==='packed').length;
   document.getElementById('alert-ct').textContent=low.length+out.length+pendingDispatch;
   renderSameDayAlert();
+  renderBackupReminderBanner();
   renderOrderAgingAlert();
   document.getElementById('stat-cards').innerHTML=`
     <div class="sc"><div class="sl"><i class="ti ti-package"></i>Total SKUs</div><div class="sv">${total}</div><div class="ss">${RACK_LETTERS.length} racks · ${RACK_LETTERS.length*SHELVES_PER_RACK} shelves</div></div>
@@ -8272,10 +8479,10 @@ function downloadMonthlyMasterCSV(){
   // Excel. Reuses the xlsx.js library already lazy-loaded for reading
   // uploaded Excel manifests (loadXLSXLib).
   toast('Building workbook…','s');
-  loadXLSXLib(()=>{
+  loadXLSXLib(async()=>{
     const sel=document.getElementById('rpt-month-select');
     const monthStr=sel?sel.value:getMonthKey(new Date());
-    const {start}=getMonthBounds(monthStr);
+    const {start,end}=getMonthBounds(monthStr);
     const monthLabel=start.toLocaleDateString('en-IN',{month:'long',year:'numeric'});
     const mOrders=getMonthOrders(monthStr);
     const mHist=getMonthHistory(monthStr);
@@ -8377,6 +8584,7 @@ function downloadMonthlyMasterCSV(){
       ['Total Units In Stock',totalUnitsNow],
       ['Low Stock SKUs (≤3 units)',lowStockCount],
       ['Out of Stock SKUs',outOfStockCount],
+      ['See "Inventory Movement" sheet for per-SKU opening/received/dispatched/closing stock'],
     ];
     const wsDash=XLSX.utils.aoa_to_sheet(dash);
     // Small data block feeding the QC-breakdown and inventory-health pie
@@ -8490,6 +8698,82 @@ function downloadMonthlyMasterCSV(){
     wsInv['!cols']=[{wch:14},{wch:24},{wch:16},{wch:8},{wch:8},{wch:8},{wch:14}];
     XLSX.utils.book_append_sheet(wb,wsInv,'Inventory Snapshot');
 
+    // ── Inventory Movement sheet — opening/received/dispatched/closing ──
+    // "Inventory Snapshot" above only shows CURRENT stock (as of the
+    // moment the report is generated) — it can't answer "what did we
+    // have on hand at the start of the month" or "how much went out this
+    // month per SKU". This reconstructs both from the automatic
+    // inventory_snapshots taken on every stock change (see saveInv()),
+    // rather than estimating — Opening/Closing here are real historical
+    // stock levels, not derived math.
+    const monthStartIso=start.toISOString();
+    const monthEndIso=end.toISOString();
+    const reportMonthStillOngoing=end.getTime()>=Date.now();
+    const openingSnap=await getInventorySnapshotAsOf(monthStartIso);
+    // A month that hasn't finished yet has no "closing" snapshot to look
+    // up — its closing state IS the live current inventory (same meaning
+    // as "CURRENT INVENTORY (as of generation)" on the Dashboard sheet).
+    const closingSnap=reportMonthStillOngoing?null:await getInventorySnapshotAsOf(monthEndIso);
+    const openingBySku={};
+    if(openingSnap&&openingSnap.items){ openingSnap.items.forEach(it=>{ openingBySku[it.sku]=it.qty||0; }); }
+    const closingBySku={};
+    if(closingSnap&&closingSnap.items){
+      closingSnap.items.forEach(it=>{ closingBySku[it.sku]=it.qty||0; });
+    } else {
+      SKUS.forEach(s=>{ closingBySku[s.sku]=(inv[s.sku]||{qty:0}).qty; });
+    }
+    // Per-SKU inward (received, PASS only) and outward (dispatched) for
+    // the month — same source data as the aggregate totalUnitsIn/
+    // totalUnitsOut figures above, just broken down by SKU instead of
+    // summed across all SKUs.
+    const inwardBySku={};
+    grns.forEach(g=>{ (g.items||[]).forEach(it=>{ if(it.qc==='PASS'){ inwardBySku[it.sku]=(inwardBySku[it.sku]||0)+(it.qty||0); } }); });
+    const outwardBySku={};
+    monthDisps.forEach(d=>{ (d.items||[]).forEach(it=>{ outwardBySku[it.sku]=(outwardBySku[it.sku]||0)+(it.qty||0); }); });
+    const movHeader=['SKU','Item Name','Variant','Opening Stock','Received (In)','Dispatched (Out)','Other Movement*','Closing Stock','Status'];
+    const movRows=SKUS.map(s=>{
+      const opening=openingBySku[s.sku]||0;
+      const closingQty=closingBySku[s.sku]!=null?closingBySku[s.sku]:0;
+      const inward=inwardBySku[s.sku]||0;
+      const outward=outwardBySku[s.sku]||0;
+      // Residual = whatever changed qty this month that wasn't a GRN
+      // receipt or a dispatch — returns restocked, manual qty
+      // corrections, cycle-count adjustments, void-GRN reversals, etc.
+      // Flags real drift instead of silently hiding it.
+      const otherMovement=closingQty-opening-inward+outward;
+      const st=closingQty<=0?'Out of Stock':closingQty<=3?'Low Stock':'In Stock';
+      return [s.sku,s.sub,s.variant,opening,inward,outward,otherMovement,closingQty,st];
+    });
+    const totalOpening=movRows.reduce((a,r)=>a+r[3],0);
+    const totalInward=movRows.reduce((a,r)=>a+r[4],0);
+    const totalOutward=movRows.reduce((a,r)=>a+r[5],0);
+    const totalOtherMovement=movRows.reduce((a,r)=>a+r[6],0);
+    const totalClosing=movRows.reduce((a,r)=>a+r[7],0);
+    const movNote=(!openingSnap)
+      ? `* No inventory snapshot exists at or before ${monthLabel}'s start — this appears to be before the WMS went live, so Opening Stock defaults to 0 for every SKU. "Other Movement" also captures returns restocked, manual qty corrections, cycle-count adjustments, and void-GRN reversals during the month.`
+      : `* "Other Movement" captures anything that changed stock this month besides GRN receipts and dispatches — returns restocked, manual qty corrections, cycle-count adjustments, void-GRN reversals, etc.`;
+    // Row numbers below mirror the fixed layout just built: 4 meta rows +
+    // 1 blank + header row, then movRows.length data rows, then a blank
+    // and the TOTAL row — used by styleOpsBySheet further down.
+    const movHdrRow=6;
+    const movDataEndRow=6+movRows.length;
+    const movTotalRow=8+movRows.length;
+    const wsMov=XLSX.utils.aoa_to_sheet([
+      ['CaratLane WMS — Inventory Movement',monthLabel],
+      ['EPS Worldwide Integrated Logistics Mumbai'],
+      ['Report Month',monthLabel],
+      ['Generated',genTime],
+      [],
+      movHeader,
+      ...movRows,
+      [],
+      ['TOTAL',,,totalOpening,totalInward,totalOutward,totalOtherMovement,totalClosing,],
+      [],
+      [movNote],
+    ]);
+    wsMov['!cols']=[{wch:14},{wch:24},{wch:16},{wch:12},{wch:12},{wch:14},{wch:13},{wch:12},{wch:12}];
+    XLSX.utils.book_append_sheet(wb,wsMov,'Inventory Movement');
+
     // ── Cell formatting (colors/borders/highlighted numbers) ──
     // Row numbers below are derived directly from the array literals built
     // above (dash/mom/*Header+*Rows) — every sheet but Dashboard has a
@@ -8499,7 +8783,7 @@ function downloadMonthlyMasterCSV(){
     // array itself (KEY METRICS block is always rows 6-15; only the TOP
     // COURIERS section grows with courierRows.length).
     const courierTopN=Math.min(5,courierRows.length);
-    const rowInvHdr=24+courierTopN, rowInvData1=25+courierTopN, rowInvData2=27+courierTopN;
+    const rowInvHdr=24+courierTopN, rowInvData1=25+courierTopN, rowInvData2=28+courierTopN;
     const styleOpsBySheet={
       'Dashboard':[
         {range:{r1:6,c1:0,r2:15,c2:3},style:'grid'},
@@ -8553,7 +8837,25 @@ function downloadMonthlyMasterCSV(){
         {range:{r1:1,c1:0,r2:1,c2:invHeader.length-1},style:'header'},
         {ref:`A${3+invRows.length}`,style:'total'},{ref:`B${3+invRows.length}`,style:'total'},
       ],
+      'Inventory Movement':[
+        {range:{r1:movHdrRow,c1:0,r2:movDataEndRow,c2:movHeader.length-1},style:'grid'},
+        {range:{r1:movHdrRow,c1:0,r2:movHdrRow,c2:movHeader.length-1},style:'header'},
+        {ref:'A1',style:'title'},
+        {range:{r1:movTotalRow,c1:0,r2:movTotalRow,c2:7},style:'total'},
+      ],
     };
+    // Highlight per-row: Other Movement column (green if it added stock
+    // back, red if it took stock away outside of GRN/dispatch), and
+    // Closing Stock red if that SKU ended the month out of stock —
+    // matches the same "color the important numbers" treatment already
+    // used on the Dashboard/MoM sheets.
+    movRows.forEach((row,i)=>{
+      const excelRow=movDataEndRow-movRows.length+1+i; // = 7+i
+      const otherMovement=row[6], closingQty=row[7];
+      if(otherMovement>0) styleOpsBySheet['Inventory Movement'].push({ref:`G${excelRow}`,style:'positiveGrid'});
+      else if(otherMovement<0) styleOpsBySheet['Inventory Movement'].push({ref:`G${excelRow}`,style:'negativeGrid'});
+      if(closingQty<=0) styleOpsBySheet['Inventory Movement'].push({ref:`H${excelRow}`,style:'negativeGrid'});
+    });
     // Change%/positive-negative highlights — computed from the same
     // pctChange() calls used to build the dash/mom rows, so a cell is
     // colored if and only if its printed value actually starts with + or -.
@@ -10161,6 +10463,15 @@ async function bootWMS(){
   initBarcodeScanner();
   updateOfflineQueueBadge();
   flushOfflineQueue();
+  checkBackupReminder();
+  scheduleBackupReminderCheck();
+}
+// Re-checks hourly while the tab stays open, so the dashboard warning and
+// once-a-day toast both pick up a day/month rollover without needing a
+// refresh — same pattern as scheduleMISEmail()'s hourly timer.
+function scheduleBackupReminderCheck(){
+  clearInterval(window._backupReminderTimer);
+  window._backupReminderTimer=setInterval(()=>{ checkBackupReminder(); },3600000);
 }
 
 // Check for existing session on load
