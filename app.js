@@ -435,6 +435,9 @@ function toggleMenu(){
     if(clearItem) clearItem.style.display=(currentProfile?.role==='admin')?'flex':'none';
     const backupItem=document.getElementById('backup-menu-item');
     if(backupItem) backupItem.style.display=getPerms().canAudit?'flex':'none';
+    // Restore overwrites live data — same admin-only bar as Clear Data.
+    const restoreItem=document.getElementById('restore-menu-item');
+    if(restoreItem) restoreItem.style.display=(currentProfile?.role==='admin')?'flex':'none';
   }
   menu.style.display=isVisible?'none':'block';
 }
@@ -826,6 +829,126 @@ function maybeToastBackupReminder(){
   toast(never
     ? '⚠️ No WMS backup has ever been taken — download one from the More menu'
     : `⚠️ Last backup was ${info.daysSince} days ago — download a fresh one from the More menu`,'w');
+}
+
+// ── Restore from Backup (admin only) ────────────────────────────────────
+// The mirror image of downloadFullBackup(): reads a previously-downloaded
+// JSON backup file and upserts its rows back into Supabase. Upsert (not
+// delete-then-insert) so restoring never removes anything created since
+// the backup — it only overwrites rows that share an ID with the backup
+// and adds back anything since deleted. user_profiles is intentionally
+// never restored: the backup only keeps id/full_name/role for it (no
+// email), and those ids are foreign keys into Supabase Auth accounts that
+// this restore has no business touching.
+const RESTORE_TABLE_PK={
+  skus:'sku', inventory:'sku',
+  inventory_snapshots:'id', history:'id', orders:'id',
+  expected_shipments:'id', order_events:'id', packing_queue:'id', audit_log:'id'
+};
+let _restorePayload=null;
+function showRestoreModal(){
+  if(currentProfile?.role!=='admin'){ toast('Only an admin can restore from a backup','w'); return; }
+  document.getElementById('dropdown-menu').style.display='none';
+  _restorePayload=null;
+  document.getElementById('restore-file-picker-area').style.display='block';
+  document.getElementById('restore-preview-area').style.display='none';
+  document.getElementById('restore-confirm-input').value='';
+  const btn=document.getElementById('restore-confirm-btn');
+  btn.disabled=true; btn.style.background='var(--b)'; btn.style.color='var(--t3)'; btn.style.cursor='not-allowed';
+  document.getElementById('restore-modal-overlay').style.display='flex';
+}
+function closeRestoreModal(){
+  document.getElementById('restore-modal-overlay').style.display='none';
+  _restorePayload=null;
+  document.getElementById('restore-backup-file').value='';
+}
+function handleRestoreFileSelected(evt){
+  const file=evt.target.files[0];
+  if(!file) return;
+  const reader=new FileReader();
+  reader.onload=(e)=>{
+    let parsed;
+    try{ parsed=JSON.parse(e.target.result); }
+    catch(err){ toast('That file is not valid JSON — pick a caratlane-wms-backup-*.json file','w'); return; }
+    if(!parsed||typeof parsed!=='object'||!parsed.tables||typeof parsed.tables!=='object'){
+      toast('This does not look like a CaratLane WMS backup file (no "tables" found)','w');
+      return;
+    }
+    const knownTables=Object.keys(parsed.tables).filter(t=>RESTORE_TABLE_PK[t]);
+    if(!knownTables.length){
+      toast('No restorable tables found in this file','w');
+      return;
+    }
+    _restorePayload=parsed;
+    const skipped=Object.keys(parsed.tables).filter(t=>!RESTORE_TABLE_PK[t]);
+    const rowsLine=knownTables.map(t=>`${t}: ${(parsed.tables[t]||[]).length} row(s)`).join('<br>');
+    document.getElementById('restore-preview-summary').innerHTML=
+      `Backup from <strong>${esc(parsed.exportedAt||'unknown date')}</strong>${parsed.exportedBy?' by '+esc(parsed.exportedBy):''}<br><br>${rowsLine}`+
+      (skipped.length?`<br><br><span style="color:var(--t3)">Skipped (not restorable): ${skipped.map(esc).join(', ')}</span>`:'');
+    document.getElementById('restore-file-picker-area').style.display='none';
+    document.getElementById('restore-preview-area').style.display='block';
+    validateRestoreInput();
+  };
+  reader.onerror=()=>toast('Could not read that file','w');
+  reader.readAsText(file);
+  evt.target.value='';
+}
+function validateRestoreInput(){
+  const val=document.getElementById('restore-confirm-input').value.trim();
+  const btn=document.getElementById('restore-confirm-btn');
+  const valid=!!_restorePayload && val==='RESTORE BACKUP';
+  btn.disabled=!valid;
+  btn.style.background=valid?'var(--it)':'var(--b)';
+  btn.style.color=valid?'#fff':'var(--t3)';
+  btn.style.cursor=valid?'pointer':'not-allowed';
+}
+function _chunkArray(arr,size){
+  const out=[];
+  for(let i=0;i<arr.length;i+=size) out.push(arr.slice(i,i+size));
+  return out;
+}
+async function executeRestoreFromBackup(){
+  if(currentProfile?.role!=='admin'){ toast('Only an admin can restore from a backup','w'); closeRestoreModal(); return; }
+  if(!_restorePayload){ toast('Choose a backup file first','w'); return; }
+  if(!rateLimit('restore',10000)){ toast('Please wait before trying again','w'); return; }
+  const payload=_restorePayload;
+  closeRestoreModal();
+  toast('Restoring — this may take a little while…','s');
+  const restored={};
+  const failed=[];
+  try{
+    for(const table of Object.keys(payload.tables)){
+      const pk=RESTORE_TABLE_PK[table];
+      if(!pk) continue; // unknown/unsupported table (e.g. user_profiles) — skip
+      const rows=payload.tables[table]||[];
+      if(!rows.length){ restored[table]=0; continue; }
+      let okCount=0;
+      for(const batch of _chunkArray(rows,500)){
+        const {error}=await supa.from(table).upsert(batch,{onConflict:pk});
+        if(error){ console.error(`Restore failed for ${table}:`,error.message||error); failed.push(table); break; }
+        okCount+=batch.length;
+      }
+      restored[table]=okCount;
+    }
+    logAudit('RESTORE_FROM_BACKUP','system',null,null,{restoredFrom:payload.exportedAt||null,rowCounts:restored,failed});
+    // Reload in-memory state from the now-restored database and re-render,
+    // same set of loaders bootWMS() uses on login.
+    await loadSKUsFromDB();
+    await initInv();
+    await loadHist();
+    await loadOrders();
+    await loadExpectedShipments();
+    renderDash(); renderInv(); renderRack(); renderReports(); renderAnalytics(); renderFinance();
+    updateNotificationBadge();
+    if(failed.length){
+      toast(`Restore finished with issues — these tables failed: ${failed.join(', ')}. Check the console for details.`,'w');
+    } else {
+      toast('Restore complete — data reloaded','s');
+    }
+  }catch(e){
+    console.error('Restore failed:',e);
+    toast('Restore failed — check your connection and try again','d');
+  }
 }
 const ORDER_SLA_HOURS = {
   'Express':    { unassigned: 1,  assigned: 3  },
