@@ -134,7 +134,7 @@ async function initInv(){
       throw new Error(error.message || 'Supabase query failed');
     }
     if(data && data.length > 0){
-      data.forEach(r => { inv[r.sku] = {qty:r.qty||0, rack:r.rack, shelf:r.shelf}; });
+      data.forEach(r => { inv[r.sku] = {qty:r.qty||0, rack:r.rack, shelf:r.shelf}; if(Array.isArray(r.locations) && r.locations.length) inv[r.sku].locations=r.locations; });
       setSyncStatus('ok');
       console.log('✓ Inventory loaded from cloud:', data.length, 'SKUs');
     } else {
@@ -160,7 +160,7 @@ async function saveInv(){
   if(typeof supabase === 'undefined' || !supa){ setSyncStatus('offline'); return; }
   try {
     const now=new Date().toISOString();
-    const rows = Object.entries(inv).map(([sku,v]) => ({sku, qty:v.qty||0, rack:v.rack, shelf:v.shelf, updated_at:now}));
+    const rows = Object.entries(inv).map(([sku,v]) => ({sku, qty:v.qty||0, rack:v.rack, shelf:v.shelf, locations:Array.isArray(v.locations)?v.locations:null, updated_at:now}));
     // Conflict resolution: fetch current DB state first, merge with local changes
     const {data:dbRows}=await supa.from('inventory').select('sku,qty,updated_at');
     const dbMap={};
@@ -175,7 +175,7 @@ async function saveInv(){
     const snapRow={
       id:snapId, type:'inventory_snapshot', ts:new Date().toLocaleString('en-IN'),
       detail:'Inventory snapshot — '+Object.keys(inv).length+' SKUs',
-      items:Object.entries(inv).map(([sku,v])=>({sku,qty:v.qty||0,rack:v.rack,shelf:v.shelf})),
+      items:Object.entries(inv).map(([sku,v])=>({sku,qty:v.qty||0,rack:v.rack,shelf:v.shelf,locations:Array.isArray(v.locations)?v.locations:null})),
       created_at:new Date().toISOString()
     };
     await supa.from('inventory_snapshots').upsert(snapRow,{onConflict:'id'}).then(()=>{}).catch(()=>{});
@@ -192,7 +192,7 @@ async function rollbackInventory(snapId){
     const {data,error}=await supa.from('inventory_snapshots').select('*').eq('id',snapId).single();
     if(error||!data) throw new Error('Snapshot not found');
     const items=data.items||[];
-    items.forEach(item=>{ inv[item.sku]={qty:item.qty,rack:item.rack,shelf:item.shelf}; });
+    items.forEach(item=>{ inv[item.sku]={qty:item.qty,rack:item.rack,shelf:item.shelf}; if(Array.isArray(item.locations)&&item.locations.length) inv[item.sku].locations=item.locations; });
     await saveInv();
     renderDash();renderInv();renderRack();
     toast('Inventory rolled back to '+data.ts,'s');
@@ -3239,6 +3239,68 @@ function updateNotificationBadge(){
     badge.style.display='none';
   }
 }
+// Inbound tab's badge counts exceptions + low-stock SKUs — clicking it jumps
+// straight to the Alerts & Exceptions panel on Analytics & Compliance
+// (rather than just re-navigating to whatever tab it happens to sit on),
+// so the count actually leads somewhere useful.
+function jumpToExceptions(e){
+  if(e) e.stopPropagation();
+  nav('analytics');
+  setTimeout(()=>{
+    const el=document.getElementById('alerts-panel');
+    if(!el) return;
+    el.scrollIntoView({behavior:'smooth',block:'center'});
+    el.style.transition='box-shadow .3s';
+    el.style.boxShadow='0 0 0 2px var(--gold)';
+    el.style.borderRadius='8px';
+    setTimeout(()=>{el.style.boxShadow='';},1600);
+  },60);
+}
+// Bell icon dropdown — same three counts as alert-ct (low stock, out of
+// stock, packed-but-not-dispatched), but actually browsable/clickable
+// instead of a bare number with nowhere to go.
+function toggleAlertsDropdown(e){
+  if(e) e.stopPropagation();
+  const dd=document.getElementById('alerts-dropdown');
+  if(!dd) return;
+  const isOpen=dd.style.display==='block';
+  if(isOpen){ dd.style.display='none'; return; }
+  renderAlertsDropdown();
+  dd.style.display='block';
+}
+function navAndCloseAlerts(tab){
+  const dd=document.getElementById('alerts-dropdown');
+  if(dd) dd.style.display='none';
+  nav(tab);
+}
+function renderAlertsDropdown(){
+  const body=document.getElementById('alerts-dropdown-body');
+  if(!body) return;
+  const low=SKUS.filter(s=>getSt((inv[s.sku]||{qty:0}).qty)==='low');
+  const out=SKUS.filter(s=>getSt((inv[s.sku]||{qty:0}).qty)==='out');
+  const pendingDispatch=history.filter(h=>h.type==='packed');
+  const row=(title,sub,tab)=>`<div class="user-dropdown-item" style="display:block" onclick="navAndCloseAlerts('${tab}')"><div style="font-weight:600">${esc(title)}</div><div style="font-size:10px;color:var(--t2)">${esc(sub)}</div></div>`;
+  const section=(label,color,items,tab,extra)=>{
+    if(!items.length) return '';
+    let html=`<div style="padding:8px 14px 4px;font-size:10px;font-weight:700;color:${color};text-transform:uppercase">${esc(label)} (${items.length})</div>`;
+    html+=items.slice(0,6).map(extra).join('');
+    if(items.length>6) html+=`<div class="user-dropdown-item" style="font-size:10px;color:var(--t2)" onclick="navAndCloseAlerts('${tab}')">+${items.length-6} more — view all</div>`;
+    return html;
+  };
+  const parts=[
+    section('Out of Stock','var(--dt)',out,'inventory',s=>row(s.sku,`${s.sub} · ${s.variant}`,'inventory')),
+    section('Low Stock','#e65100',low,'inventory',s=>row(s.sku,`${(inv[s.sku]||{qty:0}).qty} left — ${s.sub}`,'inventory')),
+    section('Pending Dispatch','var(--gold)',pendingDispatch,'dispatch',p=>row(p.orderId||p.id,'Packed — awaiting dispatch','dispatch')),
+  ].filter(Boolean);
+  body.innerHTML=parts.length?parts.join(''):'<div class="empty" style="padding:16px">No active alerts ✓</div>';
+}
+document.addEventListener('click',function(e){
+  const dd=document.getElementById('alerts-dropdown');
+  const trigger=document.getElementById('alerts-trigger');
+  if(dd&&dd.style.display==='block'&&!dd.contains(e.target)&&trigger&&!trigger.contains(e.target)){
+    dd.style.display='none';
+  }
+});
 function renderKPICards(){
   const el=document.getElementById('kpi-cards');
   if(!el)return;
@@ -3632,7 +3694,7 @@ function completeInventoryCount(){
 }
 
 // MOBILE DASHBOARD
-let mobilePickCache=[],mobilePhotoData=null;
+let mobilePhotoData=null;
 let mobilePickSession=null,mobilePackActive=null;
 
 function updateMobileKPIs(){
@@ -3652,8 +3714,18 @@ function updateMobileKPIs(){
     return d.getFullYear()===todayY && d.getMonth()===todayM && d.getDate()===todayD;
   });
   const dispatches=history.filter(h=>h.type==='dispatched');
-  const exceptions=history.filter(h=>h.type==='exception');
-  const accuracy=todayPicks.length>0?Math.round((1-(exceptions.length/todayPicks.length))*100):100;
+  // Same-day scope on both sides of the ratio — this used to divide
+  // all-time exceptions by today's picks, a numerator/denominator
+  // mismatch that overstated how bad (or good) accuracy looked on any
+  // day with few picks but old, unrelated exceptions on record.
+  const todayExceptions=history.filter(h=>{
+    if(h.type!=='exception') return false;
+    const t=parseDisplayTs(h.ts);
+    if(!t) return false;
+    const d=new Date(t);
+    return d.getFullYear()===todayY && d.getMonth()===todayM && d.getDate()===todayD;
+  });
+  const accuracy=todayPicks.length>0?Math.round((1-(todayExceptions.length/todayPicks.length))*100):100;
   // Real average pick-to-release duration for today's picks, instead of
   // a random placeholder number. Only picks with recorded duration data
   // count (older records predating this fix won't have pickDurationSecs).
@@ -4196,66 +4268,12 @@ function completeMobilePack(){
   updateMobileKPIs();
 }
 
-function renderMobilePickList(){
-  const el=document.getElementById('m-pick-list');
-  const queue=packingQueue;
-  mobilePickCache=queue;
-  el.innerHTML=queue.length?queue.map((p,i)=>`
-    <div style="background:var(--s2);padding:12px;border-radius:6px;touch-action:manipulation" ontouchstart="startSwipe(event,${i})" ontouchend="endSwipe(event,${i})">
-      <div style="font-weight:600;font-size:13px;margin-bottom:8px">${p.orderId}</div>
-      <div style="font-size:11px;color:var(--t2);line-height:1.8;margin-bottom:8px">
-        <div><span style="color:var(--t2)">Priority:</span> ${p.priority}</div>
-        <div><span style="color:var(--t2)">Method:</span> ${p.method}</div>
-        <div><span style="color:var(--t2)">Items:</span> ${p.items.length} SKUs</div>
-      </div>
-      <div style="display:grid;gap:6px">
-        ${p.items.map((item,idx)=>`<div style="background:var(--s3);padding:8px;border-radius:4px;font-size:10px">
-          <div><strong>${item.sku}</strong> - ${item.name}</div>
-          <div style="color:var(--t2);margin-top:2px">Qty: ${item.qty} | Bin: ${item.bin}</div>
-        </div>`).join('')}
-      </div>
-      <button onclick="markPickComplete('${p.id}')" style="width:100%;margin-top:8px;padding:8px;background:var(--st);color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:11px;touch-action:manipulation"><i class="ti ti-check"></i>Mark Complete</button>
-    </div>
-  `).join(''):'<div style="text-align:center;padding:20px;color:var(--t2)">No pending picks</div>';
-}
-
-function filterMobilePickList(){
-  const q=document.getElementById('m-order-search').value.toLowerCase();
-  const filtered=mobilePickCache.filter(p=>p.orderId.toLowerCase().includes(q)||p.items.some(i=>i.sku.toLowerCase().includes(q)));
-  const el=document.getElementById('m-pick-list');
-  el.innerHTML=filtered.length?filtered.map((p,i)=>`
-    <div style="background:var(--s2);padding:12px;border-radius:6px">
-      <div style="font-weight:600;font-size:13px;margin-bottom:8px">${p.orderId}</div>
-      <div style="font-size:11px;color:var(--t2);line-height:1.8;margin-bottom:8px">
-        <div><span style="color:var(--t2)">Priority:</span> ${p.priority}</div>
-        <div><span style="color:var(--t2)">Items:</span> ${p.items.length}</div>
-      </div>
-      <button onclick="markPickComplete('${p.id}')" style="width:100%;padding:8px;background:var(--st);color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:11px"><i class="ti ti-check"></i>Complete</button>
-    </div>
-  `).join(''):'<div style="text-align:center;padding:20px;color:var(--t2)">No matches</div>';
-}
-
-function markPickComplete(pickId){
-  const pick=packingQueue.find(p=>p.id===pickId);
-  if(!pick){toast('Pick not found','w');return;}
-  packingQueue=packingQueue.filter(p=>p.id!==pickId);
-  const pkdId=newId('PKD');
-  history.push({id:pkdId,type:'packed',ts:ts(),detail:`${pick.orderId} · ${pick.items.length} SKUs packed — ready for dispatch`,orderId:pick.orderId,items:pick.items});
-  saveHist();
-  renderMobilePickList();
-  updateMobileKPIs();
-  toast(`✓ ${pick.orderId} marked complete`,'s');
-}
-
-function startSwipe(e,i){
-  e.touches[0].clientX=e.touches[0].clientX;
-}
-
-function endSwipe(e,i){
-  if(Math.abs(e.changedTouches[0].clientX-(e.touches[0]?.clientX||0))>50){
-    markPickComplete(mobilePickCache[i].id);
-  }
-}
+// (Legacy pre-scan-driven mobile pick list — renderMobilePickList/
+// filterMobilePickList/markPickComplete/startSwipe/endSwipe — removed.
+// It targeted #m-pick-list/#m-order-search elements that don't exist
+// anywhere in the current mobile HTML and was never called from any
+// wired-up UI; confirmed dead via exhaustive grep before removal.
+// The live mobile pick flow is startMobilePick/completeMobilePick etc.)
 
 function submitMobileQC(){
   const sku=document.getElementById('m-qc-sku').value.trim();
@@ -5459,20 +5477,27 @@ function renderRack(){
       byRack[loc.rack][loc.shelf].push({...s,qty:loc.qty,rack:loc.rack,shelf:loc.shelf});
     });
   });
+  // Which SKUs currently default/home to a bin even with zero stock —
+  // shown as context on an empty slot ("last assigned to X") so staff
+  // aren't reassigning blind, without that stopping the reassignment.
+  const homeByBin={};
+  SKUS.forEach(s=>{
+    const loc=liveLoc(s.sku);
+    if(!loc.rack||loc.shelf==null) return;
+    const key=loc.rack+'-'+loc.shelf;
+    if(!homeByBin[key]) homeByBin[key]=[];
+    homeByBin[key].push(s);
+  });
   const rackHTML=RACK_LETTERS.map(r=>{
     const data=byRack[r]||{};
-    // Only shelves 1–SHELVES_PER_RACK are real. Anything beyond that
-    // is leftover from before the 15-rack layout and doesn't belong
-    // in the rack grid — it's called out separately below instead.
-    const keys=Object.keys(data).filter(sh=>+sh<=SHELVES_PER_RACK).sort((a,b)=>+a-+b);
-    if(!keys.length){
-      return `<div class="stitle" style="margin-top:14px">Rack ${r} <span style="font-weight:400;color:var(--t3);font-size:11px">— no items placed yet</span></div>`;
-    }
-    // Each rack is its own single bay (physically 1 rack = 1 bay, 6
-    // shelves) — no splitting into Bay 1/Bay 2 columns.
-    return `<div class="stitle" style="margin-top:14px">Rack ${r} <span style="font-weight:400;color:var(--t3);font-size:11px">— ${keys.length}/${SHELVES_PER_RACK} shelves in use</span></div>
-      <div class="rack-wrap"><div class="rack-card"><div class="rack-head"><span style="font-size:12px;font-weight:600">Rack ${r}</span><span style="font-size:10px;color:var(--t2)">${keys.length} shelves</span></div>${keys.map(sh=>{
-        const items=data[sh];
+    // Every rack now always shows its full SHELVES_PER_RACK shelves —
+    // occupied ones with their stock, empty ones as an explicit
+    // "Available" slot instead of just vanishing. A shelf that's out of
+    // stock isn't the same as a shelf nobody can ever use again.
+    const occupiedCount=Array.from({length:SHELVES_PER_RACK},(_,i)=>String(i+1)).filter(sh=>data[sh]&&data[sh].length).length;
+    const rows=Array.from({length:SHELVES_PER_RACK},(_,i)=>String(i+1)).map(sh=>{
+      const items=data[sh];
+      if(items && items.length){
         // A shelf can hold more than one SKU. Each gets its own row with
         // its own name/qty/bar — never blend several SKUs' quantities
         // into one number under a single item's name (that previously
@@ -5493,7 +5518,23 @@ function renderRack(){
           const nameSuffix=` <span style="color:var(--t3);font-weight:400">(${esc(it.sku)}${it.variant?' · '+esc(it.variant):''})</span>`;
           return`<div class="rack-row"><span class="shelf-l">${shelfLabel}</span><div><div style="font-size:11px;font-weight:600;margin-bottom:3px">${lbl}${nameSuffix}</div><div class="bar-bg"><div class="bar-f ${bc}" style="width:${pct}%"></div></div></div><span class="qty-r">${it.qty}u${held>0?`<div style="font-size:9px;color:var(--wt);font-weight:600">${held} held</div>`:''}</span></div>`;
         }).join('');
-      }).join('')}</div></div>`;
+      }
+      // AVAILABLE — nothing currently stocked here. Shown distinctly
+      // (not just absent) with a one-click way to hand this bin to a
+      // different product, whether that product already exists or is
+      // brand new.
+      const homeSkus=homeByBin[r+'-'+sh]||[];
+      const hint=homeSkus.length?`Was home to ${homeSkus.map(s=>esc(s.sku)).join(', ')}`:'Never assigned';
+      return `<div class="rack-row" style="background:var(--sbg)">
+        <span class="shelf-l">${r}${sh}</span>
+        <div><div style="font-size:11px;font-weight:700;color:var(--st)">Available</div><div style="font-size:9px;color:var(--t3)">${hint}</div></div>
+        <span class="qty-r"><button title="Assign a product to this bin" onclick="openAssignBin('${r}','${sh}')" style="width:34px;height:24px;border:none;border-radius:5px;background:var(--st);color:#fff;cursor:pointer;font-size:13px;line-height:1"><i class="ti ti-plus"></i></button></span>
+      </div>`;
+    }).join('');
+    // Each rack is its own single bay (physically 1 rack = 1 bay, 6
+    // shelves) — no splitting into Bay 1/Bay 2 columns.
+    return `<div class="stitle" style="margin-top:14px">Rack ${r} <span style="font-weight:400;color:var(--t3);font-size:11px">— ${occupiedCount}/${SHELVES_PER_RACK} shelves in use</span></div>
+      <div class="rack-wrap"><div class="rack-card"><div class="rack-head"><span style="font-size:12px;font-weight:600">Rack ${r}</span><span style="font-size:10px;color:var(--t2)">${occupiedCount} occupied · ${SHELVES_PER_RACK-occupiedCount} available</span></div>${rows}</div></div>`;
   }).join('');
   const unplaced=getUnplacedSKUs();
   const unplacedHTML=unplaced.length?`<div class="sep" style="margin:16px 0"></div>
@@ -5505,6 +5546,74 @@ function renderRack(){
       </div>
     </div>`:'';
   container.innerHTML=rackHTML+unplacedHTML;
+}
+
+// ── Bin reassignment ──────────────────────────────────────────────────
+// A bin going to zero stock doesn't free it up for a different product —
+// nothing in the app ever reassigns a shelf, it just silently disappears
+// from Rack View. This lets staff explicitly hand an empty bin to either
+// an existing SKU (as its new home/default receiving location) or a
+// brand-new product, without requiring the bin to already have stock.
+let _assignBinTarget=null;
+function openAssignBin(rack,shelf){
+  if(!getPerms().canEdit){ toast('You do not have permission to reassign bins','w'); return; }
+  _assignBinTarget={rack,shelf};
+  document.getElementById('ab-bin-label').textContent=`${rack}${shelf}`;
+  const homeSkus=SKUS.filter(s=>{const l=liveLoc(s.sku);return l.rack===rack&&String(l.shelf)===String(shelf);});
+  document.getElementById('ab-hint').textContent=homeSkus.length
+    ? `Currently the default bin for: ${homeSkus.map(s=>s.sku).join(', ')} (out of stock) — assigning a different product here adds it alongside, it won't remove that default.`
+    : 'No product currently defaults to this bin.';
+  // Out-of-stock SKUs first — they're the realistic candidates for an
+  // empty bin — then alphabetically within each group.
+  const sorted=[...SKUS].sort((a,b)=>{
+    const qa=(inv[a.sku]||{qty:0}).qty, qb=(inv[b.sku]||{qty:0}).qty;
+    if((qa<=0)!==(qb<=0)) return qa<=0?-1:1;
+    return (a.sub+a.variant).localeCompare(b.sub+b.variant);
+  });
+  const sel=document.getElementById('ab-sku-select');
+  sel.innerHTML=sorted.map(s=>{
+    const q=(inv[s.sku]||{qty:0}).qty;
+    return `<option value="${esc(s.sku)}">${esc(s.sub)} — ${esc(s.variant)} (${esc(s.sku)}) · ${q<=0?'out of stock':q+' in stock'}</option>`;
+  }).join('');
+  document.getElementById('assign-bin-modal-overlay').style.display='flex';
+}
+function closeAssignBinModal(){
+  document.getElementById('assign-bin-modal-overlay').style.display='none';
+  _assignBinTarget=null;
+}
+async function confirmAssignBin(){
+  if(!_assignBinTarget) return;
+  const sku=document.getElementById('ab-sku-select').value;
+  if(!sku){ toast('Pick a product first','w'); return; }
+  const {rack,shelf}=_assignBinTarget;
+  const qty=(inv[sku]||{qty:0}).qty;
+  if(qty>0 && !confirm(`${sku} currently has ${qty} unit(s) stocked elsewhere. Set ${rack}${shelf} as its home bin anyway?`)) return;
+  if(!inv[sku]) inv[sku]={qty:0,locations:[]};
+  // This only sets the default/home location — it deliberately does NOT
+  // touch qty or the locations array, since the bin has no stock. If the
+  // SKU already has stock elsewhere, that stock and its own bin(s) are
+  // untouched; this just changes where the SKU's NEXT receipt defaults to.
+  inv[sku].rack=rack; inv[sku].shelf=shelf;
+  await saveInv();
+  logAudit('BIN_ASSIGN','inventory',sku,null,{rack,shelf});
+  closeAssignBinModal();
+  renderRack();
+  toast(`${sku} assigned to ${rack}${shelf}`,'s');
+}
+function addNewProductToBin(){
+  if(!_assignBinTarget) return;
+  const {rack,shelf}=_assignBinTarget;
+  closeAssignBinModal();
+  nav('inventory');
+  setTimeout(()=>{
+    const f=document.getElementById('add-product-form');
+    if(f){ f.style.display='block'; populateAddProductRackShelf(); }
+    const rackSel=document.getElementById('ap-rack');
+    const shelfSel=document.getElementById('ap-shelf');
+    if(rackSel) rackSel.value=rack;
+    if(shelfSel) shelfSel.value=String(shelf);
+    f?.scrollIntoView({behavior:'smooth',block:'center'});
+  },80);
 }
 
 // UNIFIED ORDER STATUS
