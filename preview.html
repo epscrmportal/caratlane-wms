@@ -9748,7 +9748,14 @@ function printSelectedLabels(){
     </body></html>`);
     pw.document.close();
     pw.focus();
-    logAudit('PRINT_LABELS','inventory','batch',null,{count:selectedSKUs.length,skus:selectedSKUs.map(s=>s.sku)});
+    // 'batch' as a literal Record ID told an auditor nothing about what
+    // was actually printed — show the SKU(s) instead (truncated for long
+    // batches), with the full list still in new_values for anyone who
+    // needs it.
+    const printedSkuLabel=selectedSKUs.length<=3
+      ? selectedSKUs.map(s=>s.sku).join(', ')
+      : `${selectedSKUs.slice(0,2).map(s=>s.sku).join(', ')} +${selectedSKUs.length-2} more`;
+    logAudit('PRINT_LABELS','inventory',printedSkuLabel,null,{count:selectedSKUs.length,skus:selectedSKUs.map(s=>s.sku)});
     toast(selectedSKUs.length+' labels sent to print preview','s');
   });
 }
