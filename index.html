@@ -544,6 +544,7 @@ tr:hover td{background:var(--s2)}
   <div id="same-day-dispatch-banner"></div>
   <div id="backup-reminder-banner"></div>
   <div id="order-aging-banner"></div>
+  <div id="inventory-value-banner"></div>
   <div class="sgrid" id="stat-cards"></div>
   <div class="fg2">
     <div>
@@ -1119,6 +1120,40 @@ tr:hover td{background:var(--s2)}
       <button onclick="selectAllLabels()" style="padding:6px 12px;background:var(--s2);border:0.5px solid var(--b);border-radius:6px;cursor:pointer;font-size:11px;color:var(--t)"><i class="ti ti-checkbox"></i> Select All</button>
       <button onclick="clearLabelSelection()" style="padding:6px 12px;background:var(--s2);border:0.5px solid var(--b);border-radius:6px;cursor:pointer;font-size:11px;color:var(--t)"><i class="ti ti-square"></i> Clear</button>
       <button onclick="printSelectedLabels()" style="padding:6px 14px;background:var(--gold);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;display:flex;align-items:center;gap:5px"><i class="ti ti-printer"></i> Print Selected (<span id="lbl-sel-count">0</span>)</button>
+    </div>
+  </div>
+
+  <!-- ADD NEW PRODUCT (same action as Inventory → Add New Product) so a
+       brand-new SKU can be created and its label printed without leaving
+       this page. Visibility gated by canEdit in applyRoleRestrictions(). -->
+  <div id="lbl-add-product-panel" style="display:none;margin-bottom:14px">
+    <button class="btn-sm" onclick="toggleAddProductFormLabels()"><i class="ti ti-plus"></i>Add New Product</button>
+    <div id="lbl-add-product-form" style="display:none;background:var(--s2);border-radius:10px;padding:14px;margin-top:8px">
+      <div class="info-box" style="margin-bottom:10px"><i class="ti ti-info-circle"></i>Creates a new SKU in the catalog and sets its permanent home rack/shelf — same as Inventory → Add New Product. It'll be pre-selected in the grid below so you can print its label right away.</div>
+      <div class="fg2">
+        <div class="frow"><label for="lbl-ap-sku">SKU code</label><input type="text" id="lbl-ap-sku" placeholder="e.g. UNI-GS-M-48"></div>
+        <div class="frow"><label for="lbl-ap-cat">Category</label>
+          <select id="lbl-ap-cat">
+            <option value="Uniform">Uniform</option>
+            <option value="VM">VM</option>
+          </select>
+        </div>
+      </div>
+      <div class="fg2">
+        <div class="frow"><label for="lbl-ap-name">Item name</label><input type="text" id="lbl-ap-name" placeholder="e.g. Grey Sweater- Male"></div>
+        <div class="frow"><label for="lbl-ap-variant">Variant</label><input type="text" id="lbl-ap-variant" placeholder="e.g. Size 48"></div>
+      </div>
+      <div class="fg2">
+        <div class="frow"><label for="lbl-ap-rack">Rack</label><select id="lbl-ap-rack"></select></div>
+        <div class="frow"><label for="lbl-ap-shelf">Shelf</label><select id="lbl-ap-shelf"></select></div>
+      </div>
+      <div class="fg2">
+        <div class="frow"><label for="lbl-ap-price">Unit price (₹)</label><input type="number" id="lbl-ap-price" placeholder="e.g. 995" min="0" step="0.01"></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:4px">
+        <button class="btn-primary" onclick="submitAddProductFromLabels()"><i class="ti ti-check"></i>Add product</button>
+        <button class="btn-sm" onclick="toggleAddProductFormLabels()">Cancel</button>
+      </div>
     </div>
   </div>
 
@@ -2110,8 +2145,55 @@ let inv={},history=[],ibItems=[],ibExpectedRemaining=null,pkItemsList=[],rtItems
   packagingChargePerOrder:75,
   // Contract start date — the first month is prorated (billed only for the
   // days from this date to month-end) instead of the full flat charge.
-  contractStartDate:'2026-08-15'
+  contractStartDate:'2026-08-15',
+  // ── Staffing & monthly overhead ──────────────────────────────────────
+  // The per-transaction rates above (₹500/GRN, ₹50/pick, etc.) only ever
+  // added up to a few thousand rupees — nowhere close to what it actually
+  // costs to run the warehouse (salaries, electricity, packaging material
+  // consumed). These are real fixed monthly costs, entered once and folded
+  // into "Cost & Profitability Summary" alongside the per-transaction total
+  // so Total cost / ROI reflect reality. Defaults match the actual crew
+  // (1 supervisor, 2 workers) but counts/salaries are editable in case
+  // staffing changes.
+  supervisorCount:1,
+  supervisorSalaryMonthly:25000,
+  workerCount:2,
+  workerSalaryMonthly:15000,
+  electricityBillMonthly:0,
+  packagingMaterialCostMonthly:0,
+  otherMonthlyOverhead:0
 };
+// Fixed monthly overhead — salaries + electricity + packaging material +
+// anything else entered under "Other" — independent of transaction volume.
+function monthlyFixedOverhead(){
+  return (costParams.supervisorCount*costParams.supervisorSalaryMonthly)
+       + (costParams.workerCount*costParams.workerSalaryMonthly)
+       + costParams.electricityBillMonthly
+       + costParams.packagingMaterialCostMonthly
+       + costParams.otherMonthlyOverhead;
+}
+// costParams persistence (Supabase) — these values used to live in memory
+// only and silently reset to defaults on every reload/re-login. Now backed
+// by a single row in wms_settings so an admin's staffing/overhead numbers
+// actually stick. Falls back to the in-code defaults above if the table
+// doesn't exist yet or the row hasn't been created (e.g. before the
+// caratlane-add-wms-settings.sql migration has been run).
+async function loadCostParams(){
+  try{
+    const {data,error}=await supa.from('wms_settings').select('data').eq('id','cost_params').maybeSingle();
+    if(error) throw error;
+    if(data&&data.data) Object.assign(costParams,data.data);
+  }catch(e){
+    console.warn('loadCostParams failed — using defaults:',e.message||e);
+  }
+}
+async function saveCostParams(){
+  try{
+    await supa.from('wms_settings').upsert({id:'cost_params',data:costParams,updated_at:new Date().toISOString()},{onConflict:'id'});
+  }catch(e){
+    console.warn('saveCostParams failed — change kept locally only this session:',e.message||e);
+  }
+}
 
 // ═══ CLOUD STORAGE — SUPABASE ═══
 async function initInv(){
@@ -3012,6 +3094,7 @@ function renderDash(){
   renderSameDayAlert();
   renderBackupReminderBanner();
   renderOrderAgingAlert();
+  renderInventoryValueBanner();
   document.getElementById('stat-cards').innerHTML=`
     <div class="sc"><div class="sl"><i class="ti ti-package"></i>Total SKUs</div><div class="sv">${total}</div><div class="ss">${RACK_LETTERS.length} racks · ${RACK_LETTERS.length*SHELVES_PER_RACK} shelves</div></div>
     <div class="sc"><div class="sl"><i class="ti ti-check"></i>In stock</div><div class="sv">${ins}</div><div class="ss">${total-ins} empty SKUs</div></div>
@@ -3058,14 +3141,22 @@ function renderDashRackSummary(){
       byRack[loc.rack].qty+=loc.qty;
     });
   });
+  // At-a-glance color: full racks (no room left) are the thing that needs
+  // attention, so they get red; a rack with free shelves is green — the
+  // opposite of a low-stock alert, where empty is the bad state. Partial
+  // sits in between as yellow.
   el.innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px">${RACK_LETTERS.map(r=>{
     const d=byRack[r];
     const used=Array.from(d.shelves).filter(sh=>+sh<=SHELVES_PER_RACK).length;
+    const full=used>=SHELVES_PER_RACK;
     const empty=used===0;
-    return `<div onclick="nav('rack')" style="cursor:pointer;background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:8px;text-align:center">
-      <div style="font-size:13px;font-weight:700">${r}</div>
-      <div style="font-size:10px;color:${empty?'var(--t3)':'var(--t2)'};margin-top:2px">${used}/${SHELVES_PER_RACK} shelves</div>
-      <div style="font-size:10px;color:var(--t2)">${d.qty}u</div>
+    const bg=full?'var(--dbg)':empty?'var(--sbg)':'var(--wbg)';
+    const border=full?'var(--dt)':empty?'var(--st)':'var(--wt)';
+    const fg=full?'var(--dt)':empty?'var(--st)':'var(--wt)';
+    return `<div onclick="nav('rack')" style="cursor:pointer;background:${bg};border:1px solid ${border};border-radius:8px;padding:8px;text-align:center">
+      <div style="font-size:13px;font-weight:700;color:${fg}">${r}</div>
+      <div style="font-size:10px;color:${fg};margin-top:2px">${used}/${SHELVES_PER_RACK} shelves</div>
+      <div style="font-size:10px;color:${fg}">${d.qty}u</div>
     </div>`;
   }).join('')}</div>`;
 }
@@ -7173,11 +7264,27 @@ function renderSpaceUtil(){
   </div>
   <div style="margin-bottom:12px">
     <div style="font-size:10px;color:var(--t2);margin-bottom:4px;font-weight:600">FLOOR BREAKDOWN — 1,600 sq ft</div>
-    <div style="height:24px;border-radius:6px;overflow:hidden;display:flex;font-size:9px;font-weight:600">
-      <div style="width:${Math.round((totalRackFloor/WAREHOUSE_SQFT)*100)}%;background:#B8860B;display:flex;align-items:center;justify-content:center;color:#fff;white-space:nowrap;overflow:hidden">Racks ${totalRackFloor}sf</div>
-      <div style="width:${Math.round((aisleFloor/WAREHOUSE_SQFT)*100)}%;background:#d4a843;display:flex;align-items:center;justify-content:center;color:#fff;white-space:nowrap;overflow:hidden">Aisles ${aisleFloor}sf</div>
-      <div style="width:${Math.round((operationsFloor/WAREHOUSE_SQFT)*100)}%;background:var(--sbg);display:flex;align-items:center;justify-content:center;color:var(--st);white-space:nowrap;overflow:hidden">Operations ${operationsFloor}sf</div>
+    ${(()=>{
+      // A narrow segment (e.g. Aisles at ~3% width) can't fit its own
+      // label — "Aisles 48sf" was overflowing and getting clipped to an
+      // illegible fragment ("isles 48s"). Only print the inline label once
+      // a segment is wide enough to actually hold it; the legend below
+      // always shows the full figures regardless of segment width.
+      const rackPct=Math.round((totalRackFloor/WAREHOUSE_SQFT)*100);
+      const aislePct=Math.round((aisleFloor/WAREHOUSE_SQFT)*100);
+      const opsPct=Math.round((operationsFloor/WAREHOUSE_SQFT)*100);
+      const MIN_LABEL_PCT=12;
+      return `<div style="height:24px;border-radius:6px;overflow:hidden;display:flex;font-size:9px;font-weight:600">
+      <div style="width:${rackPct}%;background:#B8860B;display:flex;align-items:center;justify-content:center;color:#fff;white-space:nowrap;overflow:hidden">${rackPct>=MIN_LABEL_PCT?`Racks ${totalRackFloor}sf`:''}</div>
+      <div style="width:${aislePct}%;background:#d4a843;display:flex;align-items:center;justify-content:center;color:#fff;white-space:nowrap;overflow:hidden">${aislePct>=MIN_LABEL_PCT?`Aisles ${aisleFloor}sf`:''}</div>
+      <div style="width:${opsPct}%;background:var(--sbg);display:flex;align-items:center;justify-content:center;color:var(--st);white-space:nowrap;overflow:hidden">${opsPct>=MIN_LABEL_PCT?`Operations ${operationsFloor}sf`:''}</div>
     </div>
+    <div style="display:flex;gap:14px;margin-top:6px;font-size:10px;color:var(--t2);flex-wrap:wrap">
+      <span><i style="display:inline-block;width:8px;height:8px;background:#B8860B;border-radius:2px;margin-right:4px"></i>Racks ${totalRackFloor}sf</span>
+      <span><i style="display:inline-block;width:8px;height:8px;background:#d4a843;border-radius:2px;margin-right:4px"></i>Aisles ${aisleFloor}sf</span>
+      <span><i style="display:inline-block;width:8px;height:8px;background:var(--sbg);border:0.5px solid var(--b);border-radius:2px;margin-right:4px"></i>Operations ${operationsFloor}sf</span>
+    </div>`;
+    })()}
   </div>
   <div style="font-size:10px;color:var(--t2);margin-bottom:4px;font-weight:600">RACK SPECIFICATIONS (per rack)</div>
   <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:12px;font-size:10px">
@@ -7201,6 +7308,43 @@ function renderSpaceUtil(){
   </div>
   `;
 }
+// Total value of stock currently sitting in the warehouse, at unit price —
+// distinct from the operational cost figures below (those are the cost of
+// running the warehouse; this is what the inventory itself is worth).
+const INVENTORY_VALUE_ALERT_THRESHOLD=5000000; // ₹50 lakh
+function totalInventoryValue(){
+  return SKUS.reduce((a,s)=>a+((inv[s.sku]||{qty:0}).qty||0)*(s.price!=null?s.price:0),0);
+}
+function skusMissingPriceWithStock(){
+  return SKUS.filter(s=>s.price==null&&((inv[s.sku]||{qty:0}).qty||0)>0).length;
+}
+// Dashboard warning — admin only, per explicit request (not supervisor,
+// unlike most other alert banners in this app). Purely synchronous/local
+// since inv+SKUS are already in memory; no fetch needed like the backup
+// reminder has.
+function renderInventoryValueBanner(){
+  const el=document.getElementById('inventory-value-banner');
+  if(!el) return;
+  if(currentProfile?.role!=='admin'){ el.innerHTML=''; return; }
+  const value=totalInventoryValue();
+  if(value<=INVENTORY_VALUE_ALERT_THRESHOLD){ el.innerHTML=''; return; }
+  const missing=skusMissingPriceWithStock();
+  el.innerHTML=`
+    <div style="background:var(--dbg);border:1.5px solid var(--dt);border-radius:10px;padding:14px 16px;margin-bottom:14px;cursor:pointer" onclick="nav('finance')">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:40px;height:40px;background:var(--dt);border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <i class="ti ti-currency-rupee" style="font-size:20px;color:#fff"></i>
+          </div>
+          <div>
+            <div style="font-weight:700;font-size:13px;color:var(--dt)">⚠️ Inventory value has crossed ₹50 lakh</div>
+            <div style="font-size:11px;color:var(--t2);margin-top:2px">Stock currently held is worth ₹${value.toLocaleString('en-IN')}${missing?` (${missing} in-stock SKU(s) have no price set — actual value may be higher)`:''}.</div>
+          </div>
+        </div>
+        <span style="font-size:11px;color:var(--dt);font-weight:600">View Finance →</span>
+      </div>
+    </div>`;
+}
 function renderCostSummary(){
   const el=document.getElementById('cost-summary');
   if(!el)return;
@@ -7211,16 +7355,26 @@ function renderCostSummary(){
   const totalCost=(grns*costParams.receivingCostPerGrn)+(picks*costParams.pickCostPerOrder)+(packs*costParams.packCostPerOrder)+(returns*costParams.returnProcessingCost);
   const totalSku=SKUS.length;
   const storageCost=totalSku*costParams.storageCostPerSku;
-  const totalWithStorage=totalCost+storageCost;
+  const overhead=monthlyFixedOverhead();
+  const totalWithStorage=totalCost+storageCost+overhead;
   const dispatches=history.filter(h=>h.type==='dispatched').length;
   const dispatchRevenue=dispatches*costParams.dispatchCostPerOrder;
   const roi=dispatchRevenue>0?Math.round(((dispatchRevenue-totalWithStorage)/totalWithStorage)*100):0;
+  const invValue=totalInventoryValue();
+  const missingPriceCt=skusMissingPriceWithStock();
+  const overThreshold=invValue>INVENTORY_VALUE_ALERT_THRESHOLD;
   el.innerHTML=`
     <div style="font-size:11px;line-height:2;margin-bottom:8px">
+      <div style="padding:8px;background:${overThreshold?'var(--dbg)':'var(--s2)'};border-radius:6px;margin-bottom:6px${overThreshold?';border:1px solid var(--dt)':''}">
+        <div><span style="color:${overThreshold?'var(--dt)':'var(--t2)'}">Inventory value (stock on hand):</span> <span style="font-weight:700;font-size:13px;color:${overThreshold?'var(--dt)':'var(--t)'}">₹${invValue.toLocaleString('en-IN')}</span></div>
+        ${overThreshold?`<div style="font-size:10px;color:var(--dt);margin-top:2px"><i class="ti ti-alert-triangle"></i> Over the ₹50 lakh threshold</div>`:''}
+        ${missingPriceCt?`<div style="font-size:10px;color:var(--t3);margin-top:2px">${missingPriceCt} in-stock SKU(s) have no price set — excluded, so this may undercount</div>`:''}
+      </div>
       <div style="padding:8px;background:var(--s2);border-radius:6px;margin-bottom:6px">
-        <div><span style="color:var(--t2)">Operations cost:</span> <span style="font-weight:600">₹${totalCost}</span></div>
+        <div><span style="color:var(--t2)">Operations cost (per-transaction):</span> <span style="font-weight:600">₹${totalCost}</span></div>
         <div><span style="color:var(--t2)">Storage cost (${totalSku} SKUs):</span> <span style="font-weight:600">₹${storageCost}</span></div>
-        <div style="border-top:0.5px solid var(--b);padding-top:6px;margin-top:6px"><span style="color:var(--t2)">Total cost:</span> <span style="font-weight:600;font-size:13px">₹${totalWithStorage}</span></div>
+        <div><span style="color:var(--t2)">Staffing & overhead (monthly):</span> <span style="font-weight:600">₹${overhead.toLocaleString('en-IN')}</span></div>
+        <div style="border-top:0.5px solid var(--b);padding-top:6px;margin-top:6px"><span style="color:var(--t2)">Total cost:</span> <span style="font-weight:600;font-size:13px">₹${totalWithStorage.toLocaleString('en-IN')}</span></div>
       </div>
       <div style="padding:8px;background:var(--sbg);border-radius:6px">
         <div><span style="color:var(--st)">Dispatch revenue:</span> <span style="font-weight:600;color:var(--st)">₹${dispatchRevenue}</span></div>
@@ -7362,6 +7516,17 @@ function renderCostInputs(){
       <div><label for="cost-dispatch" style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Dispatch revenue/order (₹)</label><input type="number" id="cost-dispatch" value="${costParams.dispatchCostPerOrder}" onchange="updateCost('dispatchCostPerOrder',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
       <div><label for="cost-storage" style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Storage cost/SKU/month (₹)</label><input type="number" id="cost-storage" value="${costParams.storageCostPerSku}" onchange="updateCost('storageCostPerSku',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
       <div><label for="cost-return" style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Return processing (₹)</label><input type="number" id="cost-return" value="${costParams.returnProcessingCost}" onchange="updateCost('returnProcessingCost',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
+      <div style="font-size:11px;font-weight:700;color:var(--t2);margin-top:6px;padding-top:6px;border-top:1px solid var(--b)">Staffing & monthly overhead</div>
+      <div style="font-size:10px;color:var(--t3);margin-top:-4px">Real fixed costs of running the warehouse — folded into Total cost above, separate from the per-transaction rates.</div>
+      <div class="fg2" style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div><label for="cost-supervisor-count" style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500"># Supervisors</label><input type="number" id="cost-supervisor-count" value="${costParams.supervisorCount}" min="0" onchange="updateCost('supervisorCount',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
+        <div><label for="cost-supervisor-salary" style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Supervisor salary/month (₹, each)</label><input type="number" id="cost-supervisor-salary" value="${costParams.supervisorSalaryMonthly}" onchange="updateCost('supervisorSalaryMonthly',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
+        <div><label for="cost-worker-count" style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500"># Workers</label><input type="number" id="cost-worker-count" value="${costParams.workerCount}" min="0" onchange="updateCost('workerCount',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
+        <div><label for="cost-worker-salary" style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Worker salary/month (₹, each)</label><input type="number" id="cost-worker-salary" value="${costParams.workerSalaryMonthly}" onchange="updateCost('workerSalaryMonthly',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
+      </div>
+      <div><label for="cost-electricity" style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Electricity bill/month (₹)</label><input type="number" id="cost-electricity" value="${costParams.electricityBillMonthly}" onchange="updateCost('electricityBillMonthly',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
+      <div><label for="cost-packmat" style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Packaging material cost/month (₹)</label><input type="number" id="cost-packmat" value="${costParams.packagingMaterialCostMonthly}" onchange="updateCost('packagingMaterialCostMonthly',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
+      <div><label for="cost-other-overhead" style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Other monthly overhead (₹)</label><input type="number" id="cost-other-overhead" value="${costParams.otherMonthlyOverhead}" onchange="updateCost('otherMonthlyOverhead',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
       <div style="font-size:11px;font-weight:700;color:var(--t2);margin-top:6px;padding-top:6px;border-top:1px solid var(--b)">CaratLane contract billing rates</div>
       <div><label for="cost-mstorage" style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Monthly storage charge (₹, flat)</label><input type="number" id="cost-mstorage" value="${costParams.monthlyStorageFlat}" onchange="updateCost('monthlyStorageFlat',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
       <div><label for="cost-unload" style="display:block;margin-bottom:3px;color:var(--t2);font-weight:500">Unloading & receiving (₹/box)</label><input type="number" id="cost-unload" value="${costParams.unloadingPerBox}" onchange="updateCost('unloadingPerBox',this.value)" style="width:100%;padding:6px;border:0.5px solid var(--b);border-radius:4px"></div>
@@ -7381,6 +7546,7 @@ function updateCost(param,val){
     costParams[param]=parseInt(val)||0;
   }
   renderFinance();
+  saveCostParams(); // persist so this doesn't reset on next login (fire-and-forget; failure just falls back to defaults, logged to console)
   toast(`Updated ${param}`,'s');
 }
 function renderCapacityAlerts(){
@@ -9475,9 +9641,9 @@ function toggleAddProductForm(){
   f.style.display=show?'block':'none';
   if(show) populateAddProductRackShelf();
 }
-function populateAddProductRackShelf(){
-  const rackSel=document.getElementById('ap-rack');
-  const shelfSel=document.getElementById('ap-shelf');
+function populateAddProductRackShelf(rackId,shelfId){
+  const rackSel=document.getElementById(rackId||'ap-rack');
+  const shelfSel=document.getElementById(shelfId||'ap-shelf');
   const racks=Array.from({length:15},(_,i)=>String.fromCharCode(65+i)); // A–O
   if(rackSel && !rackSel.options.length){
     rackSel.innerHTML=racks.map(r=>`<option value="${r}">Rack ${r}</option>`).join('');
@@ -9511,6 +9677,53 @@ async function submitAddProduct(){
     populateSkuSel('exp-sku');
     renderRack();
     logAudit('SKU_CREATE','skus',sku,null,{cat,sub:name,variant,rack,shelf,price});
+  }
+}
+// ═══ ADD NEW PRODUCT — from the Label Printer page ═══
+// Same underlying action as Inventory → Add New Product (addSKU), just
+// reachable from Label Printer too so a brand-new SKU can be created and
+// its label printed in one place, without a trip to Inventory first. Uses
+// its own lbl-ap-* field ids since both forms can exist in the DOM at once.
+function toggleAddProductFormLabels(){
+  const f=document.getElementById('lbl-add-product-form');
+  if(!f) return;
+  const show=f.style.display==='none';
+  f.style.display=show?'block':'none';
+  if(show) populateAddProductRackShelf('lbl-ap-rack','lbl-ap-shelf');
+}
+async function submitAddProductFromLabels(){
+  const sku=document.getElementById('lbl-ap-sku').value.trim().toUpperCase();
+  const cat=document.getElementById('lbl-ap-cat').value;
+  const name=document.getElementById('lbl-ap-name').value.trim();
+  const variant=document.getElementById('lbl-ap-variant').value.trim();
+  const rack=document.getElementById('lbl-ap-rack').value;
+  const shelf=document.getElementById('lbl-ap-shelf').value;
+  const priceRaw=document.getElementById('lbl-ap-price')?document.getElementById('lbl-ap-price').value.trim():'';
+  if(!sku||!cat||!name||!variant||!rack||!shelf){ toast('Please fill all fields','w'); return; }
+  if(!/^[A-Za-z0-9\-]+$/.test(sku)){ toast('SKU code — letters, numbers and hyphens only','w'); return; }
+  let price=null;
+  if(priceRaw!==''){
+    price=parseFloat(priceRaw);
+    if(isNaN(price)||price<0){ toast('Unit price must be a valid non-negative number','w'); return; }
+  }
+  if(!rateLimit('addProduct',2000)){ toast('Please wait before adding another product','w'); return; }
+  const ok=await addSKU({sku,cat,sub:name,variant,rack,shelf,price});
+  if(ok){
+    ['lbl-ap-sku','lbl-ap-name','lbl-ap-variant','lbl-ap-price'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+    toggleAddProductFormLabels();
+    populateSkuSel('ib-sku');
+    populateSkuSel('exp-sku');
+    renderRack();
+    renderInv();
+    logAudit('SKU_CREATE','skus',sku,null,{cat,sub:name,variant,rack,shelf,price});
+    // The whole point of adding it from here is printing its label right
+    // away — pre-select it and scroll it into view instead of leaving the
+    // person to hunt for what they just typed.
+    _lblSelected.add(sku);
+    renderLabelPage();
+    const card=document.getElementById('lbl-card-'+sku);
+    if(card) card.scrollIntoView({behavior:'smooth',block:'center'});
+    toast(`${sku} added — pre-selected below, ready to print`,'s');
   }
 }
 // ═══════════════════════════════════════════
@@ -10034,6 +10247,8 @@ function applyRoleRestrictions(){
   if(expPanel) expPanel.style.display=perms.canReceive?'block':'none';
   const addProdPanel=document.getElementById('add-product-panel');
   if(addProdPanel) addProdPanel.style.display=perms.canEdit?'block':'none';
+  const lblAddProdPanel=document.getElementById('lbl-add-product-panel');
+  if(lblAddProdPanel) lblAddProdPanel.style.display=perms.canEdit?'block':'none';
   applyTabVisibility();
   // Hide action buttons for viewer. Search/filter/navigation controls are
   // explicitly excluded from the pointer-events lockdown below — a blanket
@@ -10067,7 +10282,7 @@ function applyRoleRestrictions(){
       button[onclick*="openPackModal"],button[onclick*="processReturn"],
       button[onclick*="adjQ"],button[onclick*="quickDisp"],button[onclick*="startEditBin"],
       button[onclick*="startEditPrice"],button[onclick*="addToCart"],
-      #clear-all-btn,#add-product-panel{display:none!important}
+      #clear-all-btn,#add-product-panel,#lbl-add-product-panel{display:none!important}
     `;
     document.head.appendChild(style);
     toast('View-only access — Dashboard, Rack View, Inventory and Order Status','w');
@@ -10663,6 +10878,7 @@ async function bootWMS(){
   await loadHist();
   await loadOrders();
   await loadExpectedShipments();
+  await loadCostParams(); // staffing/overhead numbers before Finance first renders
   renderDash();
   renderInv();
   renderRack();
