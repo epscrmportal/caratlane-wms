@@ -435,9 +435,9 @@ function toggleMenu(){
     if(clearItem) clearItem.style.display=(currentProfile?.role==='admin')?'flex':'none';
     const backupItem=document.getElementById('backup-menu-item');
     if(backupItem) backupItem.style.display=getPerms().canAudit?'flex':'none';
-    // Restore overwrites live data — same admin-only bar as Clear Data.
+    // Restore is admin+supervisor, same bar as Download Full Backup.
     const restoreItem=document.getElementById('restore-menu-item');
-    if(restoreItem) restoreItem.style.display=(currentProfile?.role==='admin')?'flex':'none';
+    if(restoreItem) restoreItem.style.display=getPerms().canAudit?'flex':'none';
   }
   menu.style.display=isVisible?'none':'block';
 }
@@ -847,7 +847,7 @@ const RESTORE_TABLE_PK={
 };
 let _restorePayload=null;
 function showRestoreModal(){
-  if(currentProfile?.role!=='admin'){ toast('Only an admin can restore from a backup','w'); return; }
+  if(!getPerms().canAudit){ toast('Only an admin or supervisor can restore from a backup','w'); return; }
   document.getElementById('dropdown-menu').style.display='none';
   _restorePayload=null;
   document.getElementById('restore-file-picker-area').style.display='block';
@@ -908,7 +908,7 @@ function _chunkArray(arr,size){
   return out;
 }
 async function executeRestoreFromBackup(){
-  if(currentProfile?.role!=='admin'){ toast('Only an admin can restore from a backup','w'); closeRestoreModal(); return; }
+  if(!getPerms().canAudit){ toast('Only an admin or supervisor can restore from a backup','w'); closeRestoreModal(); return; }
   if(!_restorePayload){ toast('Choose a backup file first','w'); return; }
   if(!rateLimit('restore',10000)){ toast('Please wait before trying again','w'); return; }
   const payload=_restorePayload;
