@@ -2751,11 +2751,27 @@ async function downloadFullBackup(){
 }
 
 // ── Backup reminder (admin/supervisor) ──────────────────────────────────
-// Backup nudge every few days, driven off the audit trail rather than a
-// new table — every successful downloadFullBackup() already writes a
-// DOWNLOAD_FULL_BACKUP row to audit_log, so the latest one of those IS
-// the last-backup timestamp. No separate schema/state to keep in sync.
-const BACKUP_REMINDER_DAYS=3;
+// Backup is expected every Monday and Thursday, driven off the audit
+// trail rather than a new table — every successful downloadFullBackup()
+// already writes a DOWNLOAD_FULL_BACKUP row to audit_log, so the latest
+// one of those IS the last-backup timestamp. No separate schema/state to
+// keep in sync.
+//
+// "Overdue" means: no backup has been taken since the most recent
+// scheduled day (today included). On a scheduled day itself, that's
+// "not done yet today". On any day in between (e.g. Tue/Wed after a
+// missed Monday), it keeps pointing back to that same missed Monday —
+// so skipping a scheduled day doesn't reset the clock, it just keeps
+// nagging until someone actually backs up.
+const BACKUP_SCHEDULE_WEEKDAYS=[1,4]; // 0=Sun,1=Mon,2=Tue,3=Wed,4=Thu,5=Fri,6=Sat
+function mostRecentScheduledBackupDay(){
+  const now=new Date();
+  for(let i=0;i<7;i++){
+    const d=new Date(now.getFullYear(),now.getMonth(),now.getDate()-i);
+    if(BACKUP_SCHEDULE_WEEKDAYS.includes(d.getDay())) return d; // midnight, local time
+  }
+  return new Date(now.getFullYear(),now.getMonth(),now.getDate()); // unreachable safety fallback
+}
 let _backupReminderInfo=null;
 async function getLastBackupInfo(){
   try{
@@ -2776,12 +2792,12 @@ async function getLastBackupInfo(){
 }
 function isBackupOverdue(info){
   if(!info||info.error) return false; // don't nag if we couldn't even check
-  if(info.daysSince===null) return true; // never backed up
-  return info.daysSince>=BACKUP_REMINDER_DAYS;
+  if(!info.lastBackupAt) return true; // never backed up
+  return new Date(info.lastBackupAt).getTime() < mostRecentScheduledBackupDay().getTime();
 }
 // Checked once per login (bootWMS) and again every hour the tab stays
-// open, so the warning appears the moment a session crosses the
-// 30-day line without needing a page refresh.
+// open, so the warning appears the moment a session crosses into a
+// scheduled day without needing a page refresh.
 async function checkBackupReminder(){
   if(!getPerms().canAudit) return; // only admin/supervisor can act on this
   _backupReminderInfo=await getLastBackupInfo();
