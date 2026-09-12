@@ -1665,7 +1665,7 @@ tr:hover td{background:var(--s2)}
         <tr><td><i class="ti ti-bell"></i> Bell icon</td><td>Click for a dropdown of everything needing attention right now: out-of-stock SKUs, low-stock SKUs, and orders packed but not yet dispatched. Click any line to jump straight to it.</td></tr>
         <tr><td>Red badge on <b>Inbound</b> tab</td><td>Count of exceptions + low-stock SKUs. Click it to jump straight to the Alerts &amp; Exceptions panel on Analytics &amp; Compliance.</td></tr>
         <tr><td>User menu (top right)</td><td>Shows your name and role. From here: Audit Trail, Manage Users (Admin only), and Sign Out.</td></tr>
-        <tr><td>"More" button (bottom of sidebar)</td><td>Only real option here is <b>Clear All Data</b> — <span style="color:var(--dt);font-weight:700">Admin only, irreversible, wipes every GRN/pick/pack/dispatch/return/count record and resets stock to zero</span>. This is for testing/reset only — never use it on live data without being absolutely certain.</td></tr>
+        <tr><td>"More" button (bottom of sidebar)</td><td>Three options here, all restricted: <b>Download Full Backup</b> (Admin/Supervisor) exports every table as JSON + Excel; <b>Restore from Backup</b> (Admin/Supervisor) uploads one of those files back in, overwriting matching records; <b>Clear All Data</b> — <span style="color:var(--dt);font-weight:700">Admin only, irreversible, wipes every GRN/pick/pack/dispatch/return/count record and resets stock to zero</span> — is now blocked unless a backup was taken in the last 24 hours, and requires typing "DELETE ALL DATA" to confirm. Clear/Restore are for testing/reset/recovery only — never use them on live data without being absolutely certain.</td></tr>
       </tbody></table>
 
       <div style="font-size:11px;font-weight:700;color:var(--t2);margin:16px 0 6px;text-transform:uppercase;letter-spacing:.5px">Overview</div>
@@ -2751,11 +2751,11 @@ async function downloadFullBackup(){
 }
 
 // ── Backup reminder (admin/supervisor) ──────────────────────────────────
-// "Monthly" backup nudge, driven off the audit trail rather than a new
-// table — every successful downloadFullBackup() already writes a
+// Backup nudge every few days, driven off the audit trail rather than a
+// new table — every successful downloadFullBackup() already writes a
 // DOWNLOAD_FULL_BACKUP row to audit_log, so the latest one of those IS
 // the last-backup timestamp. No separate schema/state to keep in sync.
-const BACKUP_REMINDER_DAYS=30;
+const BACKUP_REMINDER_DAYS=3;
 let _backupReminderInfo=null;
 async function getLastBackupInfo(){
   try{
@@ -2828,7 +2828,7 @@ function maybeToastBackupReminder(){
     : `⚠️ Last backup was ${info.daysSince} days ago — download a fresh one from the More menu`,'w');
 }
 
-// ── Restore from Backup (admin only) ────────────────────────────────────
+// ── Restore from Backup (admin + supervisor) ────────────────────────────
 // The mirror image of downloadFullBackup(): reads a previously-downloaded
 // JSON backup file and upserts its rows back into Supabase. Upsert (not
 // delete-then-insert) so restoring never removes anything created since
@@ -4081,11 +4081,11 @@ function createGRN(){
 function renderIbLog(){
   const el=document.getElementById('ib-log');
   const logs=history.filter(h=>h.type==='grn').slice(-10).reverse();
-  const canVoid=getPerms().canReceive;
+  const canVoid=currentProfile?.role==='admin';
   el.innerHTML=logs.length?logs.map(h=>`<div class="hist-entry"${h.voided?' style="opacity:0.6"':''}><div class="hist-head"><span class="hist-id">${h.id}</span>${h.voided?'<span class="pill p-out" style="margin-left:6px">VOIDED</span>':''}<span class="hist-ts">${h.ts}</span><button onclick="printGRN('${h.id}')" style="background:none;border:none;cursor:pointer;color:var(--t2);font-size:11px;padding:4px 8px;border-radius:3px;transition:all 0.2s" onmouseover="this.style.background='var(--s2)';this.style.color='var(--t)'" onmouseout="this.style.background='transparent';this.style.color='var(--t2)'"><i class="ti ti-printer"></i>Print</button>${(!h.voided&&canVoid)?`<button onclick="voidGRN('${h.id}')" style="background:none;border:none;cursor:pointer;color:var(--dt);font-size:11px;padding:4px 8px;border-radius:3px;transition:all 0.2s" onmouseover="this.style.background='var(--s2)'" onmouseout="this.style.background='transparent'"><i class="ti ti-rotate-2"></i>Void</button>`:''}</span></div><div class="hist-body">${esc(h.detail)}${h.grnNotes?`<div style="color:var(--t2);font-size:10px;margin-top:2px"><i class="ti ti-note"></i> ${esc(h.grnNotes)}</div>`:''}${h.voided?`<div style="color:var(--dt);font-size:10px;margin-top:2px">Voided by ${esc(h.voidedBy||'—')} on ${esc(h.voidedAt||'')}${h.voidReason?' — '+esc(h.voidReason):''}</div>`:''}</div></div>`).join(''):'<div class="empty">No GRNs created yet</div>';
 }
 function voidGRN(grnId){
-  if(!getPerms().canReceive){ toast('You do not have permission to void a GRN','w'); return; }
+  if(currentProfile?.role!=='admin'){ toast('Only an admin can void a GRN','w'); return; }
   const grn=history.find(h=>h.id===grnId && h.type==='grn');
   if(!grn){ toast('GRN not found','w'); return; }
   if(grn.voided){ toast('This GRN has already been voided','w'); return; }

@@ -754,11 +754,11 @@ async function downloadFullBackup(){
 }
 
 // ── Backup reminder (admin/supervisor) ──────────────────────────────────
-// "Monthly" backup nudge, driven off the audit trail rather than a new
-// table — every successful downloadFullBackup() already writes a
+// Backup nudge every few days, driven off the audit trail rather than a
+// new table — every successful downloadFullBackup() already writes a
 // DOWNLOAD_FULL_BACKUP row to audit_log, so the latest one of those IS
 // the last-backup timestamp. No separate schema/state to keep in sync.
-const BACKUP_REMINDER_DAYS=30;
+const BACKUP_REMINDER_DAYS=3;
 let _backupReminderInfo=null;
 async function getLastBackupInfo(){
   try{
@@ -831,7 +831,7 @@ function maybeToastBackupReminder(){
     : `⚠️ Last backup was ${info.daysSince} days ago — download a fresh one from the More menu`,'w');
 }
 
-// ── Restore from Backup (admin only) ────────────────────────────────────
+// ── Restore from Backup (admin + supervisor) ────────────────────────────
 // The mirror image of downloadFullBackup(): reads a previously-downloaded
 // JSON backup file and upserts its rows back into Supabase. Upsert (not
 // delete-then-insert) so restoring never removes anything created since
@@ -2084,11 +2084,11 @@ function createGRN(){
 function renderIbLog(){
   const el=document.getElementById('ib-log');
   const logs=history.filter(h=>h.type==='grn').slice(-10).reverse();
-  const canVoid=getPerms().canReceive;
+  const canVoid=currentProfile?.role==='admin';
   el.innerHTML=logs.length?logs.map(h=>`<div class="hist-entry"${h.voided?' style="opacity:0.6"':''}><div class="hist-head"><span class="hist-id">${h.id}</span>${h.voided?'<span class="pill p-out" style="margin-left:6px">VOIDED</span>':''}<span class="hist-ts">${h.ts}</span><button onclick="printGRN('${h.id}')" style="background:none;border:none;cursor:pointer;color:var(--t2);font-size:11px;padding:4px 8px;border-radius:3px;transition:all 0.2s" onmouseover="this.style.background='var(--s2)';this.style.color='var(--t)'" onmouseout="this.style.background='transparent';this.style.color='var(--t2)'"><i class="ti ti-printer"></i>Print</button>${(!h.voided&&canVoid)?`<button onclick="voidGRN('${h.id}')" style="background:none;border:none;cursor:pointer;color:var(--dt);font-size:11px;padding:4px 8px;border-radius:3px;transition:all 0.2s" onmouseover="this.style.background='var(--s2)'" onmouseout="this.style.background='transparent'"><i class="ti ti-rotate-2"></i>Void</button>`:''}</span></div><div class="hist-body">${esc(h.detail)}${h.grnNotes?`<div style="color:var(--t2);font-size:10px;margin-top:2px"><i class="ti ti-note"></i> ${esc(h.grnNotes)}</div>`:''}${h.voided?`<div style="color:var(--dt);font-size:10px;margin-top:2px">Voided by ${esc(h.voidedBy||'—')} on ${esc(h.voidedAt||'')}${h.voidReason?' — '+esc(h.voidReason):''}</div>`:''}</div></div>`).join(''):'<div class="empty">No GRNs created yet</div>';
 }
 function voidGRN(grnId){
-  if(!getPerms().canReceive){ toast('You do not have permission to void a GRN','w'); return; }
+  if(currentProfile?.role!=='admin'){ toast('Only an admin can void a GRN','w'); return; }
   const grn=history.find(h=>h.id===grnId && h.type==='grn');
   if(!grn){ toast('GRN not found','w'); return; }
   if(grn.voided){ toast('This GRN has already been voided','w'); return; }
