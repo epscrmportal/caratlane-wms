@@ -5207,12 +5207,35 @@ function renderSpaceUtil(){
   const activeSKUs=SKUS.filter(s=>(inv[s.sku]||{qty:0}).qty>0).length;
   const totalUnits=SKUS.reduce((a,s)=>a+(inv[s.sku]||{qty:0}).qty,0);
   const avgUnitsPerRack=Math.round(totalUnits/TOTAL_RACKS);
+  // Floor/Air-space % above measure the FIXED physical footprint of the
+  // racking structure itself (rack furniture + aisles vs the building's
+  // 1,600 sq ft) — it barely moves whether shelves are empty or full,
+  // because it's about how much floor plan racks take up, not how full
+  // they are. That was getting read as "how full is my warehouse", which
+  // it was never meant to answer — hence a heavily-stocked warehouse
+  // still showing ~10%. This is the actual answer to that question:
+  // real occupied shelf-slots (same calc as Warehouse Utilization above)
+  // out of total shelf-slots across all racks.
+  const totalShelfSlots=TOTAL_RACKS*SHELVES_PER_RACK;
+  const occupiedShelfSet=new Set();
+  SKUS.forEach(s=>{
+    getSkuLocations(s.sku).forEach(loc=>{
+      if(loc.qty>0&&loc.rack&&parseInt(loc.shelf)<=SHELVES_PER_RACK) occupiedShelfSet.add(loc.rack+'-'+loc.shelf);
+    });
+  });
+  const occupiedShelfSlots=occupiedShelfSet.size;
+  const shelfCapacityPct=totalShelfSlots>0?Math.round((occupiedShelfSlots/totalShelfSlots)*100):0;
   el.innerHTML=`
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:12px">
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:6px">
+    <div style="padding:10px;background:var(--s2);border-radius:8px;text-align:center;border:1px solid ${shelfCapacityPct>=80?'var(--dt)':shelfCapacityPct>=50?'var(--wt)':'var(--st)'}">
+      <div style="font-size:22px;font-weight:700;color:${shelfCapacityPct>=80?'var(--dt)':shelfCapacityPct>=50?'var(--wt)':'var(--st)'}">${shelfCapacityPct}%</div>
+      <div style="font-size:10px;color:var(--t2);margin-top:2px">Shelf Capacity Used</div>
+      <div style="font-size:10px;color:var(--t3)">${occupiedShelfSlots} / ${totalShelfSlots} shelf-slots — how full your racks actually are</div>
+    </div>
     <div style="padding:10px;background:var(--s2);border-radius:8px;text-align:center">
       <div style="font-size:22px;font-weight:700;color:var(--gold)">${floorUtilPct}%</div>
-      <div style="font-size:10px;color:var(--t2);margin-top:2px">Floor Used</div>
-      <div style="font-size:10px;color:var(--t3)">${rackZoneFloor} / ${WAREHOUSE_SQFT} sq ft</div>
+      <div style="font-size:10px;color:var(--t2);margin-top:2px">Floor Footprint Used</div>
+      <div style="font-size:10px;color:var(--t3)">${rackZoneFloor} / ${WAREHOUSE_SQFT} sq ft — rack furniture + aisles</div>
     </div>
     <div style="padding:10px;background:var(--s2);border-radius:8px;text-align:center">
       <div style="font-size:22px;font-weight:700;color:var(--it)">${cubeUtilPct}%</div>
@@ -5229,6 +5252,9 @@ function renderSpaceUtil(){
       <div style="font-size:10px;color:var(--t2);margin-top:2px">Ops Floor Free</div>
       <div style="font-size:10px;color:var(--t3)">Packing / staging / aisles</div>
     </div>
+  </div>
+  <div style="margin-bottom:12px;padding:8px;background:var(--ibg);border-radius:6px;font-size:10px;color:var(--it)">
+    <i class="ti ti-info-circle"></i> <strong>Shelf Capacity Used</strong> is how full your racks are with stock right now — that's the one to watch day to day. <strong>Floor Footprint</strong> and <strong>Air Space Used</strong> measure something different: how much of the 1,600 sq ft building the physical rack structures themselves take up. That number is fixed by rack count/size and barely changes whether shelves are empty or full — it answers "is there room to add more racks," not "how full are my racks."
   </div>
   <div style="margin-bottom:12px">
     <div style="font-size:10px;color:var(--t2);margin-bottom:4px;font-weight:600">FLOOR BREAKDOWN — 1,600 sq ft</div>
