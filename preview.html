@@ -1314,11 +1314,6 @@ tr:hover td{background:var(--s2)}
   <div id="monthly-billing-summary" style="margin-bottom:12px"></div>
   <div class="sep"></div>
   <div class="fg2" style="margin-bottom:12px">
-    <div><div class="stitle">Cost & Profitability Summary</div><div id="cost-summary"></div></div>
-    <div><div class="stitle">Cost per operation</div><div id="cost-per-op"></div></div>
-  </div>
-  <div class="sep"></div>
-  <div class="fg2" style="margin-bottom:12px">
     <div><div class="stitle">Warehouse utilization</div><div id="warehouse-util"></div></div>
     <div><div class="stitle">Bin efficiency</div><div id="bin-efficiency"></div></div>
   </div>
@@ -7194,8 +7189,6 @@ function downloadAllReports(){
 
 // FINANCE & CAPACITY
 function renderFinance(){
-  renderCostSummary();
-  renderCostPerOp();
   renderWarehouseUtil();
   renderBinEfficiency();
   renderSpaceUtil();
@@ -7313,12 +7306,12 @@ function renderSpaceUtil(){
   <div style="padding:10px;background:var(--s2);border-radius:8px;font-size:11px;line-height:2">
     <div style="display:flex;justify-content:space-between"><span style="color:var(--t2)">Total warehouse volume (1600 sf x 10ft ceiling):</span><span style="font-weight:600">${WAREHOUSE_CUFT.toLocaleString()} cu ft</span></div>
     <div style="display:flex;justify-content:space-between"><span style="color:var(--t2)">Volume occupied by ${TOTAL_RACKS} racks:</span><span style="font-weight:600;color:var(--gold)">${totalRackVol.toLocaleString()} cu ft</span></div>
-    <div style="display:flex;justify-content:space-between"><span style="color:var(--t2)">Dead / unused air space:</span><span style="font-weight:600;color:var(--dt)">${deadAirVol.toLocaleString()} cu ft</span></div>
+    <div style="display:flex;justify-content:space-between"><span style="color:var(--t2)">Open room air (not rack structure):</span><span style="font-weight:600;color:var(--t)">${deadAirVol.toLocaleString()} cu ft</span></div>
     <div style="display:flex;justify-content:space-between;border-top:0.5px solid var(--b);padding-top:6px;margin-top:4px"><span style="color:var(--t2)">Avg units per rack:</span><span style="font-weight:600">${avgUnitsPerRack}</span></div>
     <div style="display:flex;justify-content:space-between"><span style="color:var(--t2)">Active SKUs / Total SKUs:</span><span style="font-weight:600">${activeSKUs} / ${totalSKUs}</span></div>
   </div>
   <div style="margin-top:8px;padding:8px;background:var(--ibg);border-radius:6px;font-size:10px;color:var(--it)">
-    <i class="ti ti-info-circle"></i> Your racks (10ft) match ceiling height — <strong>100% vertical efficiency</strong>. The remaining air space is above open floor areas (packing, staging, aisles) which cannot be racked.
+    <i class="ti ti-info-circle"></i> Your racks (10ft) match ceiling height — <strong>100% vertical efficiency</strong>. This "open room air" figure is naturally huge (${Math.round((deadAirVol/WAREHOUSE_CUFT)*100)}% of the building) because each rack is a small 4×2×10ft structure (${rackVol} cu ft) — it's not wasted or reclaimable space, it's the air above the aisles, staging, and packing floor a warehouse needs to actually operate in. It has nothing to do with how full the racks themselves are — that's <strong>Shelf Capacity Used</strong> above.
   </div>
   `;
 }
@@ -7358,61 +7351,6 @@ function renderInventoryValueBanner(){
         <span style="font-size:11px;color:var(--dt);font-weight:600">View Finance →</span>
       </div>
     </div>`;
-}
-function renderCostSummary(){
-  const el=document.getElementById('cost-summary');
-  if(!el)return;
-  const grns=history.filter(h=>h.type==='grn').length;
-  const picks=history.filter(h=>h.type==='pick').length;
-  const packs=history.filter(h=>h.type==='packed').length;
-  const returns=history.filter(h=>h.type==='return').length;
-  const totalCost=(grns*costParams.receivingCostPerGrn)+(picks*costParams.pickCostPerOrder)+(packs*costParams.packCostPerOrder)+(returns*costParams.returnProcessingCost);
-  const totalSku=SKUS.length;
-  const storageCost=totalSku*costParams.storageCostPerSku;
-  const overhead=monthlyFixedOverhead();
-  const totalWithStorage=totalCost+storageCost+overhead;
-  const dispatches=history.filter(h=>h.type==='dispatched').length;
-  const dispatchRevenue=dispatches*costParams.dispatchCostPerOrder;
-  const roi=dispatchRevenue>0?Math.round(((dispatchRevenue-totalWithStorage)/totalWithStorage)*100):0;
-  const invValue=totalInventoryValue();
-  const missingPriceCt=skusMissingPriceWithStock();
-  const overThreshold=invValue>INVENTORY_VALUE_ALERT_THRESHOLD;
-  el.innerHTML=`
-    <div style="font-size:11px;line-height:2;margin-bottom:8px">
-      <div style="padding:8px;background:${overThreshold?'var(--dbg)':'var(--s2)'};border-radius:6px;margin-bottom:6px${overThreshold?';border:1px solid var(--dt)':''}">
-        <div><span style="color:${overThreshold?'var(--dt)':'var(--t2)'}">Inventory value (stock on hand):</span> <span style="font-weight:700;font-size:13px;color:${overThreshold?'var(--dt)':'var(--t)'}">₹${invValue.toLocaleString('en-IN')}</span></div>
-        ${overThreshold?`<div style="font-size:10px;color:var(--dt);margin-top:2px"><i class="ti ti-alert-triangle"></i> Over the ₹50 lakh threshold</div>`:''}
-        ${missingPriceCt?`<div style="font-size:10px;color:var(--t3);margin-top:2px">${missingPriceCt} in-stock SKU(s) have no price set — excluded, so this may undercount</div>`:''}
-      </div>
-      <div style="padding:8px;background:var(--s2);border-radius:6px;margin-bottom:6px">
-        <div><span style="color:var(--t2)">Operations cost (per-transaction):</span> <span style="font-weight:600">₹${totalCost}</span></div>
-        <div><span style="color:var(--t2)">Storage cost (${totalSku} SKUs):</span> <span style="font-weight:600">₹${storageCost}</span></div>
-        <div><span style="color:var(--t2)">Staffing & overhead (monthly):</span> <span style="font-weight:600">₹${overhead.toLocaleString('en-IN')}</span></div>
-        <div style="border-top:0.5px solid var(--b);padding-top:6px;margin-top:6px"><span style="color:var(--t2)">Total cost:</span> <span style="font-weight:600;font-size:13px">₹${totalWithStorage.toLocaleString('en-IN')}</span></div>
-      </div>
-      <div style="padding:8px;background:var(--sbg);border-radius:6px">
-        <div><span style="color:var(--st)">Dispatch revenue:</span> <span style="font-weight:600;color:var(--st)">₹${dispatchRevenue}</span></div>
-        <div><span style="color:var(--st)">ROI:</span> <span style="font-weight:600;color:var(--st);font-size:13px">${roi}%</span></div>
-      </div>
-    </div>
-  `;
-}
-function renderCostPerOp(){
-  const el=document.getElementById('cost-per-op');
-  if(!el)return;
-  el.innerHTML=`
-    <div style="font-size:11px;line-height:2">
-      <div style="padding:8px;background:var(--s2);border-radius:6px;margin-bottom:6px">
-        <div><span style="color:var(--t2)">Receiving (per GRN):</span> <span style="font-weight:600">₹${costParams.receivingCostPerGrn}</span></div>
-        <div><span style="color:var(--t2)">Picking (per order):</span> <span style="font-weight:600">₹${costParams.pickCostPerOrder}</span></div>
-        <div><span style="color:var(--t2)">Packing (per order):</span> <span style="font-weight:600">₹${costParams.packCostPerOrder}</span></div>
-        <div><span style="color:var(--t2)">Dispatch (per order):</span> <span style="font-weight:600">₹${costParams.dispatchCostPerOrder}</span></div>
-        <div><span style="color:var(--t2)">Packaging (per order):</span> <span style="font-weight:600">₹${costParams.packagingChargePerOrder}</span></div>
-        <div style="border-top:0.5px solid var(--b);padding-top:6px;margin-top:6px"><span style="color:var(--t2)">Return processing:</span> <span style="font-weight:600">₹${costParams.returnProcessingCost}</span></div>
-      </div>
-      <div style="font-size:10px;color:var(--t3);padding:6px;background:var(--s3);border-radius:4px">Edit values in "Cost input parameters" section below</div>
-    </div>
-  `;
 }
 function renderWarehouseUtil(){
   const el=document.getElementById('warehouse-util');
@@ -8533,6 +8471,11 @@ function getWeekKey(date){
 function populateWeekSelector(){
   const sel=document.getElementById('rpt-week-select');
   if(!sel)return;
+  const prevVal=sel.value; // preserve whatever the user has picked across rebuilds —
+  // this function used to run on every renderReports() call (including the dropdown's
+  // OWN onchange), rebuild the whole list, and always re-select "this week", so picking
+  // any other week snapped straight back. See below: we re-select prevVal if it's still
+  // a valid option, only falling back to "this week" the first time (nothing picked yet).
   const weeks=new Set();
   const now=new Date();
   // Add current and past 12 weeks
@@ -8548,6 +8491,7 @@ function populateWeekSelector(){
   const sorted=[...weeks].sort().reverse();
   const thisWeek=getWeekKey(now);
   const lastWeek=sorted[1]||thisWeek;
+  const selectedWeek=(prevVal&&weeks.has(prevVal))?prevVal:thisWeek;
   // Default the dropdown to THIS week, not last week. Defaulting to last
   // week meant that as soon as any GRN/dispatch/return happened today,
   // opening the Weekly Report showed an empty last-week report (since all
@@ -8559,7 +8503,7 @@ function populateWeekSelector(){
     const {start,end}=getWeekBounds(w);
     const label=`${start.toLocaleDateString('en-IN',{day:'2-digit',month:'short'})} – ${end.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}`;
     const tag=w===thisWeek?' (This week)':w===lastWeek?' (Last week — MIS due Monday)':'';
-    return `<option value="${w}"${w===thisWeek?' selected':''}>${label}${tag}</option>`;
+    return `<option value="${w}"${w===selectedWeek?' selected':''}>${label}${tag}</option>`;
   }).join('');
 }
 function getWeekHistory(weekStr){
@@ -8605,6 +8549,7 @@ function getMonthOrders(monthStr){
 function populateMonthSelector(){
   const sel=document.getElementById('rpt-month-select');
   if(!sel)return;
+  const prevVal=sel.value; // preserve the user's current pick across rebuilds — same fix as populateWeekSelector()
   const months=new Set();
   const now=new Date();
   for(let i=0;i<12;i++){
@@ -8614,10 +8559,11 @@ function populateMonthSelector(){
   orders.forEach(o=>{ if(o.createdAt){try{const d=new Date(o.createdAt);if(!isNaN(d))months.add(getMonthKey(d));}catch(e){}} });
   const sorted=[...months].sort().reverse();
   const thisMonth=getMonthKey(now);
+  const selectedMonth=(prevVal&&months.has(prevVal))?prevVal:thisMonth;
   sel.innerHTML=sorted.map(m=>{
     const [y,mm]=m.split('-').map(Number);
     const label=new Date(y,mm-1,1).toLocaleDateString('en-IN',{month:'long',year:'numeric'});
-    return `<option value="${m}"${m===thisMonth?' selected':''}>${label}${m===thisMonth?' (This month)':''}</option>`;
+    return `<option value="${m}"${m===selectedMonth?' selected':''}>${label}${m===thisMonth?' (This month)':''}</option>`;
   }).join('');
 }
 function renderReports(){
