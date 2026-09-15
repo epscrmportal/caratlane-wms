@@ -7568,7 +7568,13 @@ async function addSKU(skuObj){
   // Add to local array
   if(SKUS.find(s=>s.sku===skuObj.sku)){toast('SKU already exists','w');return false;}
   SKUS.push(skuObj);
-  inv[skuObj.sku]={qty:0,rack:skuObj.rack,shelf:skuObj.shelf};
+  // Never blindly overwrite an existing inventory row — if this SKU code
+  // somehow already has stock recorded (e.g. a GRN was received against
+  // it before the catalog entry existed on this client, or the SKUS
+  // duplicate-check above got bypassed some other way), resetting it to
+  // {qty:0} here would silently wipe real stock back to zero. Only seed
+  // a fresh row when one doesn't already exist.
+  if(!inv[skuObj.sku]) inv[skuObj.sku]={qty:0,rack:skuObj.rack,shelf:skuObj.shelf};
   await assignShortCodes();
   // Save to DB
   try {
