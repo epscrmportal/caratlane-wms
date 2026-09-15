@@ -2441,8 +2441,34 @@ function setupRealtimeSync(){
   realtimeSyncSetup = true;
   
   supa.channel('wms-changes')
-    .on('postgres_changes', {event:'*', schema:'public', table:'inventory'}, () => {
-      initInv().then(()=>{ renderDash(); renderInv(); renderRack(); });
+    .on('postgres_changes', {event:'*', schema:'public', table:'inventory'}, (payload) => {
+      // Apply the changed row directly from the realtime payload instead of
+      // re-fetching and overwriting the WHOLE inventory table on every single
+      // row change. A single GRN/pick/pack can touch hundreds of SKU rows in
+      // one upsert, and Postgres/Supabase realtime emits one change event PER
+      // ROW — that used to fire a burst of overlapping initInv() calls, each
+      // blindly replacing the ENTIRE in-memory `inv` object with a fresh
+      // full-table read. If any of those overlapping reads resolved out of
+      // order relative to a newer local change (e.g. the very next GRN being
+      // entered while the previous burst was still trickling in), it could
+      // silently overwrite that fresh change with an older snapshot — for
+      // ANY SKU, not just the one that actually changed. This is the most
+      // likely explanation for GRN-283872's first two and last two lines
+      // (UNI-SHT-M-34/36, UNI-SHT-F-4XL/5XL) reverting to zero after
+      // receiving correctly. Updating only the single row named in the
+      // payload removes the whole race: each event is self-contained and
+      // can never clobber an unrelated SKU.
+      if(payload.eventType==='DELETE'){
+        const old=payload.old;
+        if(old && old.sku) delete inv[old.sku];
+      } else {
+        const r=payload.new;
+        if(r && r.sku){
+          inv[r.sku]={qty:r.qty||0, rack:r.rack, shelf:r.shelf};
+          if(Array.isArray(r.locations) && r.locations.length) inv[r.sku].locations=r.locations;
+        }
+      }
+      renderDash(); renderInv(); renderRack();
     })
     .on('postgres_changes', {event:'*', schema:'public', table:'history'}, () => {
       loadHist().then(()=>{ renderDash(); if(document.getElementById('page-dispatch').classList.contains('active')) renderDispatchPage(); });
