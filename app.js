@@ -3588,10 +3588,35 @@ async function removePkItem(i){
   renderPkItemsList();
   renderPkChecklist();
 }
+// Hard gate shared by both pick flows (desktop releaseToPacking() and
+// mobile completeMobilePick()): a pick ticket can only be closed once
+// EVERY line on the order has actually been picked in full — not just
+// "at least one item scanned". This is what order 000032's missing
+// Female Size S line, and later the Male Shirt Size 38 shortfall, both
+// slipped through before — the picker could hit complete with items
+// still outstanding and the ticket would close anyway. Recomputed fresh
+// from the live order + picked-so-far lists every single call, so there
+// is no cached "done" flag anywhere for a refresh (or anything else) to
+// leave stale — a refresh just drops the whole in-progress pick and the
+// picker has to resume or redo it; it can never leave a ticket half-
+// picked but marked complete.
+function getShortPickedItems(orderItems, pickedItems){
+  return (orderItems||[]).map(exp=>{
+    const pq=(pickedItems||[]).filter(p=>p.sku===exp.sku).reduce((a,p)=>a+p.qty,0);
+    return {sku:exp.sku,name:exp.name,variant:exp.variant,expected:exp.qty,picked:pq,short:exp.qty-pq};
+  }).filter(x=>x.short>0);
+}
 async function releaseToPacking(){
   if(!activeOrder){ toast('No active pick in progress','w'); return; }
   if(!pkItemsList.length){toast('Add items to the pick list first','w');return;}
   if(!pkToteId){toast('Scan a tote bag barcode before releasing to packing','w');return;}
+  const shortItems=getShortPickedItems(activeOrder.items,pkItemsList);
+  if(shortItems.length){
+    const list=shortItems.map(x=>`${x.sku} (${x.picked}/${x.expected})`).join(', ');
+    toast(`Cannot release — still short: ${list}. Scan the remaining qty before closing this pick — see a supervisor if the stock genuinely isn't there.`,'w');
+    renderPkChecklist();
+    return;
+  }
   if(!rateLimit('release-packing',2000)){toast('Please wait before submitting again','w');return;}
   const oid=activeOrder.id;
   const pri=activeOrder.priority;
@@ -3997,16 +4022,12 @@ function renderPackedOrdersList(){
   const searchEl=document.getElementById('dispatch-packed-search');
   const q=((searchEl&&searchEl.value)||'').toLowerCase().trim();
   const allPacked=history.filter(h=>h.type==='packed');
-  // With hundreds of orders potentially sitting "Awaiting AWB" at once,
-  // showing only the most-recent few by default hid older ones from this
-  // card list entirely (still reachable via the search+select on the
-  // right, but not obvious from here). Typing an order ID above now
-  // searches the FULL awaiting-AWB set, not just the recent slice.
+  // This list lives in its own fixed-height scrollable box (see
+  // .scroll-section) — every order awaiting AWB is rendered here, nothing
+  // is hidden behind a "recent N" cap. Search above still narrows it down
+  // when the list gets long, it just no longer needs to.
   const packed=q?allPacked.filter(p=>p.orderId.toLowerCase().includes(q)||p.id.toLowerCase().includes(q)):allPacked;
-  const showLimit=20;
-  const shown=q?packed:packed.slice(-showLimit);
-  const hiddenCount=q?0:Math.max(0,allPacked.length-showLimit);
-  const listHtml=shown.length?shown.slice().reverse().map(p=>{
+  const listHtml=packed.length?packed.slice().reverse().map(p=>{
     const itemCount=(p.items&&p.items.length)?p.items.length:0;
     const hasDims=p.boxL&&p.boxW&&p.boxH;
     const dimsStr=hasDims?`${p.boxL}×${p.boxW}×${p.boxH}cm · ${p.chargeableWeight}kg chargeable`:'Dims not captured';
@@ -4024,8 +4045,7 @@ function renderPackedOrdersList(){
       </div>
     </div>`;
   }).join(''):(q?'<div class="empty">No matching packed order found</div>':'<div class="empty">No packed orders yet — create and pack orders first</div>');
-  const hiddenNote=hiddenCount>0?`<div style="font-size:10px;color:var(--t2);padding:6px 2px;text-align:center">Showing the ${showLimit} most recent of ${allPacked.length} orders awaiting AWB — search above by order ID to find an older one.</div>`:'';
-  el.innerHTML=listHtml+hiddenNote;
+  el.innerHTML=listHtml;
 }
 function filterDispatchOrders(){
   const q=(document.getElementById('disp-search-order').value||'').toLowerCase();
@@ -4336,8 +4356,15 @@ function confirmCourierDispatch(){
 function renderDispatchCompletedLog(){
   const el=document.getElementById('disp-dispatch-log');
   if(!el)return;
-  const dispatched=history.filter(h=>h.type==='dispatched');
-  el.innerHTML=dispatched.length?dispatched.slice(-8).reverse().map(d=>{
+  const searchEl=document.getElementById('dispatch-log-search');
+  const q=((searchEl&&searchEl.value)||'').toLowerCase().trim();
+  const allDispatched=history.filter(h=>h.type==='dispatched');
+  // This list lives in its own fixed-height scrollable box (see
+  // .scroll-section) — every dispatched order is rendered here (this used
+  // to cap at the most recent 8, hiding the rest entirely). Search above
+  // narrows it down by order ID or AWB when the list gets long.
+  const dispatched=q?allDispatched.filter(d=>(d.orderId||'').toLowerCase().includes(q)||(d.awb||'').toLowerCase().includes(q)||(d.id||'').toLowerCase().includes(q)):allDispatched;
+  el.innerHTML=dispatched.length?dispatched.slice().reverse().map(d=>{
     const hasDims=d.boxL&&d.boxW&&d.boxH;
     const dimsStr=hasDims?`${d.boxL}×${d.boxW}×${d.boxH} cm`:'—';
     const actualW=d.actualWeight?`${d.actualWeight} kg`:'—';
@@ -4367,8 +4394,8 @@ function renderDispatchCompletedLog(){
           <div style="background:var(--sbg);border-radius:4px;padding:5px 8px;font-size:10px"><div style="color:var(--st)">Duration</div><div style="font-weight:700;color:var(--st)">${packDur}</div></div>
         </div>
         <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;align-items:flex-end">
-          ${d.podPhoto?`<div><div style="font-size:9px;color:var(--t3);margin-bottom:3px">POD</div><img src="${d.podPhoto}" onclick="window.open('${d.podPhoto}','_blank')" style="width:60px;height:45px;object-fit:cover;border-radius:4px;border:0.5px solid var(--b);cursor:pointer" title="Click to view full size"></div>`:''}
-          ${d.weightPhoto?`<div><div style="font-size:9px;color:var(--t3);margin-bottom:3px">Weight (at packing)</div><img src="${d.weightPhoto}" onclick="window.open('${d.weightPhoto}','_blank')" style="width:60px;height:45px;object-fit:cover;border-radius:4px;border:0.5px solid var(--b);cursor:pointer" title="Click to view full size"></div>`:''}
+          ${d.podPhoto?`<div><div style="font-size:9px;color:var(--t3);margin-bottom:3px">POD</div><img src="${d.podPhoto}" onclick="openImageLightbox('${d.podPhoto}','POD photo — ${esc(d.orderId||'')}')" style="width:60px;height:45px;object-fit:cover;border-radius:4px;border:0.5px solid var(--b);cursor:pointer" title="Click to view full size"></div>`:''}
+          ${d.weightPhoto?`<div><div style="font-size:9px;color:var(--t3);margin-bottom:3px">Weight (at packing)</div><img src="${d.weightPhoto}" onclick="openImageLightbox('${d.weightPhoto}','Weighing scale photo — ${esc(d.orderId||'')}')" style="width:60px;height:45px;object-fit:cover;border-radius:4px;border:0.5px solid var(--b);cursor:pointer" title="Click to view full size"></div>`:''}
           <div>
             <label for="pod-upload-${d.id}" style="font-size:9px;color:var(--t3);margin-bottom:3px;display:block;cursor:pointer">${d.podPhoto?'Replace POD photo':'Upload POD photo (once delivered)'}</label>
             <input type="file" id="pod-upload-${d.id}" accept="image/*" capture="environment" onchange="handlePostDispatchPodUpload(event,'${d.id}')" style="font-size:9px;max-width:150px">
@@ -4376,7 +4403,7 @@ function renderDispatchCompletedLog(){
         </div>
       </div>
     </div>`;
-  }).join(''):'<div class="empty">No dispatches completed yet</div>';
+  }).join(''):(q?'<div class="empty">No matching dispatched order found</div>':'<div class="empty">No dispatches completed yet</div>');
 }
 
 // ANALYTICS & COMPLIANCE
@@ -5167,6 +5194,16 @@ async function cancelMobilePick(){
 
 async function completeMobilePick(){
   if(!mobilePickSession || !mobilePickSession.items.length){ toast('Scan at least one item first','w'); return; }
+  // Same hard gate as the desktop pick flow — see getShortPickedItems()
+  // for why: every line on the order must be fully scanned before this
+  // ticket can close, checked fresh against live state every call.
+  const shortItems=getShortPickedItems(mobilePickSession.order.items,mobilePickSession.items);
+  if(shortItems.length){
+    const list=shortItems.map(x=>`${x.sku} (${x.picked}/${x.expected})`).join(', ');
+    toast(`Cannot complete — still short: ${list}. Scan the remaining qty first — see a supervisor if the stock genuinely isn't there.`,'w');
+    renderMpPickChecklist();
+    return;
+  }
   if(!rateLimit('mobile-pick',2000)){ toast('Please wait before submitting again','w'); return; }
   const result=await commitPickSession(mobilePickSession.sessionId);
   if(!result.success){ toast('Could not complete pick — connection issue, try again','w'); return; }
@@ -8078,6 +8115,22 @@ function toast(msg,type='s'){
   clearTimeout(toastTimer);
   toastTimer=setTimeout(()=>{el.className='';},3500);
 }
+// Full-size in-page viewer for photo thumbnails (POD / weighing-scale
+// photos, stored as data: URLs). Chrome refuses to open a data: URL as
+// its own top-level tab via window.open — the tab just shows a blank
+// "about:blank" page — so this shows it inline over the app instead.
+function openImageLightbox(src,caption){
+  if(!src)return;
+  document.getElementById('img-lightbox-img').src=src;
+  document.getElementById('img-lightbox-caption').textContent=caption||'';
+  document.getElementById('img-lightbox').classList.add('show');
+}
+function closeImageLightbox(e){
+  if(e&&e.target&&e.target.closest&&e.target.closest('img#img-lightbox-img'))return;
+  document.getElementById('img-lightbox').classList.remove('show');
+  document.getElementById('img-lightbox-img').src='';
+}
+document.addEventListener('keydown',(e)=>{ if(e.key==='Escape')closeImageLightbox(); });
 
 // COMPREHENSIVE SYSTEM TEST
 function runFullSystemTest(){

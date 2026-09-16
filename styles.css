@@ -168,6 +168,30 @@ tr:hover td{background:var(--s2)}
 .stitle{font-size:11px;font-weight:600;color:var(--t2);margin-bottom:8px;margin-top:2px;text-transform:uppercase;letter-spacing:.5px}
 .sep{height:0.5px;background:var(--b);margin:12px 0}
 
+/* SCROLLABLE LIST SECTIONS — used where a card list can grow long (e.g.
+   dispatch page's "awaiting AWB" / "dispatched" logs) so that section
+   scrolls internally in a fixed-height box instead of stretching the
+   whole page. Everything still renders — none of it is cut off — you
+   just scroll within the box to reach it. */
+.scroll-section{max-height:560px;overflow-y:auto;padding-right:6px;border:0.5px solid var(--b);border-radius:var(--r);padding:10px 6px 10px 10px;background:var(--s2)}
+.scroll-section .hist-entry:last-child{margin-bottom:0}
+.scroll-section::-webkit-scrollbar{width:8px}
+.scroll-section::-webkit-scrollbar-track{background:transparent}
+.scroll-section::-webkit-scrollbar-thumb{background:var(--b2);border-radius:4px}
+
+/* IMAGE LIGHTBOX — full-size in-page viewer for POD / weighing-scale
+   photos. These are stored as data: URLs, and Chrome blocks a data:
+   URL from opening as its own top-level tab/window (window.open just
+   shows a blank "about:blank" page) — this shows the image inline on
+   top of the app instead, which always works regardless of image size
+   or storage format. */
+#img-lightbox{display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:10050;align-items:center;justify-content:center;padding:24px;cursor:zoom-out}
+#img-lightbox.show{display:flex}
+#img-lightbox img{max-width:min(92vw,900px);max-height:88vh;object-fit:contain;border-radius:8px;box-shadow:0 8px 40px rgba(0,0,0,.5);cursor:default}
+#img-lightbox .lb-close{position:absolute;top:18px;right:24px;width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.12);border:none;color:#fff;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+#img-lightbox .lb-close:hover{background:rgba(255,255,255,.22)}
+#img-lightbox .lb-caption{position:absolute;bottom:20px;left:0;right:0;text-align:center;color:rgba(255,255,255,.85);font-size:11px}
+
 /* TOAST */
 #toast{position:fixed;bottom:20px;right:20px;background:var(--s);border:0.5px solid var(--b2);border-radius:var(--r);padding:10px 14px;font-size:12px;opacity:0;transform:translateY(8px);transition:all .25s;pointer-events:none;max-width:260px;z-index:9999;line-height:1.4;box-shadow:0 4px 12px rgba(0,0,0,.12)}
 #toast.show{opacity:1;transform:translateY(0)}
