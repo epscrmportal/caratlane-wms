@@ -4225,10 +4225,29 @@ function loadDispatchOrder(){
   document.getElementById('disp-order-detail').style.display='block';
   document.getElementById('disp-store-search').value='';
   filterStoreList('disp-store-search','disp-store-select');
-  document.getElementById('disp-recip-name').value='';
-  document.getElementById('disp-address').value='';
-  document.getElementById('disp-pincode').value='';
-  document.getElementById('disp-phone').value='';
+  // Auto-fill recipient/address/pincode/phone straight from what was
+  // already captured on the order itself at order-creation time (that's
+  // where the store search originally ran) — no reason to make the
+  // dispatch employee search the same store again. Still fully editable,
+  // and the store-search box above stays available to override (e.g. the
+  // shipment needs to go somewhere else, or the order never had an
+  // address on file to begin with).
+  const ord=orders.find(o=>o.id===packed.orderId);
+  const addrNote=document.getElementById('disp-addr-note');
+  const hasOrdAddr=ord&&(ord.customerName||ord.address||ord.pincode||ord.phone);
+  document.getElementById('disp-recip-name').value=hasOrdAddr?(ord.customerName||''):'';
+  document.getElementById('disp-address').value=hasOrdAddr?(ord.address||''):'';
+  document.getElementById('disp-pincode').value=hasOrdAddr?(ord.pincode||''):'';
+  document.getElementById('disp-phone').value=hasOrdAddr?(ord.phone||''):'';
+  if(addrNote){
+    if(hasOrdAddr){
+      addrNote.style.display='block';
+      addrNote.innerHTML=`<i class="ti ti-info-circle"></i> Auto-filled from the address saved on this order. Edit above, or search a different store below if it needs to change.`;
+    } else {
+      addrNote.style.display='block';
+      addrNote.innerHTML=`<i class="ti ti-alert-triangle"></i> No address on file for this order — please search the store below or enter it manually.`;
+    }
+  }
   document.getElementById('disp-shipping').value='Standard Road';
   document.getElementById('disp-courier').value='';
   document.getElementById('disp-awb').value='';
