@@ -758,6 +758,7 @@ tr:hover td{background:var(--s2)}
   </div>
 
   <div class="stitle">Order queue</div>
+  <input type="text" id="ordq-search" placeholder="Search by Order No..." style="width:100%;margin-bottom:8px" oninput="renderOrdersBoard()">
   <div id="orders-board"></div>
 </div>
 
@@ -5247,9 +5248,14 @@ function parseCSV(text){
   if(field!==''||row.length){ row.push(field); rows.push(row); }
   return rows;
 }
-function handleOrdersCSVFile(evt){
+async function handleOrdersCSVFile(evt){
   const file=evt.target.files[0];
   if(!file) return;
+  // Refresh orders from the DB first, so the "already exists" duplicate
+  // guard in processOrdersCSV() checks against the latest state, not a
+  // stale in-memory list — this is what let the same CSV get imported
+  // more than once and show duplicate rows in the Order queue.
+  await loadOrders();
   const reader=new FileReader();
   reader.onload=(e)=>{
     try{ processOrdersCSV(e.target.result); }
@@ -5345,7 +5351,14 @@ async function confirmCSVImport(){
   for(const draft of toImport){
     const o={...draft, assignedPicker:null, status:'unassigned', createdBy:currentProfile?.full_name||'Unknown', createdAt:new Date().toISOString()};
     const saved=await saveOrderRow(o);
-    if(saved){ orders.unshift(o); logAudit('CREATE_ORDER','orders',o.id,null,{items:o.items.length,priority:o.priority,source:'csv_import'}); ok++; }
+    if(saved){
+      // Replace in place if this ID is already in the local list instead of
+      // blindly unshifting — prevents duplicate rows in Order queue if the
+      // same CSV gets imported more than once in one session.
+      const idx=orders.findIndex(x=>x.id===o.id);
+      if(idx>-1) orders[idx]=o; else orders.unshift(o);
+      logAudit('CREATE_ORDER','orders',o.id,null,{items:o.items.length,priority:o.priority,source:'csv_import'}); ok++;
+    }
     else fail++;
   }
   cancelCSVImport();
@@ -5368,10 +5381,14 @@ function downloadOrdersCSVTemplate(){
 function renderOrdersBoard(){
   const el=document.getElementById('orders-board');
   if(!el) return;
+  const searchEl=document.getElementById('ordq-search');
+  const searchQ=(searchEl?searchEl.value:'').toLowerCase().trim();
+  const boardOrders=searchQ?orders.filter(o=>o.id.toLowerCase().includes(searchQ)):orders;
   if(!orders.length){ el.innerHTML='<div class="empty">No orders yet</div>'; return; }
+  if(!boardOrders.length){ el.innerHTML=`<div class="empty">No orders match order no. "${esc(searchQ)}"</div>`; return; }
   const canManage=getPerms().canManageOrders;
   const statusPill={unassigned:'p-hold',assigned:'p-info',picked:'p-out',cancelled:'p-hold'};
-  el.innerHTML=`<div class="tw"><table><thead><tr><th>Order ID</th><th>Customer</th><th>Priority</th><th>Items</th><th>Status</th><th>Assigned To</th>${canManage?'<th>Invoice</th><th>Action</th>':''}</tr></thead><tbody>${orders.map(o=>{
+  el.innerHTML=`<div class="tw"><table><thead><tr><th>Order ID</th><th>Customer</th><th>Priority</th><th>Items</th><th>Status</th><th>Assigned To</th>${canManage?'<th>Invoice</th><th>Action</th>':''}</tr></thead><tbody>${boardOrders.map(o=>{
     let action='';
     if(canManage && o.status==='unassigned'){
       const opts=pickerNames.length?pickerNames.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join(''):'<option value="">No pickers registered</option>';
