@@ -6093,28 +6093,33 @@ function renderPackedOrdersList(){
 function filterDispatchOrders(){
   const q=(document.getElementById('disp-search-order').value||'').toLowerCase();
   const sel=document.getElementById('disp-order-select');
+  const prevVal=sel.value;
   const packed=history.filter(h=>h.type==='packed');
-  if(!q){
-    sel.innerHTML=`<option value="">— Choose an order —</option>${packed.map(p=>{
-      const itemCount=(p.items&&p.items.length)?p.items.length:0;
-      return `<option value="${p.id}">${p.orderId} · ${itemCount} SKU(s) · ${p.ts}</option>`;
-    }).join('')}`;
-  }else{
-    const filtered=packed.filter(p=>p.orderId.toLowerCase().includes(q)||p.id.toLowerCase().includes(q));
-    sel.innerHTML=`<option value="">— Choose an order —</option>${filtered.map(p=>{
-      const itemCount=(p.items&&p.items.length)?p.items.length:0;
-      return `<option value="${p.id}">${p.orderId} · ${itemCount} SKU(s) · ${p.ts}</option>`;
-    }).join('')}`;
-  }
+  const list=q?packed.filter(p=>p.orderId.toLowerCase().includes(q)||p.id.toLowerCase().includes(q)):packed;
+  sel.innerHTML=`<option value="">— Choose an order —</option>${list.map(p=>{
+    const itemCount=(p.items&&p.items.length)?p.items.length:0;
+    return `<option value="${p.id}">${p.orderId} · ${itemCount} SKU(s) · ${p.ts}</option>`;
+  }).join('')}`;
+  if(prevVal&&list.some(p=>p.id===prevVal))sel.value=prevVal;
 }
 function updateDispatchOrderSelect(){
   const sel=document.getElementById('disp-order-select');
   if(!sel)return;
+  // Preserve whatever order is currently selected/loaded across a rebuild —
+  // this runs on every live update from OTHER employees' scans (any pick/
+  // pack/dispatch anywhere triggers a realtime refresh of this page), so
+  // without this, rebuilding the <option> list would silently reset the
+  // selection to blank mid-fill: the visible form fields (name/address/
+  // courier/AWB/weight) stay exactly as typed, but the app would forget
+  // which order they belong to, and Confirm dispatch would wrongly claim
+  // required fields are missing.
+  const prevVal=sel.value;
   const packed=history.filter(h=>h.type==='packed');
   sel.innerHTML=`<option value="">— Choose an order —</option>${packed.map(p=>{
     const itemCount=(p.items&&p.items.length)?p.items.length:0;
     return `<option value="${p.id}">${p.orderId} · ${itemCount} SKU(s) · ${p.ts}</option>`;
   }).join('')}`;
+  if(prevVal&&packed.some(p=>p.id===prevVal))sel.value=prevVal;
 }
 function assignAWBDirect(pkdId){
   // Called from dispatch page alert — page already active, just select & scroll
@@ -6336,7 +6341,8 @@ function confirmCourierDispatch(){
   const courier=document.getElementById('disp-courier').value.trim();
   const awb=document.getElementById('disp-awb').value.trim();
   const dispatchWeight=parseFloat(document.getElementById('disp-weight').value)||0;
-  if(!pkdId||!name||!addr||!pin||!phone||!courier||!awb){toast('Please fill all fields including courier partner and AWB number','w');return;}
+  if(!pkdId){toast('Order selection was reset (likely by another update elsewhere in the system) — please pick the order again from the list above, your other entries were kept','w');return;}
+  if(!name||!addr||!pin||!phone||!courier||!awb){toast('Please fill all fields including courier partner and AWB number','w');return;}
   if(!validateAWB(awb)){toast('Invalid AWB — letters, numbers and hyphens only (4-30 chars)','w');return;}
   if(!validatePincode(pin)){toast('Invalid pincode — must be 6 digits','w');return;}
   if(!validatePhone(phone)){toast('Invalid phone number','w');return;}
