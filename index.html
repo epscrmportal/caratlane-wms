@@ -951,6 +951,7 @@ tr:hover td{background:var(--s2)}
   <div class="fg2">
     <div>
       <div class="stitle">Packed orders awaiting dispatch</div>
+      <input type="text" id="dispatch-packed-search" placeholder="Search by order ID..." oninput="renderPackedOrdersList()" style="margin-bottom:8px">
       <div id="dispatch-packed-list"></div>
     </div>
     <div>
@@ -6056,8 +6057,19 @@ function printProformaInvoice(orderId){
 function renderPackedOrdersList(){
   const el=document.getElementById('dispatch-packed-list');
   if(!el){console.log('ERROR: dispatch-packed-list element not found');return;}
-  const packed=history.filter(h=>h.type==='packed');
-  el.innerHTML=packed.length?packed.slice(-8).reverse().map(p=>{
+  const searchEl=document.getElementById('dispatch-packed-search');
+  const q=((searchEl&&searchEl.value)||'').toLowerCase().trim();
+  const allPacked=history.filter(h=>h.type==='packed');
+  // With hundreds of orders potentially sitting "Awaiting AWB" at once,
+  // showing only the most-recent few by default hid older ones from this
+  // card list entirely (still reachable via the search+select on the
+  // right, but not obvious from here). Typing an order ID above now
+  // searches the FULL awaiting-AWB set, not just the recent slice.
+  const packed=q?allPacked.filter(p=>p.orderId.toLowerCase().includes(q)||p.id.toLowerCase().includes(q)):allPacked;
+  const showLimit=20;
+  const shown=q?packed:packed.slice(-showLimit);
+  const hiddenCount=q?0:Math.max(0,allPacked.length-showLimit);
+  const listHtml=shown.length?shown.slice().reverse().map(p=>{
     const itemCount=(p.items&&p.items.length)?p.items.length:0;
     const hasDims=p.boxL&&p.boxW&&p.boxH;
     const dimsStr=hasDims?`${p.boxL}×${p.boxW}×${p.boxH}cm · ${p.chargeableWeight}kg chargeable`:'Dims not captured';
@@ -6074,7 +6086,9 @@ function renderPackedOrdersList(){
         <button class="btn-sm" onclick="event.stopPropagation();printProformaInvoice('${p.orderId}')"><i class="ti ti-file-invoice"></i>Proforma Invoice</button>
       </div>
     </div>`;
-  }).join(''):'<div class="empty">No packed orders yet — create and pack orders first</div>';
+  }).join(''):(q?'<div class="empty">No matching packed order found</div>':'<div class="empty">No packed orders yet — create and pack orders first</div>');
+  const hiddenNote=hiddenCount>0?`<div style="font-size:10px;color:var(--t2);padding:6px 2px;text-align:center">Showing the ${showLimit} most recent of ${allPacked.length} orders awaiting AWB — search above by order ID to find an older one.</div>`:'';
+  el.innerHTML=listHtml+hiddenNote;
 }
 function filterDispatchOrders(){
   const q=(document.getElementById('disp-search-order').value||'').toLowerCase();
@@ -6281,14 +6295,22 @@ function loadDispatchOrder(){
   // reason to make the dispatch employee re-type it. Still fully editable
   // in case it's genuinely re-weighed at courier handover; the note below
   // makes clear where the number came from and updates if they change it.
-  const packWeight=packed.actualWeight||null;
+  // Prefer the actual (physically measured) weight from packing; fall back
+  // to the chargeable weight already on file (max of actual/volumetric —
+  // still a real recorded figure, just not the raw scale reading) for
+  // older packed orders where actual weight wasn't captured, so this
+  // doesn't sit blank when SOME weight already exists for the order.
+  const packWeight=packed.actualWeight||packed.chargeableWeight||null;
+  const usedChargeable=!packed.actualWeight&&!!packed.chargeableWeight;
   const weightInput=document.getElementById('disp-weight');
   const weightNote=document.getElementById('disp-weight-note');
   weightInput.value=packWeight||'';
   _dispWeightAutofilled=!!packWeight;
   if(packWeight){
     weightNote.style.display='block';
-    weightNote.innerHTML=`<i class="ti ti-info-circle"></i> Auto-filled from packing weight (${packWeight} kg). Edit above if re-weighed at dispatch.`;
+    weightNote.innerHTML=usedChargeable
+      ? `<i class="ti ti-info-circle"></i> Auto-filled from packing's chargeable weight (${packWeight} kg) — actual weight wasn't on file for this order. Edit above if needed.`
+      : `<i class="ti ti-info-circle"></i> Auto-filled from packing weight (${packWeight} kg). Edit above if re-weighed at dispatch.`;
   } else {
     weightNote.style.display='block';
     weightNote.innerHTML=`<i class="ti ti-alert-triangle"></i> No packing weight on file for this order — please enter the weight manually.`;
