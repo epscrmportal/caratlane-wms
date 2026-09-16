@@ -985,6 +985,18 @@ tr:hover td{background:var(--s2)}
             <div class="frow"><label for="disp-courier">Courier partner name</label><input type="text" id="disp-courier" placeholder="e.g. Bluedart, Delhivery, Ekart, DTDC, XpressBees"></div>
             <div class="frow"><label for="disp-awb">Courier AWB number (from 3rd party)</label><input type="text" id="disp-awb" placeholder="e.g. 1234567890123"></div>
             <div class="frow"><label for="disp-weight">Final weight at dispatch (kg)</label><input type="number" id="disp-weight" min="0.01" step="0.01" placeholder="e.g. 1.30 — re-weighed at handover"></div>
+            <div class="fg2" style="margin-bottom:10px">
+              <div class="frow">
+                <label for="disp-pod-photo">POD photo (optional)</label>
+                <input type="file" id="disp-pod-photo" accept="image/*" capture="environment" onchange="handleDispPhotoUpload(event,'pod')">
+                <div id="disp-pod-photo-preview" style="margin-top:6px"></div>
+              </div>
+              <div class="frow">
+                <label for="disp-weight-photo">Weighing scale photo (optional)</label>
+                <input type="file" id="disp-weight-photo" accept="image/*" capture="environment" onchange="handleDispPhotoUpload(event,'weight')">
+                <div id="disp-weight-photo-preview" style="margin-top:6px"></div>
+              </div>
+            </div>
             <button class="btn-primary" style="width:100%;justify-content:center" onclick="confirmCourierDispatch()"><i class="ti ti-send"></i>Confirm dispatch &amp; assign AWB</button>
           </div>
         </div>
@@ -2780,6 +2792,7 @@ async function loadHist(){
         packMaterials:r.pack_materials||[],
         packNotes:r.pack_notes, packedId:r.packed_id, category:r.category, grn:r.grn,
         items:r.items||[], photo:r.photo||null, packer:r.packer||null,
+        podPhoto:r.pod_photo||null, weightPhoto:r.weight_photo||null,
         asn:r.asn||null, carrier:r.carrier||null, vehicle:r.vehicle||null, cartons:(r.cartons!=null?r.cartons:null),
         grnNotes:r.grn_notes||null,
         voided:r.voided||false, voidedBy:r.voided_by||null, voidedAt:r.voided_at||null, voidReason:r.void_reason||null
@@ -2816,6 +2829,7 @@ function historyRecordToRow(h){
     pack_materials:h.packMaterials||null,
     pack_notes:h.packNotes||null, packed_id:h.packedId||null, category:h.category||null,
     grn:h.grn||null, items:h.items||[], photo:h.photo||null, packer:h.packer||null,
+    pod_photo:h.podPhoto||null, weight_photo:h.weightPhoto||null,
     asn:h.asn||null, carrier:h.carrier||null, vehicle:h.vehicle||null, cartons:(h.cartons!=null?h.cartons:null),
     grn_notes:h.grnNotes||null,
     voided:h.voided||false, voided_by:h.voidedBy||null, voided_at:h.voidedAt||null, void_reason:h.voidReason||null
@@ -6124,6 +6138,57 @@ function selectDispatchOrder(pkdId){
     },100);
   }
 }
+// ═══ DISPATCH PHOTOS — POD (proof of delivery) & weighing-scale photo,
+// captured at courier handover. Downscaled client-side (long edge capped,
+// JPEG re-encoded) before being stored, since these get taken on every
+// single dispatch — hundreds a day — and an uncompressed phone photo
+// (often several MB) straight into a text column doesn't scale the way
+// the occasional QC exception photo elsewhere in this file does. ═══
+let dispPodPhotoData=null, dispWeightPhotoData=null;
+function compressImageFile(file, maxDim, quality){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=(e)=>{
+      const img=new Image();
+      img.onload=()=>{
+        let w=img.width, h=img.height;
+        if(w>maxDim||h>maxDim){
+          if(w>=h){ h=Math.round(h*(maxDim/w)); w=maxDim; }
+          else { w=Math.round(w*(maxDim/h)); h=maxDim; }
+        }
+        const canvas=document.createElement('canvas');
+        canvas.width=w; canvas.height=h;
+        const ctx=canvas.getContext('2d');
+        ctx.drawImage(img,0,0,w,h);
+        try{ resolve(canvas.toDataURL('image/jpeg',quality)); }
+        catch(err){ reject(err); }
+      };
+      img.onerror=()=>reject(new Error('Could not read image'));
+      img.src=e.target.result;
+    };
+    reader.onerror=()=>reject(new Error('Could not read file'));
+    reader.readAsDataURL(file);
+  });
+}
+async function handleDispPhotoUpload(evt, kind){
+  const file=evt.target.files[0];
+  if(!file) return;
+  if(!file.type.startsWith('image/')){ toast('Please choose an image file','w'); evt.target.value=''; return; }
+  if(file.size > 15*1024*1024){ toast('Image is too large — please use a photo under 15MB','w'); evt.target.value=''; return; }
+  const previewEl=document.getElementById(kind==='pod'?'disp-pod-photo-preview':'disp-weight-photo-preview');
+  try{
+    const dataUrl=await compressImageFile(file, 1280, 0.72);
+    if(kind==='pod') dispPodPhotoData=dataUrl; else dispWeightPhotoData=dataUrl;
+    previewEl.innerHTML=`<div style="position:relative;display:inline-block"><img src="${dataUrl}" style="width:120px;height:90px;object-fit:cover;border-radius:6px;border:0.5px solid var(--b)"><button type="button" onclick="clearDispPhoto('${kind}')" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;background:#ff6b6b;border:none;border-radius:50%;color:#fff;cursor:pointer;font-size:12px;padding:0;line-height:1">×</button></div>`;
+  }catch(err){
+    toast('Could not process that image — try a different photo','w');
+    evt.target.value='';
+  }
+}
+function clearDispPhoto(kind){
+  if(kind==='pod'){ dispPodPhotoData=null; document.getElementById('disp-pod-photo').value=''; document.getElementById('disp-pod-photo-preview').innerHTML=''; }
+  else { dispWeightPhotoData=null; document.getElementById('disp-weight-photo').value=''; document.getElementById('disp-weight-photo-preview').innerHTML=''; }
+}
 function loadDispatchOrder(){
   const pkdId=document.getElementById('disp-order-select').value;
   if(!pkdId){document.getElementById('disp-order-detail').style.display='none';return;}
@@ -6150,6 +6215,8 @@ function loadDispatchOrder(){
   document.getElementById('disp-courier').value='';
   document.getElementById('disp-awb').value='';
   document.getElementById('disp-weight').value='';
+  clearDispPhoto('pod');
+  clearDispPhoto('weight');
 }
 function confirmCourierDispatch(){
   const pkdId=document.getElementById('disp-order-select').value;
@@ -6182,6 +6249,8 @@ function confirmCourierDispatch(){
   packed.shippingMethod=shipping;
   packed.courierPartner=courier;
   packed.dispatchWeight=dispatchWeight;
+  packed.podPhoto=dispPodPhotoData||null;
+  packed.weightPhoto=dispWeightPhotoData||null;
   // This mutates an EARLIER history record (the "packed" entry), not the
   // newest one — saveHist() below only syncs the newest array entry, so
   // this record needs its own explicit save or the dispatch info (AWB,
@@ -6190,6 +6259,8 @@ function confirmCourierDispatch(){
   // Add dispatch record
   history.push({id:did,type:'dispatch',ts:ts(),detail:`AWB: ${awb} · Courier: ${courier} · To: ${name}, ${pin} · Shipping: ${shipping} · Phone: ${phone} · Weight: ${dispatchWeight}kg · ${items.length} SKUs`,packedId:pkdId});
   saveHist();
+  clearDispPhoto('pod');
+  clearDispPhoto('weight');
   renderDispatchPage();
   document.getElementById('disp-search-order').value='';
   toast(`Dispatch ${did} confirmed · AWB ${awb} assigned to ${name} · ${dispatchWeight}kg`,'s');
@@ -6227,6 +6298,10 @@ function renderDispatchCompletedLog(){
           <div style="background:var(--s2);border-radius:4px;padding:5px 8px;font-size:10px"><div style="color:var(--t3)">Pack end</div><div style="font-weight:600">${packEnd}</div></div>
           <div style="background:var(--sbg);border-radius:4px;padding:5px 8px;font-size:10px"><div style="color:var(--st)">Duration</div><div style="font-weight:700;color:var(--st)">${packDur}</div></div>
         </div>
+        ${(d.podPhoto||d.weightPhoto)?`<div style="display:flex;gap:8px;margin-top:8px">
+          ${d.podPhoto?`<div><div style="font-size:9px;color:var(--t3);margin-bottom:3px">POD</div><img src="${d.podPhoto}" onclick="window.open('${d.podPhoto}','_blank')" style="width:60px;height:45px;object-fit:cover;border-radius:4px;border:0.5px solid var(--b);cursor:pointer" title="Click to view full size"></div>`:''}
+          ${d.weightPhoto?`<div><div style="font-size:9px;color:var(--t3);margin-bottom:3px">Weight</div><img src="${d.weightPhoto}" onclick="window.open('${d.weightPhoto}','_blank')" style="width:60px;height:45px;object-fit:cover;border-radius:4px;border:0.5px solid var(--b);cursor:pointer" title="Click to view full size"></div>`:''}
+        </div>`:''}
       </div>
     </div>`;
   }).join(''):'<div class="empty">No dispatches completed yet</div>';
