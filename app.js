@@ -3701,6 +3701,7 @@ function openPackModal(i, toteAlreadyVerified){
   // Clear fields
   ['pm-length','pm-width','pm-height','pm-actual-weight','pm-notes'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.querySelectorAll('.pm-material-cb').forEach(cb=>{cb.checked=false;});
+  clearPmWeightPhoto();
   document.getElementById('pm-vol-result').style.display='none';
   // Start elapsed counter
   if(_packElapsedTimer)clearInterval(_packElapsedTimer);
@@ -3829,10 +3830,12 @@ function confirmPackWithDetails(){
     boxL:L,boxW:W,boxH:H,
     actualWeight:actual,volWeight:vol,chargeableWeight:chargeable,
     packMaterials:packMaterials,
-    packNotes:notes
+    packNotes:notes,
+    weightPhoto:pmWeightPhotoData||null
   };
   history.push(packedObj);
   saveHist();
+  clearPmWeightPhoto();
   deletePackingQueueItem(t.id);
   renderPackingQ();
   if(document.getElementById('page-dispatch').classList.contains('active')){renderDispatchPage();}
@@ -4082,13 +4085,17 @@ function selectDispatchOrder(pkdId){
     },100);
   }
 }
-// ═══ DISPATCH PHOTOS — POD (proof of delivery) & weighing-scale photo,
-// captured at courier handover. Downscaled client-side (long edge capped,
+// ═══ DISPATCH / PACKING PHOTOS — POD (proof of delivery, captured
+// whenever the order is actually delivered: at dispatch time if already
+// available, or later via the "Upload POD" control on each card in the
+// dispatched-orders list) & weighing-scale photo (captured at packing,
+// alongside the box dimensions/weight entry, since that's when the item
+// is actually on the scale). Downscaled client-side (long edge capped,
 // JPEG re-encoded) before being stored, since these get taken on every
-// single dispatch — hundreds a day — and an uncompressed phone photo
+// single order — hundreds a day — and an uncompressed phone photo
 // (often several MB) straight into a text column doesn't scale the way
 // the occasional QC exception photo elsewhere in this file does. ═══
-let dispPodPhotoData=null, dispWeightPhotoData=null;
+let dispPodPhotoData=null, pmWeightPhotoData=null;
 function compressImageFile(file, maxDim, quality){
   return new Promise((resolve,reject)=>{
     const reader=new FileReader();
@@ -4114,24 +4121,72 @@ function compressImageFile(file, maxDim, quality){
     reader.readAsDataURL(file);
   });
 }
-async function handleDispPhotoUpload(evt, kind){
+async function handleDispPhotoUpload(evt){
   const file=evt.target.files[0];
   if(!file) return;
   if(!file.type.startsWith('image/')){ toast('Please choose an image file','w'); evt.target.value=''; return; }
   if(file.size > 15*1024*1024){ toast('Image is too large — please use a photo under 15MB','w'); evt.target.value=''; return; }
-  const previewEl=document.getElementById(kind==='pod'?'disp-pod-photo-preview':'disp-weight-photo-preview');
+  const previewEl=document.getElementById('disp-pod-photo-preview');
   try{
     const dataUrl=await compressImageFile(file, 1280, 0.72);
-    if(kind==='pod') dispPodPhotoData=dataUrl; else dispWeightPhotoData=dataUrl;
-    previewEl.innerHTML=`<div style="position:relative;display:inline-block"><img src="${dataUrl}" style="width:120px;height:90px;object-fit:cover;border-radius:6px;border:0.5px solid var(--b)"><button type="button" onclick="clearDispPhoto('${kind}')" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;background:#ff6b6b;border:none;border-radius:50%;color:#fff;cursor:pointer;font-size:12px;padding:0;line-height:1">×</button></div>`;
+    dispPodPhotoData=dataUrl;
+    previewEl.innerHTML=`<div style="position:relative;display:inline-block"><img src="${dataUrl}" style="width:120px;height:90px;object-fit:cover;border-radius:6px;border:0.5px solid var(--b)"><button type="button" onclick="clearDispPhoto()" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;background:#ff6b6b;border:none;border-radius:50%;color:#fff;cursor:pointer;font-size:12px;padding:0;line-height:1">×</button></div>`;
   }catch(err){
     toast('Could not process that image — try a different photo','w');
     evt.target.value='';
   }
 }
-function clearDispPhoto(kind){
-  if(kind==='pod'){ dispPodPhotoData=null; document.getElementById('disp-pod-photo').value=''; document.getElementById('disp-pod-photo-preview').innerHTML=''; }
-  else { dispWeightPhotoData=null; document.getElementById('disp-weight-photo').value=''; document.getElementById('disp-weight-photo-preview').innerHTML=''; }
+function clearDispPhoto(){
+  dispPodPhotoData=null;
+  document.getElementById('disp-pod-photo').value='';
+  document.getElementById('disp-pod-photo-preview').innerHTML='';
+}
+// Weighing-scale photo now captured at packing time (alongside box
+// dimensions/weight entry) instead of at dispatch — packers already have
+// the scale reading right in front of them there, whereas dispatch may
+// happen later, elsewhere, away from the scale.
+async function handlePmPhotoUpload(evt){
+  const file=evt.target.files[0];
+  if(!file) return;
+  if(!file.type.startsWith('image/')){ toast('Please choose an image file','w'); evt.target.value=''; return; }
+  if(file.size > 15*1024*1024){ toast('Image is too large — please use a photo under 15MB','w'); evt.target.value=''; return; }
+  const previewEl=document.getElementById('pm-weight-photo-preview');
+  try{
+    const dataUrl=await compressImageFile(file, 1280, 0.72);
+    pmWeightPhotoData=dataUrl;
+    previewEl.innerHTML=`<div style="position:relative;display:inline-block"><img src="${dataUrl}" style="width:120px;height:90px;object-fit:cover;border-radius:6px;border:0.5px solid var(--b)"><button type="button" onclick="clearPmWeightPhoto()" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;background:#ff6b6b;border:none;border-radius:50%;color:#fff;cursor:pointer;font-size:12px;padding:0;line-height:1">×</button></div>`;
+  }catch(err){
+    toast('Could not process that image — try a different photo','w');
+    evt.target.value='';
+  }
+}
+function clearPmWeightPhoto(){
+  pmWeightPhotoData=null;
+  const inp=document.getElementById('pm-weight-photo'); if(inp) inp.value='';
+  const prev=document.getElementById('pm-weight-photo-preview'); if(prev) prev.innerHTML='';
+}
+// POD photo can now be added any time after dispatch — typically once
+// the courier actually delivers, which is often hours or days after AWB
+// assignment — via the upload control on each card in the dispatched-
+// orders list, not only on the pre-dispatch form. Re-uploading replaces
+// whatever POD photo (if any) was already saved for that dispatch.
+async function handlePostDispatchPodUpload(evt, historyId){
+  const file=evt.target.files[0];
+  if(!file) return;
+  if(!file.type.startsWith('image/')){ toast('Please choose an image file','w'); evt.target.value=''; return; }
+  if(file.size > 15*1024*1024){ toast('Image is too large — please use a photo under 15MB','w'); evt.target.value=''; return; }
+  const rec=history.find(h=>h.id===historyId);
+  if(!rec){ toast('Dispatch record not found','w'); evt.target.value=''; return; }
+  try{
+    const dataUrl=await compressImageFile(file, 1280, 0.72);
+    rec.podPhoto=dataUrl;
+    await saveHistRecord(rec);
+    renderDispatchCompletedLog();
+    toast(`POD photo saved for ${rec.orderId||rec.id}`,'s');
+  }catch(err){
+    toast('Could not process that image — try a different photo','w');
+    evt.target.value='';
+  }
 }
 function loadDispatchOrder(){
   const pkdId=document.getElementById('disp-order-select').value;
@@ -4159,8 +4214,7 @@ function loadDispatchOrder(){
   document.getElementById('disp-courier').value='';
   document.getElementById('disp-awb').value='';
   document.getElementById('disp-weight').value='';
-  clearDispPhoto('pod');
-  clearDispPhoto('weight');
+  clearDispPhoto();
 }
 function confirmCourierDispatch(){
   const pkdId=document.getElementById('disp-order-select').value;
@@ -4194,7 +4248,6 @@ function confirmCourierDispatch(){
   packed.courierPartner=courier;
   packed.dispatchWeight=dispatchWeight;
   packed.podPhoto=dispPodPhotoData||null;
-  packed.weightPhoto=dispWeightPhotoData||null;
   // This mutates an EARLIER history record (the "packed" entry), not the
   // newest one — saveHist() below only syncs the newest array entry, so
   // this record needs its own explicit save or the dispatch info (AWB,
@@ -4203,8 +4256,7 @@ function confirmCourierDispatch(){
   // Add dispatch record
   history.push({id:did,type:'dispatch',ts:ts(),detail:`AWB: ${awb} · Courier: ${courier} · To: ${name}, ${pin} · Shipping: ${shipping} · Phone: ${phone} · Weight: ${dispatchWeight}kg · ${items.length} SKUs`,packedId:pkdId});
   saveHist();
-  clearDispPhoto('pod');
-  clearDispPhoto('weight');
+  clearDispPhoto();
   renderDispatchPage();
   document.getElementById('disp-search-order').value='';
   toast(`Dispatch ${did} confirmed · AWB ${awb} assigned to ${name} · ${dispatchWeight}kg`,'s');
@@ -4242,10 +4294,14 @@ function renderDispatchCompletedLog(){
           <div style="background:var(--s2);border-radius:4px;padding:5px 8px;font-size:10px"><div style="color:var(--t3)">Pack end</div><div style="font-weight:600">${packEnd}</div></div>
           <div style="background:var(--sbg);border-radius:4px;padding:5px 8px;font-size:10px"><div style="color:var(--st)">Duration</div><div style="font-weight:700;color:var(--st)">${packDur}</div></div>
         </div>
-        ${(d.podPhoto||d.weightPhoto)?`<div style="display:flex;gap:8px;margin-top:8px">
+        <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;align-items:flex-end">
           ${d.podPhoto?`<div><div style="font-size:9px;color:var(--t3);margin-bottom:3px">POD</div><img src="${d.podPhoto}" onclick="window.open('${d.podPhoto}','_blank')" style="width:60px;height:45px;object-fit:cover;border-radius:4px;border:0.5px solid var(--b);cursor:pointer" title="Click to view full size"></div>`:''}
-          ${d.weightPhoto?`<div><div style="font-size:9px;color:var(--t3);margin-bottom:3px">Weight</div><img src="${d.weightPhoto}" onclick="window.open('${d.weightPhoto}','_blank')" style="width:60px;height:45px;object-fit:cover;border-radius:4px;border:0.5px solid var(--b);cursor:pointer" title="Click to view full size"></div>`:''}
-        </div>`:''}
+          ${d.weightPhoto?`<div><div style="font-size:9px;color:var(--t3);margin-bottom:3px">Weight (at packing)</div><img src="${d.weightPhoto}" onclick="window.open('${d.weightPhoto}','_blank')" style="width:60px;height:45px;object-fit:cover;border-radius:4px;border:0.5px solid var(--b);cursor:pointer" title="Click to view full size"></div>`:''}
+          <div>
+            <label for="pod-upload-${d.id}" style="font-size:9px;color:var(--t3);margin-bottom:3px;display:block;cursor:pointer">${d.podPhoto?'Replace POD photo':'Upload POD photo (once delivered)'}</label>
+            <input type="file" id="pod-upload-${d.id}" accept="image/*" capture="environment" onchange="handlePostDispatchPodUpload(event,'${d.id}')" style="font-size:9px;max-width:150px">
+          </div>
+        </div>
       </div>
     </div>`;
   }).join(''):'<div class="empty">No dispatches completed yet</div>';
@@ -7184,6 +7240,27 @@ function renderReports(){
       </div>
     </div>`;
 
+  // PRODUCT MOVEMENT (per SKU, this week) — answers "how much of each
+  // product came in / went out this week", which the KPI cards above
+  // only ever summed across all SKUs.
+  const inBySku={}, outBySku={};
+  grns.forEach(g=>{ (g.items||[]).forEach(it=>{ if(it.qc==='PASS'){ inBySku[it.sku]=(inBySku[it.sku]||0)+(it.qty||0); } }); });
+  disps.forEach(d=>{ (d.items||[]).forEach(it=>{ outBySku[it.sku]=(outBySku[it.sku]||0)+(it.qty||0); }); });
+  const movedSkus=[...new Set([...Object.keys(inBySku),...Object.keys(outBySku)])];
+  const skuMoveRows=movedSkus.map(sku=>{
+    const s=SKUS.find(x=>x.sku===sku);
+    return {sku, name:s?s.sub:sku, variant:s?s.variant:'', qtyIn:inBySku[sku]||0, qtyOut:outBySku[sku]||0};
+  }).sort((a,b)=>(b.qtyIn+b.qtyOut)-(a.qtyIn+a.qtyOut));
+  document.getElementById('rpt-sku-movement').innerHTML=skuMoveRows.length?`
+    <div style="font-size:11px;margin-bottom:8px;color:var(--t2)">Week: <strong>${weekLabel}</strong> · ${skuMoveRows.length} SKU(s) moved · ${totalUnitsIn} units in · ${totalUnitsOut} units out</div>
+    <div class="tw"><table><thead><tr><th>SKU</th><th>Item</th><th>Variant</th><th>Qty In</th><th>Qty Out</th><th>Net</th></tr></thead><tbody>
+    ${skuMoveRows.map(r=>{
+      const net=r.qtyIn-r.qtyOut;
+      const netColor=net>0?'var(--st)':net<0?'var(--dt)':'var(--t2)';
+      return `<tr><td class="mono" style="font-size:10px">${esc(r.sku)}</td><td style="font-size:10px">${esc(r.name)}</td><td style="font-size:10px">${esc(r.variant)}</td><td style="text-align:center;color:var(--it);font-weight:600">${r.qtyIn||'—'}</td><td style="text-align:center;color:var(--gold);font-weight:600">${r.qtyOut||'—'}</td><td style="text-align:center;font-weight:700;color:${netColor}">${net>0?'+':''}${net}</td></tr>`;
+    }).join('')}
+    </tbody></table></div>`:'<div class="empty">No inbound or outbound product movement this week</div>';
+
   // INBOUND
   document.getElementById('rpt-inbound').innerHTML=grns.length?`
     <div style="font-size:11px;margin-bottom:8px;color:var(--t2)">Week: <strong>${weekLabel}</strong> · ${grns.length} GRNs · ${totalUnitsIn} units received</div>
@@ -7196,13 +7273,15 @@ function renderReports(){
     }).join('</td></tr>')}
     </tbody></table></div>`:'<div class="empty">No inbound activity this week</div>';
 
-  // OUTBOUND
+  // OUTBOUND — every column captured at dispatch, including the actual
+  // SKU/qty breakdown of what shipped (previously only a unit total).
   document.getElementById('rpt-outbound').innerHTML=disps.length?`
     <div style="font-size:11px;margin-bottom:8px;color:var(--t2)">Week: <strong>${weekLabel}</strong> · ${disps.length} dispatches · ${totalUnitsOut} units out</div>
-    <div class="tw"><table><thead><tr><th>Dispatch ID</th><th>Order ID</th><th>AWB</th><th>Recipient</th><th>Courier</th><th>Box (cm)</th><th>Chargeable (kg)</th><th>Dispatched At</th></tr></thead><tbody>
+    <div class="tw"><table><thead><tr><th>Dispatch ID</th><th>Order ID</th><th>AWB</th><th>Recipient</th><th>Phone</th><th>Pincode</th><th>Courier</th><th>Shipping</th><th>Items (SKU x Qty)</th><th>Box (cm)</th><th>Chargeable (kg)</th><th>Dispatched At</th></tr></thead><tbody>
     ${disps.map(d=>{
       const dims=d.boxL?`${d.boxL}×${d.boxW}×${d.boxH}`:'—';
-      return `<tr><td class="mono" style="font-size:10px">${d.id}</td><td style="font-size:10px">${esc(d.orderId||'—')}</td><td class="mono" style="font-size:10px">${esc(d.awb||'—')}</td><td style="font-size:10px">${esc(d.recipientName||'—')}</td><td style="font-size:10px">${esc(d.courierPartner||'—')}</td><td style="font-size:10px">${dims}</td><td style="text-align:center;font-weight:600">${d.chargeableWeight||'—'}</td><td style="font-size:10px">${d.dispatchedAt||d.ts}</td></tr>`;
+      const itemsStr=(d.items||[]).map(it=>`${it.sku} x${it.qty}`).join(', ')||'—';
+      return `<tr><td class="mono" style="font-size:10px">${d.id}</td><td style="font-size:10px">${esc(d.orderId||'—')}</td><td class="mono" style="font-size:10px">${esc(d.awb||'—')}</td><td style="font-size:10px">${esc(d.recipientName||'—')}</td><td style="font-size:10px">${esc(d.phone||'—')}</td><td style="font-size:10px">${esc(d.pincode||'—')}</td><td style="font-size:10px">${esc(d.courierPartner||'—')}</td><td style="font-size:10px">${esc(d.shippingMethod||'—')}</td><td style="font-size:10px;max-width:220px">${esc(itemsStr)}</td><td style="font-size:10px">${dims}</td><td style="text-align:center;font-weight:600">${d.chargeableWeight||'—'}</td><td style="font-size:10px">${d.dispatchedAt||d.ts}</td></tr>`;
     }).join('')}
     </tbody></table></div>`:'<div class="empty">No dispatch activity this week</div>';
 
@@ -7294,6 +7373,23 @@ function downloadWeeklyCSV(){
   csv+=`Generated:,${new Date().toLocaleString('en-IN')}\n\n`;
 
   const grns=wh.filter(h=>h.type==='grn');
+  const disps=wh.filter(h=>h.type==='dispatched');
+
+  // Per-SKU qty in/out for the week — same breakdown as the on-screen
+  // "Product Movement" table, so the CSV isn't missing what the page shows.
+  const csvInBySku={}, csvOutBySku={};
+  grns.forEach(g=>{ (g.items||[]).forEach(it=>{ if(it.qc==='PASS'){ csvInBySku[it.sku]=(csvInBySku[it.sku]||0)+(it.qty||0); } }); });
+  disps.forEach(d=>{ (d.items||[]).forEach(it=>{ csvOutBySku[it.sku]=(csvOutBySku[it.sku]||0)+(it.qty||0); }); });
+  const csvMovedSkus=[...new Set([...Object.keys(csvInBySku),...Object.keys(csvOutBySku)])];
+  csv+=`\n=== PRODUCT MOVEMENT (QTY IN / OUT PER SKU) ===\n`;
+  csv+=`SKU,Item Name,Variant,Qty In,Qty Out,Net\n`;
+  csvMovedSkus.forEach(sku=>{
+    const s=SKUS.find(x=>x.sku===sku);
+    const qtyIn=csvInBySku[sku]||0, qtyOut=csvOutBySku[sku]||0;
+    csv+=`"${sku}","${s?s.sub:''}","${s?s.variant:''}",${qtyIn},${qtyOut},${qtyIn-qtyOut}\n`;
+  });
+  csv+=`TOTAL SKUs MOVED:,${csvMovedSkus.length}\n`;
+
   csv+=`\n=== INBOUND / GRN REPORT ===\n`;
   csv+=`GRN ID,Date/Time,Details,Units Pass,Units Hold\n`;
   grns.forEach(g=>{
@@ -7304,11 +7400,11 @@ function downloadWeeklyCSV(){
   });
   csv+=`TOTAL GRNs:,${grns.length}\n`;
 
-  const disps=wh.filter(h=>h.type==='dispatched');
   csv+=`\n=== OUTBOUND / DISPATCH REPORT ===\n`;
-  csv+=`Dispatch ID,Order ID,AWB,Recipient,Pincode,Courier Partner,Shipping Method,Box L,Box W,Box H,Actual Wt (kg),Vol Wt (kg),Chargeable Wt (kg),Pack Start,Pack End,Pack Duration,Dispatched At\n`;
+  csv+=`Dispatch ID,Order ID,AWB,Recipient,Phone,Pincode,Courier Partner,Shipping Method,Items (SKU x Qty),Box L,Box W,Box H,Actual Wt (kg),Vol Wt (kg),Chargeable Wt (kg),Pack Start,Pack End,Pack Duration,Dispatched At\n`;
   disps.forEach(d=>{
-    csv+=`"${d.id}","${d.orderId||''}","${d.awb||''}","${d.recipientName||''}","${esc(d.pincode||'')}","${esc(d.courierPartner||'')}","${d.shippingMethod||''}",${d.boxL||''},${d.boxW||''},${d.boxH||''},${d.actualWeight||''},${d.volWeight||''},${d.chargeableWeight||''},"${d.packStartTs||''}","${d.packEndTs||''}","${d.packDuration||''}","${d.dispatchedAt||d.ts}"\n`;
+    const itemsStr=(d.items||[]).map(it=>`${it.sku} x${it.qty}`).join('; ');
+    csv+=`"${d.id}","${d.orderId||''}","${d.awb||''}","${d.recipientName||''}","${esc(d.phone||'')}","${esc(d.pincode||'')}","${esc(d.courierPartner||'')}","${d.shippingMethod||''}","${itemsStr}",${d.boxL||''},${d.boxW||''},${d.boxH||''},${d.actualWeight||''},${d.volWeight||''},${d.chargeableWeight||''},"${d.packStartTs||''}","${d.packEndTs||''}","${d.packDuration||''}","${d.dispatchedAt||d.ts}"\n`;
   });
   csv+=`TOTAL DISPATCHED:,${disps.length}\n`;
 
@@ -7517,16 +7613,30 @@ function downloadMonthlyMasterCSV(){
     wsOpen['!cols']=openHeader.map(()=>({wch:16}));
     XLSX.utils.book_append_sheet(wb,wsOpen,'Open ASN');
 
-    // ── Outbound / Dispatch sheet ──
-    const dispHeader=['Dispatch ID','Order ID','Date/Time Dispatched','Recipient','Pincode','AWB No','Courier Partner','Shipping Method','SKU Count','Total Units','Box Dims (LxWxH cm)','Actual Wt (kg)','Vol Wt (kg)','Chargeable Wt (kg)','Packer','Pack Duration'];
-    const dispRows=monthDisps.map(d=>{
+    // ── Outbound / Dispatch sheet (per SKU line) — mirrors the Inbound GRN
+    // sheet's one-row-per-item structure below, instead of collapsing each
+    // dispatch to just a SKU count / unit total. That aggregate view meant
+    // this sheet couldn't answer "which products shipped and how many of
+    // each", the exact thing the Inbound sheet already answered for what
+    // came IN. ──
+    const dispHeader=['Dispatch ID','Order ID','Date/Time Dispatched','Recipient','Phone','Pincode','AWB No','Courier Partner','Shipping Method','SKU','Item Name','Variant','Qty','Box Dims (LxWxH cm)','Actual Wt (kg)','Vol Wt (kg)','Chargeable Wt (kg)','Packer','Pack Duration'];
+    const dispRows=[];
+    monthDisps.forEach(d=>{
       const items=d.items||[];
-      const skuCount=new Set(items.map(i=>i.sku)).size;
-      const units=items.reduce((a,i)=>a+(i.qty||0),0);
       const dims=d.boxL&&d.boxW&&d.boxH?`${d.boxL}x${d.boxW}x${d.boxH}`:'';
-      return [d.id,d.orderId||'',d.dispatchedAt||d.ts||'',d.recipientName||'',d.pincode||'',d.awb||'',d.courierPartner||'',d.shippingMethod||'',skuCount,units,dims,d.actualWeight||'',d.volWeight||'',d.chargeableWeight||'',d.packer||'',d.packDuration||''];
+      const common=[d.id,d.orderId||'',d.dispatchedAt||d.ts||'',d.recipientName||'',d.phone||'',d.pincode||'',d.awb||'',d.courierPartner||'',d.shippingMethod||''];
+      if(items.length){
+        items.forEach(i=>{
+          dispRows.push([...common,i.sku,i.name||'',i.variant||'',i.qty||0,dims,d.actualWeight||'',d.volWeight||'',d.chargeableWeight||'',d.packer||'',d.packDuration||'']);
+        });
+      } else {
+        // Dispatch with no recorded items — keep the row so the dispatch
+        // itself isn't silently dropped from the sheet, just with blank
+        // SKU/item/qty columns.
+        dispRows.push([...common,'','','',0,dims,d.actualWeight||'',d.volWeight||'',d.chargeableWeight||'',d.packer||'',d.packDuration||'']);
+      }
     });
-    const wsDisp=XLSX.utils.aoa_to_sheet([dispHeader,...dispRows,[],['TOTAL DISPATCHES',monthDisps.length],['TOTAL UNITS DISPATCHED',totalUnitsOut]]);
+    const wsDisp=XLSX.utils.aoa_to_sheet([dispHeader,...dispRows,[],['TOTAL DISPATCHES',monthDisps.length],['TOTAL SKU LINES',dispRows.length],['TOTAL UNITS DISPATCHED',totalUnitsOut]]);
     wsDisp['!cols']=dispHeader.map(()=>({wch:16}));
     XLSX.utils.book_append_sheet(wb,wsDisp,'Outbound Dispatch');
 
