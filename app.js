@@ -4096,6 +4096,7 @@ function selectDispatchOrder(pkdId){
 // (often several MB) straight into a text column doesn't scale the way
 // the occasional QC exception photo elsewhere in this file does. ═══
 let dispPodPhotoData=null, pmWeightPhotoData=null;
+let _dispWeightAutofilled=false;
 function compressImageFile(file, maxDim, quality){
   return new Promise((resolve,reject)=>{
     const reader=new FileReader();
@@ -4213,8 +4214,33 @@ function loadDispatchOrder(){
   document.getElementById('disp-shipping').value='Standard Road';
   document.getElementById('disp-courier').value='';
   document.getElementById('disp-awb').value='';
-  document.getElementById('disp-weight').value='';
+  // Auto-fill final dispatch weight from what was already weighed & typed
+  // in at packing (pm-actual-weight) — same physical scale reading, so no
+  // reason to make the dispatch employee re-type it. Still fully editable
+  // in case it's genuinely re-weighed at courier handover; the note below
+  // makes clear where the number came from and updates if they change it.
+  const packWeight=packed.actualWeight||null;
+  const weightInput=document.getElementById('disp-weight');
+  const weightNote=document.getElementById('disp-weight-note');
+  weightInput.value=packWeight||'';
+  _dispWeightAutofilled=!!packWeight;
+  if(packWeight){
+    weightNote.style.display='block';
+    weightNote.innerHTML=`<i class="ti ti-info-circle"></i> Auto-filled from packing weight (${packWeight} kg). Edit above if re-weighed at dispatch.`;
+  } else {
+    weightNote.style.display='block';
+    weightNote.innerHTML=`<i class="ti ti-alert-triangle"></i> No packing weight on file for this order — please enter the weight manually.`;
+  }
   clearDispPhoto();
+}
+function markDispWeightOverridden(){
+  if(!_dispWeightAutofilled) return;
+  _dispWeightAutofilled=false;
+  const weightNote=document.getElementById('disp-weight-note');
+  if(weightNote){
+    weightNote.style.display='block';
+    weightNote.innerHTML=`<i class="ti ti-edit"></i> Weight overridden manually.`;
+  }
 }
 function confirmCourierDispatch(){
   const pkdId=document.getElementById('disp-order-select').value;
