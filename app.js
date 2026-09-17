@@ -1296,18 +1296,45 @@ async function downloadFullBackup(){
     loadXLSXLib(()=>{
       try {
         const wb=XLSX.utils.book_new();
+        // audit_log is fetched in full every time (no limit, no date
+        // cutoff — Clear All Data deliberately never touches it either,
+        // see executeFullClear()), so it's the one table that only ever
+        // grows. A single flat sheet of it becomes unreadable within a
+        // few months, so it gets split into one sheet per calendar month
+        // instead — the backup doubles as a standing monthly audit
+        // archive, not just a snapshot.
+        const auditRows=tables['audit_log']||[];
+        const auditByMonth={};
+        auditRows.forEach(r=>{
+          const d=r.created_at?new Date(r.created_at):null;
+          const key=d&&!isNaN(d)?`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`:'unknown';
+          (auditByMonth[key]=auditByMonth[key]||[]).push(r);
+        });
+        const auditMonthKeys=Object.keys(auditByMonth).sort();
         const infoRows=[
           ['CaratLane WMS — Full Data Backup'],
           ['Exported',exportedAt],
           ['Exported by',exportedBy],
           [],
           ['Sheet','Row Count'],
-          ...Object.keys(tables).map(t=>[t,tables[t].length]),
+          ...Object.keys(tables).filter(t=>t!=='audit_log').map(t=>[t,tables[t].length]),
+          ...(auditRows.length?[[`audit_log (${auditMonthKeys.length} monthly sheet(s))`,auditRows.length]]:[['audit_log',0]]),
         ];
         const wsInfo=XLSX.utils.aoa_to_sheet(infoRows);
-        wsInfo['!cols']=[{wch:22},{wch:24}];
+        wsInfo['!cols']=[{wch:26},{wch:24}];
         XLSX.utils.book_append_sheet(wb,wsInfo,'Backup Info');
         Object.keys(tables).forEach(t=>{
+          if(t==='audit_log'){
+            if(!auditMonthKeys.length){
+              XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['(no rows)']]),'Audit (no rows)');
+            } else {
+              auditMonthKeys.forEach(key=>{
+                const ws=XLSX.utils.json_to_sheet(auditByMonth[key]);
+                XLSX.utils.book_append_sheet(wb,ws,`Audit ${key}`.slice(0,31));
+              });
+            }
+            return;
+          }
           const rows=tables[t];
           const ws=rows.length?XLSX.utils.json_to_sheet(rows):XLSX.utils.aoa_to_sheet([['(no rows)']]);
           // Excel sheet names: max 31 chars, no []:*?/\
@@ -9497,7 +9524,15 @@ async function renderDataIntegrityCheck(){
       <div style="font-size:10px;color:var(--t2);margin-top:2px">${esc(i.detail)}</div>
     </div>`).join('');
 }
+// Audit Trail now keeps up to 1000 recent records in memory (up from
+// 200) and pages through them 200 at a time client-side, so a busy
+// warehouse day doesn't scroll off the older-but-still-recent actions
+// while also not rendering 1000 rows into the DOM at once.
+const AUDIT_PAGE_SIZE=200;
+let _auditLogRows=[]; // last fetched+filtered rows, cached for paging
+let _auditLogPage=0;
 async function renderAuditLog(){
+  _auditLogPage=0; // any fetch (filter change, tab open, etc.) starts back at page 1
   const el=document.getElementById('audit-log-container');
   if(!el)return;
   el.innerHTML='<div style="color:var(--t3);font-size:11px;padding:8px">Loading audit trail...</div>';
@@ -9505,7 +9540,7 @@ async function renderAuditLog(){
   const roleFilter=document.getElementById('audit-filter-role')?.value||'';
   const actionFilter=document.getElementById('audit-filter-action')?.value||'';
   try {
-    let q=supa.from('audit_log').select('*').order('created_at',{ascending:false}).limit(200);
+    let q=supa.from('audit_log').select('*').order('created_at',{ascending:false}).limit(1000);
     if(roleFilter) q=q.eq('user_role',roleFilter);
     if(actionFilter) q=q.eq('action',actionFilter);
     const {data,error}=await q;
@@ -9518,11 +9553,35 @@ async function renderAuditLog(){
       (r.entity_type||'').toLowerCase().includes(search)||
       (r.entity_id||'').toLowerCase().includes(search)
     );
-    if(!rows.length){el.innerHTML='<div class="empty">No audit records found</div>';return;}
-    const actionColor={INSERT:'var(--st)',UPDATE:'var(--it)',DELETE:'var(--dt)',LOGIN:'var(--gold)',LOGOUT:'var(--t3)',CREATE_USER:'var(--st)',UPDATE_ROLE:'var(--wt)',DEACTIVATE_USER:'var(--dt)',ACTIVATE_USER:'var(--st)'};
-    el.innerHTML=`<div style="font-size:10px;color:var(--t3);margin-bottom:6px">${rows.length} records</div>
+    _auditLogRows=rows;
+    renderAuditLogPage();
+  } catch(e){ el.innerHTML='<div class="empty">Error loading audit log: '+esc(e.message)+'</div>'; }
+}
+function changeAuditPage(delta){
+  _auditLogPage+=delta;
+  renderAuditLogPage();
+}
+function renderAuditLogPage(){
+  const el=document.getElementById('audit-log-container');
+  if(!el)return;
+  const rows=_auditLogRows;
+  if(!rows.length){ el.innerHTML='<div class="empty">No audit records found</div>'; return; }
+  const totalPages=Math.max(1,Math.ceil(rows.length/AUDIT_PAGE_SIZE));
+  if(_auditLogPage>=totalPages) _auditLogPage=totalPages-1;
+  if(_auditLogPage<0) _auditLogPage=0;
+  const start=_auditLogPage*AUDIT_PAGE_SIZE;
+  const pageRows=rows.slice(start,start+AUDIT_PAGE_SIZE);
+  const actionColor={INSERT:'var(--st)',UPDATE:'var(--it)',DELETE:'var(--dt)',LOGIN:'var(--gold)',LOGOUT:'var(--t3)',CREATE_USER:'var(--st)',UPDATE_ROLE:'var(--wt)',DEACTIVATE_USER:'var(--dt)',ACTIVATE_USER:'var(--st)'};
+  el.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:6px">
+      <div style="font-size:10px;color:var(--t3)">${rows.length} record(s) loaded (up to 1000) · showing ${start+1}–${Math.min(start+AUDIT_PAGE_SIZE,rows.length)}</div>
+      <div style="display:flex;gap:8px;align-items:center;font-size:11px">
+        <button class="btn-sm" ${_auditLogPage<=0?'disabled':''} onclick="changeAuditPage(-1)"><i class="ti ti-chevron-left"></i>Prev</button>
+        <span style="color:var(--t2)">Page ${_auditLogPage+1} of ${totalPages}</span>
+        <button class="btn-sm" ${_auditLogPage>=totalPages-1?'disabled':''} onclick="changeAuditPage(1)">Next<i class="ti ti-chevron-right"></i></button>
+      </div>
+    </div>
     <div class="tw"><table><thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Table</th><th>Record ID</th><th>Detail</th></tr></thead><tbody>
-    ${rows.map(r=>{
+    ${pageRows.map(r=>{
       const color=actionColor[r.action]||'var(--t2)';
       const time=new Date(r.created_at).toLocaleString('en-IN');
       return `<tr>
@@ -9536,7 +9595,6 @@ async function renderAuditLog(){
       </tr>`;
     }).join('')}
     </tbody></table></div>`;
-  } catch(e){ el.innerHTML='<div class="empty">Error loading audit log: '+esc(e.message)+'</div>'; }
 }
 // Flattens an audit_log row's old_values/new_values JSON into a short,
 // human-readable "key: value · key: value" string, so the rich detail
