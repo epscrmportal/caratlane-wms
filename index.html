@@ -6327,8 +6327,15 @@ function renderPackedOrdersList(){
     const dimsStr=hasDims?`${p.boxL}×${p.boxW}×${p.boxH}cm · ${p.chargeableWeight}kg chargeable`:'Dims not captured';
     const matStr=p.packMaterials&&p.packMaterials.length?p.packMaterials.join(', '):'';
     const durStr=p.packDuration?`Packed in ${p.packDuration}`:'';
+    // Reflect whether this order has already been scanned out of the
+    // warehouse (orders.status==='left_warehouse') — otherwise this list
+    // always said "Awaiting AWB" even after its Proforma Invoice barcode
+    // had been scanned, hiding that progress from whoever assigns the AWB.
+    const ord=orders.find(x=>x.id===p.orderId);
+    const leftWh=ord&&ord.status==='left_warehouse';
+    const pillHtml=leftWh?'<span class="pill p-ok">Left Warehouse — AWB Pending</span>':'<span class="pill p-info">Awaiting AWB</span>';
     return `<div class="hist-entry" style="cursor:pointer">
-      <div class="hist-head" onclick="selectDispatchOrder('${p.id}')"><span class="hist-id">${p.id}</span><span class="pill p-info">Awaiting AWB</span></div>
+      <div class="hist-head" onclick="selectDispatchOrder('${p.id}')"><span class="hist-id">${p.id}</span>${pillHtml}</div>
       <div class="hist-body" onclick="selectDispatchOrder('${p.id}')">
         <div>${p.ts} · Order: <strong>${p.orderId}</strong> · ${itemCount} SKU(s)</div>
         <div style="font-size:10px;color:var(--t2);margin-top:2px">📦 ${dimsStr}${matStr?' · '+matStr:''}${durStr?' · ⏱ '+durStr:''}</div>
