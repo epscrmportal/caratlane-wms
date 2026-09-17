@@ -5746,6 +5746,7 @@ async function pkScanAdd(sku){
   renderPkChecklist();
   advancePkSkuSelect();
   logOrderEvent(activeOrder.id,'item_scanned',picker,{sku:sku.sku,qty:1,manual:false});
+  logAudit('ITEM_SCANNED','orders',activeOrder.id,null,{orderId:activeOrder.id,sku:sku.sku,rack:confirmedShelf?.rack,shelf:confirmedShelf?.shelf,bin,qtyThisScan:1,totalPickedSoFar:expected.qty-remaining+1,expectedQty:expected.qty,picker,stage:'pick'});
   toast(`Scanned ${sku.sku} · ${expected.qty-remaining+1}/${expected.qty} picked — ${res.available} left for other pickers`,'s');
 }
 function renderPkItemsList(){
@@ -7367,6 +7368,8 @@ async function mobilePickAddScan(sku){
   renderMpPickChecklist();
   mobileScanFeedback(true);
   logOrderEvent(mobilePickSession.orderId,'item_scanned',picker,{sku:sku.sku,qty:1,manual:false});
+  const _totalPickedSoFar=mobilePickSession.items.filter(i=>i.sku===sku.sku).reduce((a,i)=>a+i.qty,0);
+  logAudit('ITEM_SCANNED','orders',mobilePickSession.orderId,null,{orderId:mobilePickSession.orderId,sku:sku.sku,rack:confirmedShelf?.rack,shelf:confirmedShelf?.shelf,bin,qtyThisScan:1,totalPickedSoFar:_totalPickedSoFar,expectedQty:expected.qty,picker,stage:'pick_mobile'});
   toast(res.offline?`Offline — queued ${sku.sub} (will sync)`:'Reserved '+sku.sub+' — '+sku.variant, res.offline?'w':'s');
 }
 
@@ -11940,14 +11943,13 @@ function processBarcodeInput(barcode){
       logAudit('LOCATION_MISMATCH','inventory',sku.sku,null,{scannedAt:confirmedShelf,expected:validLocs});
       return;
     }
-    // Granular, order-scoped scan record — this is what makes "who scanned
-    // which item for which order, at which shelf" visible on the Audit
-    // Trail page (previously only logged to order_events, which only shows
-    // on the Order Status timeline, not here).
-    const _scanOrderId=_barcodeTarget==='picking'?activeOrder?.id:mobilePickSession?.orderId;
-    if(_scanOrderId){
-      logAudit('ITEM_SCANNED','orders',_scanOrderId,null,{orderId:_scanOrderId,sku:sku.sku,rack:confirmedShelf.rack,shelf:confirmedShelf.shelf,picker:currentProfile?.full_name,stage:_barcodeTarget==='picking'?'pick':'pick_mobile'});
-    }
+    // The actual order-scoped ITEM_SCANNED audit record — including the
+    // running picked quantity — is logged inside pkScanAdd()/
+    // mobilePickAddScan() themselves, right where the scan is actually
+    // accepted (see there). Logging it here instead would fire even for
+    // scans pkScanAdd/mobilePickAddScan go on to reject (already fully
+    // picked, no stock, etc.) and couldn't include the qty, since the add
+    // hasn't happened yet at this point.
   }
   if(_barcodeTarget==='inbound'){
     // Auto-fill SKU in inbound form
