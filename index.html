@@ -1963,6 +1963,13 @@ tr:hover td{background:var(--s2)}
       </select>
     </div>
   </div>
+  <div class="panel" style="margin-bottom:14px">
+    <div class="ph"><i class="ti ti-heartbeat"></i> Data Integrity Check<button class="btn-sm" style="margin-left:auto" onclick="renderDataIntegrityCheck()"><i class="ti ti-refresh"></i>Re-check</button></div>
+    <div class="pb">
+      <div style="font-size:10px;color:var(--t3);margin-bottom:8px">Scans every order/packing task in memory for the kinds of silent handoff failures that have caused stuck orders before (picked with no packing task, phantom duplicate tasks, orders pointing nowhere). Read-only — flags issues, doesn't fix them.</div>
+      <div id="data-integrity-container">Checking...</div>
+    </div>
+  </div>
   <div id="audit-log-container"></div>
 </div>
 
@@ -2879,14 +2886,16 @@ function historyRecordToRow(h){
 // Without this, only the newest array entry would ever sync to the DB
 // and the mutated older record's changes would be lost on next reload.
 async function saveHistRecord(h){
-  if(!h) return;
-  if(typeof supabase === 'undefined' || !supa) return;
+  if(!h) return {success:false,error:'no record'};
+  if(typeof supabase === 'undefined' || !supa) return {success:false,error:'offline'};
   try {
     const row=historyRecordToRow(h);
     const {error} = await supa.from('history').upsert(row, {onConflict:'id'});
     if(error) throw error;
+    return {success:true};
   } catch(e) {
     console.error('saveHistRecord error:', JSON.stringify(e), e?.message, e?.code);
+    return {success:false,error:e?.message||e};
   }
 }
 async function saveHist(){
@@ -2913,6 +2922,7 @@ async function saveHist(){
 // wipe out another picker/packer's in-flight claim between two clients' syncs.
 async function upsertPackingQueueItem(t){
   try {
+    if(typeof supabase === 'undefined' || !supa) return {success:false,error:'offline'};
     const row = {
       id:t.id, order_id:t.orderId, priority:t.priority, method:t.method,
       picker:t.picker, items:t.items||[], ts:t.ts, status:t.status||'awaiting_packing',
@@ -2921,13 +2931,15 @@ async function upsertPackingQueueItem(t){
     };
     const {error} = await supa.from('packing_queue').upsert(row, {onConflict:'id'});
     if(error) throw error;
-  } catch(e){ console.error('upsertPackingQueueItem error:', e?.message||e); }
+    return {success:true};
+  } catch(e){ console.error('upsertPackingQueueItem error:', e?.message||e); return {success:false,error:e?.message||e}; }
 }
 async function deletePackingQueueItem(id){
   try {
     const {error} = await supa.from('packing_queue').delete().eq('id', id);
     if(error) throw error;
-  } catch(e){ console.error('deletePackingQueueItem error:', e?.message||e); }
+    return {success:true};
+  } catch(e){ console.error('deletePackingQueueItem error:', e?.message||e); return {success:false,error:e?.message||e}; }
 }
 async function claimPackingTask(taskId, picker, startTime, startTs){
   try {
@@ -2979,11 +2991,76 @@ function setupRealtimeSync(){
       }
       renderDash(); renderInv(); renderRack();
     })
-    .on('postgres_changes', {event:'*', schema:'public', table:'history'}, () => {
-      loadHist().then(()=>{ renderDash(); if(document.getElementById('page-dispatch').classList.contains('active')) renderDispatchPage(); });
+    .on('postgres_changes', {event:'*', schema:'public', table:'history'}, (payload) => {
+      // Payload-only update — same fix as the inventory handler above, for
+      // the same reason: a GRN/pick/pack write can touch many rows in one
+      // go, firing one realtime event per row, and overlapping blind
+      // loadHist() full-table reloads can resolve out of order and silently
+      // revert a newer local record. Apply just the row named here instead.
+      if(payload.eventType==='DELETE'){
+        const old=payload.old;
+        if(old && old.id){
+          const idx=history.findIndex(h=>h.id===old.id);
+          if(idx>-1) history.splice(idx,1);
+        }
+      } else {
+        const r=payload.new;
+        if(r && r.id){
+          const rec={
+            id:r.id, type:r.type, ts:r.ts, detail:r.detail,
+            orderId:r.order_id, awb:r.awb, recipientName:r.recipient_name,
+            address:r.address, pincode:r.pincode, phone:r.phone,
+            shippingMethod:r.shipping_method, courierPartner:r.courier_partner, dispatchedAt:r.dispatched_at,
+            packStartTs:r.pack_start_ts, packStartTime:r.pack_start_time,
+            packEndTs:r.pack_end_ts, packEndTime:r.pack_end_time,
+            packDuration:r.pack_duration, packDurationSecs:r.pack_duration_secs,
+            pickStartTs:r.pick_start_ts, pickDurationSecs:r.pick_duration_secs,
+            boxL:r.box_l, boxW:r.box_w, boxH:r.box_h,
+            actualWeight:r.actual_weight, volWeight:r.vol_weight, chargeableWeight:r.chargeable_weight,
+            dispatchWeight:r.dispatch_weight,
+            packMaterials:r.pack_materials||[],
+            packNotes:r.pack_notes, packedId:r.packed_id, category:r.category, grn:r.grn,
+            items:r.items||[], photo:r.photo||null, packer:r.packer||null,
+            podPhoto:r.pod_photo||null, weightPhoto:r.weight_photo||null,
+            asn:r.asn||null, carrier:r.carrier||null, vehicle:r.vehicle||null, cartons:(r.cartons!=null?r.cartons:null),
+            grnNotes:r.grn_notes||null,
+            voided:r.voided||false, voidedBy:r.voided_by||null, voidedAt:r.voided_at||null, voidReason:r.void_reason||null
+          };
+          const idx=history.findIndex(h=>h.id===r.id);
+          if(idx>-1) history[idx]=rec; else history.push(rec);
+        }
+      }
+      renderDash(); if(document.getElementById('page-dispatch').classList.contains('active')) renderDispatchPage();
     })
-    .on('postgres_changes', {event:'*', schema:'public', table:'packing_queue'}, () => {
-      loadHist().then(()=>{ if(document.getElementById('page-packing').classList.contains('active')) renderPackingQ(); renderDash(); });
+    .on('postgres_changes', {event:'*', schema:'public', table:'packing_queue'}, (payload) => {
+      // Payload-only update — same fix as above. This directly addresses the
+      // orders-200-250 bug: a packing_queue row inserted by a picker used to
+      // trigger a blind full-table loadHist() reload on every OTHER
+      // concurrent picker/packer's session too, and an out-of-order resolve
+      // of one of those reloads could silently drop a just-inserted row from
+      // memory even though it existed in the DB (masking, not the same as
+      // the underlying insert failing, but compounding the same symptom).
+      if(payload.eventType==='DELETE'){
+        const old=payload.old;
+        if(old && old.id){
+          const idx=packingQueue.findIndex(t=>t.id===old.id);
+          if(idx>-1) packingQueue.splice(idx,1);
+        }
+      } else {
+        const r=payload.new;
+        if(r && r.id){
+          const rec={
+            id:r.id, orderId:r.order_id, priority:r.priority, method:r.method,
+            picker:r.picker, items:r.items||[], ts:r.ts, status:r.status,
+            packStartTime:r.pack_start_time, packStartTs:r.pack_start_ts, claimedBy:r.claimed_by||null,
+            toteId:r.tote_id||null
+          };
+          const idx=packingQueue.findIndex(t=>t.id===r.id);
+          if(idx>-1) packingQueue[idx]=rec; else packingQueue.push(rec);
+        }
+      }
+      if(document.getElementById('page-packing').classList.contains('active')) renderPackingQ();
+      renderDash();
     })
     .subscribe();
 }
@@ -3007,7 +3084,7 @@ function nav(tab){
   if(tab==='dashboard')renderDash();
   if(tab==='inventory'){loadReservedMap().then(renderInv);renderInvVersionHistory();}
   if(tab==='labels'){renderLabelPage();}
-  if(tab==='audit'){renderAuditLog();}
+  if(tab==='audit'){renderAuditLog();renderDataIntegrityCheck();}
   if(tab==='users'){renderUsersList();}
   if(tab==='rack')loadReservedMap().then(renderRack);
   if(tab==='dispatch')renderDispatchPage();
@@ -5439,7 +5516,8 @@ function renderOrdersBoard(){
   if(!orders.length){ el.innerHTML='<div class="empty">No orders yet</div>'; return; }
   if(!boardOrders.length){ el.innerHTML=`<div class="empty">No orders match order no. "${esc(searchQ)}"</div>`; return; }
   const canManage=getPerms().canManageOrders;
-  const statusPill={unassigned:'p-hold',assigned:'p-info',picked:'p-out',cancelled:'p-hold'};
+  const statusPill={unassigned:'p-hold',assigned:'p-info',picked:'p-out',packed:'p-low',dispatched:'p-ok',cancelled:'p-hold'};
+  const statusLabel={packed:'Awaiting Dispatch',dispatched:'Dispatched'};
   el.innerHTML=`<div class="tw"><table><thead><tr><th>Order ID</th><th>Customer</th><th>Priority</th><th>Items</th><th>Status</th><th>Assigned To</th>${canManage?'<th>Invoice</th><th>Action</th>':''}</tr></thead><tbody>${boardOrders.map(o=>{
     let action='';
     if(canManage && o.status==='unassigned'){
@@ -5449,7 +5527,7 @@ function renderOrdersBoard(){
       action=`<button class="btn-sm btn-danger" onclick="unassignOrder('${esc(o.id)}')">Unassign</button>`;
     }
     const invoiceCell=canManage?`<td><button class="btn-sm" onclick="printProformaInvoice('${esc(o.id)}')" title="Print Proforma Invoice"><i class="ti ti-file-invoice"></i></button></td>`:'';
-    return `<tr${o.status==='cancelled'?' style="opacity:0.5"':''}><td class="mono">${esc(o.id)}</td><td style="font-size:11px">${esc(o.customerName||'—')}</td><td><span class="pill ${o.priority==='Express'?'p-out':o.priority==='Standard'?'p-info':'p-hold'}">${o.priority}</span></td><td>${o.items.length} SKU(s)</td><td><span class="pill ${statusPill[o.status]||'p-info'}">${o.status}</span></td><td style="font-size:11px">${o.assignedPicker?esc(o.assignedPicker):'—'}${o.status==='picked'&&o.pickedTaskId?` <span style="color:var(--t3)">(${esc(o.pickedTaskId)})</span>`:''}</td>${canManage?`${invoiceCell}<td>${action}</td>`:''}</tr>`;
+    return `<tr${o.status==='cancelled'?' style="opacity:0.5"':''}><td class="mono">${esc(o.id)}</td><td style="font-size:11px">${esc(o.customerName||'—')}</td><td><span class="pill ${o.priority==='Express'?'p-out':o.priority==='Standard'?'p-info':'p-hold'}">${o.priority}</span></td><td>${o.items.length} SKU(s)</td><td><span class="pill ${statusPill[o.status]||'p-info'}">${esc(statusLabel[o.status]||o.status)}</span></td><td style="font-size:11px">${o.assignedPicker?esc(o.assignedPicker):'—'}${o.status==='picked'&&o.pickedTaskId?` <span style="color:var(--t3)">(${esc(o.pickedTaskId)})</span>`:''}</td>${canManage?`${invoiceCell}<td>${action}</td>`:''}</tr>`;
   }).join('')}</tbody></table></div>`;
   renderOrderAgingAlert();
 }
@@ -5718,20 +5796,43 @@ async function releaseToPacking(){
   const picker=activeOrder.assignedPicker||currentProfile?.full_name||'Unassigned';
   const result=await commitPickSession(pkSessionId);
   if(!result.success){ toast('Could not release to packing — connection issue, try again','w'); return; }
+  const tid=newId('PCK');
+  const newTask={id:tid,orderId:oid,priority:pri,method,picker,toteId:pkToteId,items:[...pkItemsList],ts:ts(),status:'awaiting_packing'};
+  const pickDurationSecs=pkPickStartTime?Math.floor((Date.now()-pkPickStartTime)/1000):null;
+  const histEntry={id:tid,type:'pick',ts:ts(),detail:`${oid} · ${method} pick · ${pri} · ${pkItemsList.length} SKUs · Picker: ${picker} · Tote ${pkToteId}`,orderId:oid,items:[...pkItemsList],picker,pickStartTs:pkPickStartTs,pickDurationSecs};
+  // The packing_queue row is the critical write: if it silently fails while
+  // the order still gets marked 'picked' below, the order is permanently
+  // stuck — too "picked" for Picking to re-show, with no task for Packing
+  // to show either (this was the root cause of orders 200-250 vanishing
+  // between Picking and Dispatch). So create it FIRST, awaited, retried
+  // once, and abort with nothing mutated if it still fails.
+  let pqRes=await upsertPackingQueueItem(newTask);
+  if(!pqRes.success) pqRes=await upsertPackingQueueItem(newTask);
+  if(!pqRes.success){
+    console.error('Packing task failed to create for',tid,pqRes.error);
+    logAudit('RELEASE_TO_PACKING_FAILED','packing_queue',tid,null,{orderId:oid,error:String(pqRes.error)});
+    toast('Could not create the packing task — connection issue. Nothing was changed; please try releasing again.','w');
+    return;
+  }
+  let histRes=await saveHistRecord(histEntry);
+  if(!histRes.success) histRes=await saveHistRecord(histEntry);
+  if(!histRes.success){
+    console.error('Pick history failed to save for',tid,histRes.error);
+    logAudit('PICK_HISTORY_SAVE_FAILED','history',tid,null,{orderId:oid,error:String(histRes.error)});
+    toast('Packing task created, but the pick history entry failed to save — flag this to a supervisor.','w');
+  }
+  history.push(histEntry);
+  packingQueue.push(newTask);
   pkItemsList.forEach(item=>{
     const [rk,sh]=(item.bin||'').split('-');
     if(rk&&sh) removeStockAtLocation(item.sku,rk,sh,item.qty);
     else if(inv[item.sku]) inv[item.sku].qty-=item.qty;
   });
-  const tid=newId('PCK');
-  const newTask={id:tid,orderId:oid,priority:pri,method,picker,toteId:pkToteId,items:[...pkItemsList],ts:ts(),status:'awaiting_packing'};
-  packingQueue.push(newTask);
-  const pickDurationSecs=pkPickStartTime?Math.floor((Date.now()-pkPickStartTime)/1000):null;
-  history.push({id:tid,type:'pick',ts:ts(),detail:`${oid} · ${method} pick · ${pri} · ${pkItemsList.length} SKUs · Picker: ${picker} · Tote ${pkToteId}`,orderId:oid,items:[...pkItemsList],picker,pickStartTs:pkPickStartTs,pickDurationSecs});
-  saveInv();saveHist();upsertPackingQueueItem(newTask);
+  saveInv();
   activeOrder.status='picked';
   activeOrder.pickedTaskId=tid;
   await saveOrderRow(activeOrder);
+  logAudit('RELEASE_TO_PACKING','packing_queue',tid,null,{orderId:oid,items:newTask.items.length,picker});
   pkItemsList=[];pkSessionId=null;activeOrder=null;
   pkPickStartTime=null;pkPickStartTs=null;
   pkToteId=null;updateToteBadge();
@@ -5913,7 +6014,7 @@ function calcVolWeight(){
   document.getElementById('pm-vol-formula').textContent=`Volumetric = (${L}×${W}×${H}) ÷ 5000 = ${vol} kg · Chargeable = max(actual, volumetric)`;
   res.style.display='block';
 }
-function confirmPackWithDetails(){
+async function confirmPackWithDetails(){
   const i=_activePackIdx;
   if(i===null)return;
   const t=packingQueue[i];
@@ -5935,8 +6036,6 @@ function confirmPackWithDetails(){
   const endTs=ts();
   const durationSecs=t.packStartTime?Math.floor((endTime-t.packStartTime)/1000):null;
   const durationStr=durationSecs!==null?`${Math.floor(durationSecs/60)}m ${durationSecs%60}s`:'N/A';
-  closePackModal();
-  packingQueue.splice(i,1);
   const pkid=newId('PKD');
   const packedObj={
     id:pkid,type:'packed',ts:endTs,
@@ -5952,12 +6051,36 @@ function confirmPackWithDetails(){
     packNotes:notes,
     weightPhoto:pmWeightPhotoData||null
   };
+  // Save the packed record FIRST, before touching local state, the order's
+  // status, or the DB queue row — a silent failure here used to leave an
+  // order with nothing to show it was ever packed (the same bug class that
+  // caused the pick-stage incident). Retry once, abort with nothing
+  // changed if it still fails.
+  let histRes=await saveHistRecord(packedObj);
+  if(!histRes.success) histRes=await saveHistRecord(packedObj);
+  if(!histRes.success){
+    console.error('Pack record failed to save for',pkid,histRes.error);
+    logAudit('COMPLETE_PACK_FAILED','packing_queue',t.id,null,{orderId:t.orderId,error:String(histRes.error)});
+    toast('Could not save the pack record — connection issue. Nothing was changed; please try completing the pack again.','w');
+    return;
+  }
+  let delRes=await deletePackingQueueItem(t.id);
+  if(!delRes.success) delRes=await deletePackingQueueItem(t.id);
+  if(!delRes.success){
+    console.error('Failed to remove packing_queue row for',t.id,delRes.error);
+    logAudit('PACKING_QUEUE_CLEANUP_FAILED','packing_queue',t.id,null,{orderId:t.orderId,error:String(delRes.error)});
+    toast('Order packed and saved, but the old packing task could not be cleared from the queue — flag this to a supervisor.','w');
+  }
+  const ord=orders.find(x=>x.id===t.orderId);
+  if(ord){ ord.status='packed'; await saveOrderRow(ord); }
+  closePackModal();
+  packingQueue.splice(i,1);
   history.push(packedObj);
-  saveHist();
   clearPmWeightPhoto();
-  deletePackingQueueItem(t.id);
+  logAudit('COMPLETE_PACK','packing_queue',t.id,null,{orderId:t.orderId,chargeable,packDurationSecs:durationSecs});
   renderPackingQ();
   if(document.getElementById('page-dispatch').classList.contains('active')){renderDispatchPage();}
+  if(document.getElementById('page-orders')?.classList.contains('active')){renderOrdersBoard();}
   renderDash();
   toast(`Order ${t.orderId} packed in ${durationStr} · ${chargeable}kg chargeable · moved to dispatch`,'s');
 }
@@ -6401,7 +6524,7 @@ function markDispWeightOverridden(){
     weightNote.innerHTML=`<i class="ti ti-edit"></i> Weight overridden manually.`;
   }
 }
-function confirmCourierDispatch(){
+async function confirmCourierDispatch(){
   const pkdId=document.getElementById('disp-order-select').value;
   const name=document.getElementById('disp-recip-name').value.trim();
   const addr=document.getElementById('disp-address').value.trim();
@@ -6420,31 +6543,42 @@ function confirmCourierDispatch(){
   if(!validateWeight(dispatchWeight)){toast('Invalid weight — must be between 0.01 and 999 kg','w');return;}
   if(!rateLimit('dispatch',3000)){toast('Please wait before submitting again','w');return;}
   const packed=history.find(h=>h.id===pkdId);
+  if(!packed){ toast('Packed order record not found — refresh and try again','w'); return; }
   const items=packed.items||[];
   const did=newId('DSP');
-  // Mark packed order as dispatched by changing its type
-  packed.type='dispatched';
-  packed.dispatchedAt=ts();
-  packed.awb=awb;
-  packed.recipientName=name;
-  packed.address=addr;
-  packed.pincode=pin;
-  packed.phone=phone;
-  packed.shippingMethod=shipping;
-  packed.courierPartner=courier;
-  packed.dispatchWeight=dispatchWeight;
-  packed.podPhoto=dispPodPhotoData||null;
-  // This mutates an EARLIER history record (the "packed" entry), not the
-  // newest one — saveHist() below only syncs the newest array entry, so
-  // this record needs its own explicit save or the dispatch info (AWB,
-  // courier, weight, etc.) would be lost on next reload.
-  saveHistRecord(packed);
-  // Add dispatch record
-  history.push({id:did,type:'dispatch',ts:ts(),detail:`AWB: ${awb} · Courier: ${courier} · To: ${name}, ${pin} · Shipping: ${shipping} · Phone: ${phone} · Weight: ${dispatchWeight}kg · ${items.length} SKUs`,packedId:pkdId});
-  saveHist();
+  // Build the updated record and save it BEFORE mutating the live object
+  // or touching the order's status — same reasoning as the pick/pack
+  // fixes: a silent failure here must leave nothing changed, not a
+  // half-applied dispatch.
+  const updated=Object.assign({},packed,{
+    type:'dispatched',dispatchedAt:ts(),awb,recipientName:name,address:addr,pincode:pin,
+    phone,shippingMethod:shipping,courierPartner:courier,dispatchWeight,podPhoto:dispPodPhotoData||null
+  });
+  let histRes=await saveHistRecord(updated);
+  if(!histRes.success) histRes=await saveHistRecord(updated);
+  if(!histRes.success){
+    console.error('Dispatch update failed to save for',pkdId,histRes.error);
+    logAudit('CONFIRM_DISPATCH_FAILED','history',pkdId,null,{orderId:packed.orderId,awb,error:String(histRes.error)});
+    toast('Could not save the dispatch — connection issue. Nothing was changed; please try again.','w');
+    return;
+  }
+  const dispatchRecord={id:did,type:'dispatch',ts:ts(),detail:`AWB: ${awb} · Courier: ${courier} · To: ${name}, ${pin} · Shipping: ${shipping} · Phone: ${phone} · Weight: ${dispatchWeight}kg · ${items.length} SKUs`,packedId:pkdId,orderId:packed.orderId};
+  let dispRes=await saveHistRecord(dispatchRecord);
+  if(!dispRes.success) dispRes=await saveHistRecord(dispatchRecord);
+  if(!dispRes.success){
+    console.error('Dispatch log entry failed to save for',did,dispRes.error);
+    logAudit('CONFIRM_DISPATCH_RECORD_FAILED','history',did,null,{orderId:packed.orderId,error:String(dispRes.error)});
+    toast('Dispatch confirmed, but the dispatch log entry failed to save — flag this to a supervisor.','w');
+  }
+  Object.assign(packed,updated);
+  history.push(dispatchRecord);
+  const ord=orders.find(x=>x.id===packed.orderId);
+  if(ord){ ord.status='dispatched'; await saveOrderRow(ord); }
+  logAudit('CONFIRM_DISPATCH','history',pkdId,null,{orderId:packed.orderId,awb,courier,dispatchWeight});
   clearDispPhoto();
   renderDispatchPage();
   document.getElementById('disp-search-order').value='';
+  if(document.getElementById('page-orders')?.classList.contains('active')){renderOrdersBoard();}
   toast(`Dispatch ${did} confirmed · AWB ${awb} assigned to ${name} · ${dispatchWeight}kg`,'s');
 }
 function renderDispatchCompletedLog(){
@@ -7301,18 +7435,37 @@ async function completeMobilePick(){
   if(!rateLimit('mobile-pick',2000)){ toast('Please wait before submitting again','w'); return; }
   const result=await commitPickSession(mobilePickSession.sessionId);
   if(!result.success){ toast('Could not complete pick — connection issue, try again','w'); return; }
+  const tid=newId('PCK');
+  const picker=currentProfile?.full_name||'Mobile picker';
+  const newTask={id:tid,orderId:mobilePickSession.orderId,priority:mobilePickSession.priority,method:mobilePickSession.method,picker,toteId:mobilePickSession.toteId||null,items:[...mobilePickSession.items],ts:ts(),status:'awaiting_packing'};
+  const pickDurationSecs=mobilePickSession.pickStartTime?Math.floor((Date.now()-mobilePickSession.pickStartTime)/1000):null;
+  const histEntry={id:tid,type:'pick',ts:ts(),detail:`${mobilePickSession.orderId} · ${mobilePickSession.method} pick · ${mobilePickSession.priority} · ${mobilePickSession.items.length} SKUs · Picker: ${picker} (mobile scan)`,orderId:mobilePickSession.orderId,items:[...mobilePickSession.items],picker,pickStartTs:mobilePickSession.pickStartTs,pickDurationSecs};
+  // Same fix as the desktop releaseToPacking() flow (see comment there):
+  // create the packing_queue row FIRST, awaited + retried once, and abort
+  // with nothing mutated if it still fails.
+  let pqRes=await upsertPackingQueueItem(newTask);
+  if(!pqRes.success) pqRes=await upsertPackingQueueItem(newTask);
+  if(!pqRes.success){
+    console.error('Packing task failed to create for',tid,pqRes.error);
+    logAudit('MOBILE_PICK_COMPLETE_FAILED','packing_queue',tid,null,{orderId:mobilePickSession.orderId,error:String(pqRes.error)});
+    toast('Could not create the packing task — connection issue. Nothing was changed; please try completing the pick again.','w');
+    return;
+  }
+  let histRes=await saveHistRecord(histEntry);
+  if(!histRes.success) histRes=await saveHistRecord(histEntry);
+  if(!histRes.success){
+    console.error('Pick history failed to save for',tid,histRes.error);
+    logAudit('PICK_HISTORY_SAVE_FAILED','history',tid,null,{orderId:mobilePickSession.orderId,error:String(histRes.error)});
+    toast('Packing task created, but the pick history entry failed to save — flag this to a supervisor.','w');
+  }
+  history.push(histEntry);
+  packingQueue.push(newTask);
   mobilePickSession.items.forEach(it=>{
     const [rk,sh]=(it.bin||'').split('-');
     if(rk&&sh) removeStockAtLocation(it.sku,rk,sh,it.qty);
     else if(inv[it.sku]) inv[it.sku].qty-=it.qty;
   });
-  const tid=newId('PCK');
-  const picker=currentProfile?.full_name||'Mobile picker';
-  const newTask={id:tid,orderId:mobilePickSession.orderId,priority:mobilePickSession.priority,method:mobilePickSession.method,picker,toteId:mobilePickSession.toteId||null,items:[...mobilePickSession.items],ts:ts(),status:'awaiting_packing'};
-  packingQueue.push(newTask);
-  const pickDurationSecs=mobilePickSession.pickStartTime?Math.floor((Date.now()-mobilePickSession.pickStartTime)/1000):null;
-  history.push({id:tid,type:'pick',ts:ts(),detail:`${mobilePickSession.orderId} · ${mobilePickSession.method} pick · ${mobilePickSession.priority} · ${mobilePickSession.items.length} SKUs · Picker: ${picker} (mobile scan)`,orderId:mobilePickSession.orderId,items:[...mobilePickSession.items],picker,pickStartTs:mobilePickSession.pickStartTs,pickDurationSecs});
-  saveInv();saveHist();upsertPackingQueueItem(newTask);
+  saveInv();
   const o=mobilePickSession.order;
   o.status='picked';
   o.pickedTaskId=tid;
@@ -7502,7 +7655,7 @@ function calcMobileVolWeight(){
   res.style.display='block';
 }
 
-function completeMobilePack(){
+async function completeMobilePack(){
   if(!mobilePackActive) return;
   const t=mobilePackActive.task;
   const L=parseFloat(document.getElementById('mp-length').value)||0;
@@ -7523,10 +7676,8 @@ function completeMobilePack(){
   const endTs=ts();
   const durationSecs=t.packStartTime?Math.floor((endTime-t.packStartTime)/1000):null;
   const durationStr=durationSecs!==null?`${Math.floor(durationSecs/60)}m ${durationSecs%60}s`:'N/A';
-  const idx=packingQueue.findIndex(p=>p.id===t.id);
-  if(idx>-1) packingQueue.splice(idx,1);
   const pkid=newId('PKD');
-  history.push({
+  const packedObj={
     id:pkid,type:'packed',ts:endTs,
     detail:`${t.orderId} · ${t.items.length} SKUs packed — ready for dispatch (mobile, scan-verified)`,
     orderId:t.orderId,items:t.items,
@@ -7538,22 +7689,48 @@ function completeMobilePack(){
     actualWeight:actual,volWeight:vol,chargeableWeight:chargeable,
     packMaterials:packMaterials,
     packNotes:notes
-  });
-  saveHist();
+  };
   if(!navigator.onLine){
-    const h=history[history.length-1];
-    const row={id:h.id,type:h.type,ts:h.ts,detail:h.detail||null,order_id:h.orderId||null,
-      pack_start_ts:h.packStartTs||null,pack_start_time:h.packStartTime||null,
-      pack_end_ts:h.packEndTs||null,pack_end_time:h.packEndTime||null,
-      pack_duration:h.packDuration||null,pack_duration_secs:h.packDurationSecs||null,
-      box_l:h.boxL||null,box_w:h.boxW||null,box_h:h.boxH||null,
-      actual_weight:h.actualWeight||null,vol_weight:h.volWeight||null,chargeable_weight:h.chargeableWeight||null,
-      pack_materials:h.packMaterials||null,
-      pack_notes:h.packNotes||null,items:h.items||[],packer:h.packer||null};
+    // Offline: deliberately queued for later sync — untouched, this is the
+    // app's existing offline-first mechanism, separate from the online
+    // write-failure handling below.
+    const idx=packingQueue.findIndex(p=>p.id===t.id);
+    if(idx>-1) packingQueue.splice(idx,1);
+    history.push(packedObj);
+    saveHist();
+    const row={id:packedObj.id,type:packedObj.type,ts:packedObj.ts,detail:packedObj.detail||null,order_id:packedObj.orderId||null,
+      pack_start_ts:packedObj.packStartTs||null,pack_start_time:packedObj.packStartTime||null,
+      pack_end_ts:packedObj.packEndTs||null,pack_end_time:packedObj.packEndTime||null,
+      pack_duration:packedObj.packDuration||null,pack_duration_secs:packedObj.packDurationSecs||null,
+      box_l:packedObj.boxL||null,box_w:packedObj.boxW||null,box_h:packedObj.boxH||null,
+      actual_weight:packedObj.actualWeight||null,vol_weight:packedObj.volWeight||null,chargeable_weight:packedObj.chargeableWeight||null,
+      pack_materials:packedObj.packMaterials||null,
+      pack_notes:packedObj.packNotes||null,items:packedObj.items||[],packer:packedObj.packer||null};
     queueOfflineAction('mobile_pack_complete',{historyRow:row,taskId:t.id,orderId:t.orderId,chargeable},`Pack complete · ${t.orderId}`);
     toast(`Offline — Order ${t.orderId} packed in ${durationStr}, queued to sync (${chargeable}kg chargeable)`,'w');
   } else {
-    deletePackingQueueItem(t.id);
+    // Online: same await + retry + abort-safe pattern as the desktop pack
+    // flow — save the record FIRST, before touching local state, so a
+    // silent failure never leaves an order with no trace it was packed.
+    let histRes=await saveHistRecord(packedObj);
+    if(!histRes.success) histRes=await saveHistRecord(packedObj);
+    if(!histRes.success){
+      console.error('Mobile pack record failed to save for',pkid,histRes.error);
+      logAudit('MOBILE_PACK_COMPLETE_FAILED','packing_queue',t.id,null,{orderId:t.orderId,error:String(histRes.error)});
+      toast('Could not save the pack record — connection issue. Nothing was changed; please try completing the pack again.','w');
+      return;
+    }
+    let delRes=await deletePackingQueueItem(t.id);
+    if(!delRes.success) delRes=await deletePackingQueueItem(t.id);
+    if(!delRes.success){
+      console.error('Failed to remove packing_queue row for',t.id,delRes.error);
+      logAudit('PACKING_QUEUE_CLEANUP_FAILED','packing_queue',t.id,null,{orderId:t.orderId,error:String(delRes.error)});
+    }
+    const ord=orders.find(x=>x.id===t.orderId);
+    if(ord){ ord.status='packed'; await saveOrderRow(ord); }
+    const idx=packingQueue.findIndex(p=>p.id===t.id);
+    if(idx>-1) packingQueue.splice(idx,1);
+    history.push(packedObj);
     logAudit('MOBILE_PACK_COMPLETE','packing_queue',t.id,null,{orderId:t.orderId,chargeable});
     toast(`Order ${t.orderId} packed in ${durationStr} · ${chargeable}kg chargeable`,'s');
   }
@@ -11326,6 +11503,60 @@ function parseDisplayTs(str){
   return t;
 }
 
+// ═══ DATA INTEGRITY CHECK ═══
+// Self-service version of the diagnostics we ran manually via SQL during
+// the packing_queue-orphaning incident (orders picked with no packing
+// task, phantom duplicate tasks for already-completed orders, dangling
+// references). Runs entirely client-side against already-loaded data —
+// no custom SQL needed to catch this class of problem again.
+async function renderDataIntegrityCheck(){
+  const el=document.getElementById('data-integrity-container');
+  if(!el) return;
+  el.innerHTML='<div style="color:var(--t3);font-size:11px;padding:8px">Checking...</div>';
+  try{ await Promise.all([loadOrders(),loadHist()]); }catch(e){ console.error('Data integrity check: reload failed',e); }
+  const issues=[];
+  orders.forEach(o=>{
+    if(o.status==='cancelled') return;
+    if(o.status==='picked'){
+      const hasQueueRow=packingQueue.some(t=>t.id===o.pickedTaskId);
+      const hasPackedOrDispatched=history.some(h=>h.orderId===o.id&&(h.type==='packed'||h.type==='dispatched'));
+      if(!hasQueueRow && !hasPackedOrDispatched){
+        issues.push({severity:'high',orderId:o.id,issue:'Picked but never reached packing',
+          detail:`picked_task_id ${o.pickedTaskId||'—'} has no packing_queue row and no packed/dispatched history — the pick-to-pack handoff likely failed silently. This is exactly the pattern behind the Sept 2026 incident.`});
+      }
+    }
+    if(o.status!=='dispatched'){
+      const dispatched=history.some(h=>h.orderId===o.id&&h.type==='dispatched');
+      if(dispatched){
+        issues.push({severity:'low',orderId:o.id,issue:`Status shows "${o.status}" but the order was actually dispatched`,
+          detail:'The order itself is fine and complete — the status field just never advanced. Safe to ignore unless it keeps happening.'});
+      }
+    }
+  });
+  packingQueue.forEach(t=>{
+    if(!orders.some(o=>o.id===t.orderId)){
+      issues.push({severity:'medium',orderId:t.orderId||'—',issue:`Packing task ${t.id} references a missing order`,
+        detail:'No matching row in the orders table for this task — either the order was deleted or the order_id is wrong.'});
+    } else if(history.some(h=>h.orderId===t.orderId&&(h.type==='packed'||h.type==='dispatched'))){
+      issues.push({severity:'high',orderId:t.orderId,issue:`Packing task ${t.id} is still open but this order is already packed/dispatched`,
+        detail:'This looks like a duplicate/phantom packing task from a bad recovery or a double-write — the order was already completed elsewhere.'});
+    }
+  });
+  if(!issues.length){
+    el.innerHTML=`<div class="empty" style="color:var(--st)"><i class="ti ti-circle-check"></i> No issues found — ${orders.length} orders and ${packingQueue.length} active packing tasks checked.</div>`;
+    return;
+  }
+  const sevColor={high:'var(--dt)',medium:'var(--wt)',low:'var(--t3)'};
+  const sevBg={high:'var(--dbg)',medium:'var(--wbg)',low:'var(--s2)'};
+  const order={high:0,medium:1,low:2};
+  issues.sort((a,b)=>order[a.severity]-order[b.severity]);
+  el.innerHTML=`<div style="font-size:11px;color:var(--wt);margin-bottom:8px"><i class="ti ti-alert-triangle"></i> ${issues.length} issue(s) found</div>`+
+    issues.map(i=>`<div style="border:1px solid ${sevColor[i.severity]};background:${sevBg[i.severity]};border-radius:6px;padding:8px 10px;margin-bottom:6px">
+      <div style="font-weight:700;font-size:12px;color:${sevColor[i.severity]}">${esc(i.issue)}</div>
+      <div style="font-size:11px;margin-top:2px">Order: <strong>${esc(i.orderId)}</strong></div>
+      <div style="font-size:10px;color:var(--t2);margin-top:2px">${esc(i.detail)}</div>
+    </div>`).join('');
+}
 async function renderAuditLog(){
   const el=document.getElementById('audit-log-container');
   if(!el)return;
