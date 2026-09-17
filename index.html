@@ -976,6 +976,8 @@ tr:hover td{background:var(--s2)}
   <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
     <button onclick="enableBarcodeScanner('dispatch')" style="padding:7px 12px;background:var(--s2);border:1px solid var(--b);border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;display:flex;align-items:center;gap:5px;color:var(--t)"><i class="ti ti-barcode" style="font-size:14px;color:var(--gold)"></i>Scan AWB Barcode</button>
     <div class="barcode-indicator" style="display:none;align-items:center;gap:5px;padding:4px 10px;background:var(--sbg);border-radius:6px;font-size:10px;color:var(--st);font-weight:600"><i class="ti ti-scan"></i>Scanner active — scan AWB label now<button onclick="disableBarcodeScanner()" style="background:none;border:none;cursor:pointer;color:var(--dt);font-size:12px;margin-left:4px">×</button></div>
+    <button onclick="enableBarcodeScanner('dispatch-warehouse-exit')" style="padding:7px 12px;background:var(--s2);border:1px solid var(--b);border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;display:flex;align-items:center;gap:5px;color:var(--t)"><i class="ti ti-door-exit" style="font-size:14px;color:var(--gold)"></i>Scan Dispatch Label</button>
+    <div class="barcode-indicator" style="display:none;align-items:center;gap:5px;padding:4px 10px;background:var(--sbg);border-radius:6px;font-size:10px;color:var(--st);font-weight:600"><i class="ti ti-scan"></i>Scanner active — scan the 4×6 dispatch label to mark left warehouse<button onclick="disableBarcodeScanner()" style="background:none;border:none;cursor:pointer;color:var(--dt);font-size:12px;margin-left:4px">×</button></div>
   </div>
   <div class="fg2">
     <div>
@@ -5543,8 +5545,8 @@ function renderOrdersBoard(){
   if(!orders.length){ el.innerHTML='<div class="empty">No orders yet</div>'; return; }
   if(!boardOrders.length){ el.innerHTML=`<div class="empty">No orders match order no. "${esc(searchQ)}"</div>`; return; }
   const canManage=getPerms().canManageOrders;
-  const statusPill={unassigned:'p-hold',assigned:'p-info',picked:'p-out',packed:'p-low',dispatched:'p-ok',cancelled:'p-hold'};
-  const statusLabel={packed:'Awaiting Dispatch',dispatched:'Dispatched'};
+  const statusPill={unassigned:'p-hold',assigned:'p-info',picked:'p-out',packed:'p-low',left_warehouse:'p-info',dispatched:'p-ok',cancelled:'p-hold'};
+  const statusLabel={packed:'Awaiting Dispatch',left_warehouse:'Left Warehouse',dispatched:'Dispatched'};
   el.innerHTML=`<div class="tw"><table><thead><tr><th>Order ID</th><th>Customer</th><th>Priority</th><th>Items</th><th>Status</th><th>Assigned To</th>${canManage?'<th>Invoice</th><th>Action</th>':''}</tr></thead><tbody>${boardOrders.map(o=>{
     let action='';
     if(canManage && o.status==='unassigned'){
@@ -6300,13 +6302,133 @@ function renderPackedOrdersList(){
         <div>${p.ts} · Order: <strong>${p.orderId}</strong> · ${itemCount} SKU(s)</div>
         <div style="font-size:10px;color:var(--t2);margin-top:2px">📦 ${dimsStr}${matStr?' · '+matStr:''}${durStr?' · ⏱ '+durStr:''}</div>
       </div>
-      <div style="display:flex;gap:6px;margin-top:6px">
+      <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
         <button class="btn-sm" onclick="event.stopPropagation();printPackingSlip('${p.id}')"><i class="ti ti-printer"></i>Print slip</button>
         <button class="btn-sm" onclick="event.stopPropagation();printProformaInvoice('${p.orderId}')"><i class="ti ti-file-invoice"></i>Proforma Invoice</button>
+        <button class="btn-sm" onclick="event.stopPropagation();printDispatchLabel('${p.id}')"><i class="ti ti-barcode"></i>Dispatch Label (4×6)</button>
       </div>
     </div>`;
   }).join(''):(q?'<div class="empty">No matching packed order found</div>':'<div class="empty">No packed orders yet — create and pack orders first</div>');
   el.innerHTML=listHtml;
+}
+// ── Scan-to-mark "left warehouse" ────────────────────────────────────────
+// A distinct, intermediate milestone between 'packed' and 'dispatched':
+// the order has been physically scanned out of the building using its
+// 4×6 dispatch label, but the courier AWB has not been assigned yet —
+// that's still added separately by a supervisor/admin via the existing
+// "Assign courier & AWB" form (confirmCourierDispatch, unchanged).
+async function handleDispatchExitScan(barcode){
+  const packed=history.find(h=>h.id===barcode && h.type==='packed');
+  if(!packed){
+    const already=history.find(h=>h.id===barcode);
+    if(already && (already.type==='dispatched')){
+      toast(`${barcode} was already fully dispatched (AWB ${already.awb||'—'}) — nothing to do`,'w');
+    } else {
+      toast('Unrecognized dispatch label: '+barcode+' — scan a packed order\'s own 4×6 dispatch label','w');
+    }
+    return;
+  }
+  await markLeftWarehouse(packed);
+}
+async function markLeftWarehouse(packed){
+  const ord=orders.find(x=>x.id===packed.orderId);
+  if(!ord){ toast('Order record not found for '+packed.orderId,'w'); return; }
+  if(ord.status==='left_warehouse'){ toast(`Order ${ord.id} was already marked as left warehouse — AWB still pending`,'w'); return; }
+  if(ord.status==='dispatched'){ toast(`Order ${ord.id} is already fully dispatched`,'w'); return; }
+  if(!rateLimit('dispatch-exit-'+packed.id,2000)){ toast('Please wait before scanning again','w'); return; }
+  const prevStatus=ord.status;
+  ord.status='left_warehouse';
+  const statusOk=await saveOrderRow(ord);
+  if(!statusOk){
+    ord.status=prevStatus; // don't let the UI show a status that failed to save
+    console.error('Order status sync to \'left_warehouse\' failed for',ord.id);
+    logAudit('ORDER_STATUS_SYNC_FAILED','orders',ord.id,null,{orderId:ord.id,attemptedStatus:'left_warehouse'});
+    toast(`Order ${ord.id} scan recorded, but its status could not be updated to "left warehouse" — try scanning again, or flag this to a supervisor.`,'w');
+    return;
+  }
+  logAudit('LEFT_WAREHOUSE','orders',ord.id,null,{orderId:ord.id,packedId:packed.id});
+  logOrderEvent(ord.id,'left_warehouse',currentProfile?.full_name,{packedId:packed.id});
+  toast(`✓ Order ${ord.id} marked as left warehouse — AWB still needs to be added by a supervisor/admin`,'s');
+  renderPackedOrdersList();
+  if(document.getElementById('page-orders')?.classList.contains('active')){renderOrdersBoard();}
+}
+// 4×6" thermal dispatch label — printed once per packed order, its
+// CODE128 barcode encodes the packed record's own id (e.g. PKD-123456).
+// Scanning that barcode with "Scan Dispatch Label" on the Dispatch page
+// is what calls markLeftWarehouse() above. Deliberately a separate,
+// compact document from printProformaInvoice() (full A4 invoice) — this
+// one is sized to print directly on a 4×6" thermal label printer.
+function printDispatchLabel(pkdId){
+  const p=history.find(h=>h.id===pkdId && h.type==='packed');
+  if(!p){ toast('Packed order record not found','w'); return; }
+  loadJsBarcode(()=>{
+    const pw=window.open('','CARATLANE_DISPATCH_LABEL_'+Date.now(),'width=500,height=700');
+    if(!pw){ toast('Please allow popups to print','w'); return; }
+    const svgNS='http://www.w3.org/2000/svg';
+    const tmpSvg=document.createElementNS(svgNS,'svg');
+    tmpSvg.setAttribute('id','tmp_bc_dispatch_label');
+    document.body.appendChild(tmpSvg);
+    let bcDataURI='';
+    try {
+      JsBarcode(tmpSvg, p.id, {format:'CODE128',width:2.6,height:70,displayValue:false,margin:6,background:'#ffffff',lineColor:'#000000'});
+      const svgStr=new XMLSerializer().serializeToString(tmpSvg);
+      bcDataURI='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(svgStr)));
+    } catch(e){ console.warn('Dispatch label barcode error:',e); }
+    document.body.removeChild(tmpSvg);
+    const itemCount=(p.items&&p.items.length)?p.items.length:0;
+    pw.document.write(`<!DOCTYPE html><html><head><title>Dispatch Label — ${esc(p.orderId)}</title>
+    <style>
+      *{box-sizing:border-box;margin:0;padding:0}
+      body{font-family:Arial,sans-serif;background:#fff}
+      .label{width:4in;height:6in;padding:0.2in;display:flex;flex-direction:column;justify-content:space-between}
+      .brand{font-size:13pt;font-weight:800;letter-spacing:0.5px}
+      .brand-sub{font-size:8pt;color:#555;margin-top:1mm}
+      .divider{border-top:1.5px dashed #999;margin:3mm 0}
+      .order-id{font-size:26pt;font-weight:800;text-align:center;margin:2mm 0}
+      .order-sub{font-size:10pt;text-align:center;color:#333}
+      .barcode-wrap{text-align:center;margin:3mm 0}
+      .barcode-wrap img{max-width:100%;max-height:1.6in}
+      .pkd-id{font-size:11pt;font-family:monospace;text-align:center;letter-spacing:1px}
+      .meta{font-size:9pt;color:#333;margin-top:2mm}
+      .meta div{margin-bottom:1mm}
+      .footer{font-size:7.5pt;color:#777;text-align:center;margin-top:2mm}
+      .no-print{position:fixed;top:8px;right:8px}
+      @media print{
+        .no-print{display:none !important}
+        @page{size:4in 6in;margin:0}
+        body{margin:0}
+      }
+    </style></head><body>
+    <div class="no-print" style="display:flex;gap:8px">
+      <button onclick="window.print()" style="padding:8px 16px;background:#B8860B;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px">🖨 Print Label</button>
+      <button onclick="window.close()" style="padding:8px 16px;background:#f0f0f0;border:none;border-radius:6px;cursor:pointer;font-size:12px">Close</button>
+    </div>
+    <div class="label">
+      <div>
+        <div class="brand">CaratLane WMS</div>
+        <div class="brand-sub">Warehouse Dispatch Label</div>
+        <div class="divider"></div>
+        <div class="order-id">${esc(p.orderId)}</div>
+        <div class="order-sub">${itemCount} SKU(s) · Packed ${esc(p.ts||'')}</div>
+      </div>
+      <div class="barcode-wrap">
+        ${bcDataURI?`<img src="${bcDataURI}" alt="${p.id}">`:'<div class="pkd-id">'+esc(p.id)+'</div>'}
+        <div class="pkd-id">${esc(p.id)}</div>
+      </div>
+      <div>
+        <div class="meta">
+          <div>Scan this barcode at "Scan Dispatch Label" on the Dispatch page to mark the order as physically left the warehouse.</div>
+          <div><strong>AWB / courier is assigned separately by a supervisor or admin</strong> — this scan does not require it.</div>
+        </div>
+        <div class="footer">Printed ${new Date().toLocaleString('en-IN')} · CaratLane WMS · 4×6in thermal label</div>
+      </div>
+    </div>
+    </body></html>`);
+    pw.document.close();
+    pw.focus();
+    logAudit('PRINT_DISPATCH_LABEL','history',p.id,null,{orderId:p.orderId,packedId:p.id});
+    toast('Dispatch label sent to print preview','s');
+  });
 }
 function filterDispatchOrders(){
   const q=(document.getElementById('disp-search-order').value||'').toLowerCase();
@@ -9297,7 +9419,8 @@ async function lookupOrderStatus(){
     shelf_scanned:{icon:'ti-map-pin',bg:'var(--it)',label:'Shelf location scanned'},
     item_scanned:{icon:'ti-barcode',bg:'var(--st)',label:'Item scanned'},
     pack_started:{icon:'ti-player-play',bg:'var(--gold)',label:'Packing started'},
-    pack_item_verified:{icon:'ti-check',bg:'var(--st)',label:'Item verified (packing)'}
+    pack_item_verified:{icon:'ti-check',bg:'var(--st)',label:'Item verified (packing)'},
+    left_warehouse:{icon:'ti-door-exit',bg:'var(--it)',label:'Left warehouse — AWB pending'}
   };
 
   // One chronologically-sorted timeline built from three sources: the
@@ -11772,7 +11895,8 @@ function enableBarcodeScanner(target){
     'mobile-pack-lookup':'Barcode scanner active — scan a tote bag to open its packing task',
     'desktop-pack':'Barcode scanner active — scan items to verify against the order',
     'desktop-pack-tote-gate':'Barcode scanner active — scan the tote bag to confirm it before scanning items',
-    'mobile-pack-tote-gate':'Barcode scanner active — scan the tote bag to confirm it before scanning items'
+    'mobile-pack-tote-gate':'Barcode scanner active — scan the tote bag to confirm it before scanning items',
+    'dispatch-warehouse-exit':'Barcode scanner active — scan a packed order\'s 4×6 dispatch label to mark it left the warehouse'
   };
   toast(msgs[target]||'Barcode scanner active — scan a SKU barcode','s');
 }
@@ -11984,6 +12108,14 @@ function processBarcodeInput(barcode){
     handleShelfLocationScan(loc);
     return;
   }
+  // Dispatch "left warehouse" labels (PKD-{id}, printed as a 4×6 thermal
+  // label) are scanned to mark a packed order as physically out of the
+  // building — a distinct, non-SKU barcode format, so check it before
+  // falling through to the SKU lookup below.
+  if(_barcodeTarget==='dispatch-warehouse-exit'){
+    handleDispatchExitScan(barcode);
+    return;
+  }
   // Find matching SKU
   const sku=SKUS.find(s=>s.sku===barcode||s.sku.toUpperCase()===barcode.toUpperCase()||(s.shortCode!=null&&String(s.shortCode).padStart(4,'0')===barcode));
   console.log('Barcode "'+barcode+'" resolved to:', sku?sku.sku+' (code '+sku.shortCode+')':'NOT FOUND — no SKU or short code matches this barcode');
@@ -12180,7 +12312,8 @@ function renderTrackingResult(data){
     shelf_scanned:{icon:'ti-map-pin',bg:'var(--it)',label:'Shelf location scanned'},
     item_scanned:{icon:'ti-barcode',bg:'var(--st)',label:'Item scanned'},
     pack_started:{icon:'ti-player-play',bg:'var(--gold)',label:'Packing started'},
-    pack_item_verified:{icon:'ti-check',bg:'var(--st)',label:'Item verified (packing)'}
+    pack_item_verified:{icon:'ti-check',bg:'var(--st)',label:'Item verified (packing)'},
+    left_warehouse:{icon:'ti-door-exit',bg:'var(--it)',label:'Left warehouse — AWB pending'}
   };
   const timeline=[];
   timeline.push({sortTs:o.created_at?new Date(o.created_at).getTime():0,
@@ -12228,7 +12361,7 @@ function renderTrackingResult(data){
         <div style="font-size:10px;color:var(--t3);margin-top:2px">${esc(t.ts)}${t.meta?' · '+t.meta:''}</div>
       </div>
     </div>`).join('');
-  const statusLabel={unassigned:'Unassigned',assigned:'Assigned to picker',picked:'Picked',packed:'Packed — awaiting dispatch',dispatched:'Dispatched',cancelled:'Cancelled'};
+  const statusLabel={unassigned:'Unassigned',assigned:'Assigned to picker',picked:'Picked',packed:'Packed — awaiting dispatch',left_warehouse:'Left warehouse — AWB pending',dispatched:'Dispatched',cancelled:'Cancelled'};
   const el=document.getElementById('track-screen');
   el.innerHTML=`<div class="auth-card" style="max-width:480px;width:100%;max-height:90vh;overflow-y:auto">
     <div class="auth-logo"><div class="auth-gem">CL</div><div><div class="auth-title">Order ${esc(o.id||'')}</div><div class="auth-sub">${esc(statusLabel[o.status]||o.status||'')}</div></div></div>
