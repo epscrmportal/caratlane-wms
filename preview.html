@@ -10948,6 +10948,7 @@ async function openPackingTaskByTote(tote){
   const t=packingQueue[idx];
   const me=currentProfile?.full_name||'';
   if(t.claimedBy && t.claimedBy!==me){ toast(`Tote ${tote} — order ${t.orderId} is already being packed by ${t.claimedBy}`,'w'); return; }
+  logAudit('TOTE_SCANNED','orders',t.orderId,null,{orderId:t.orderId,toteId:tote,taskId:t.id,packer:me,stage:'pack_lookup'});
   if(!t.packStartTime){ await startPacking(idx); }
   disableBarcodeScanner();
   openPackModal(idx, true); // tote already verified by the scan that opened this task
@@ -10959,6 +10960,7 @@ async function openMobilePackingTaskByTote(tote){
   const me=currentProfile?.full_name||'';
   if(t.claimedBy && t.claimedBy!==me){ toast(`Tote ${tote} — order ${t.orderId} is already being packed by ${t.claimedBy}`,'w'); mobileScanFeedback(false); return; }
   mobileScanFeedback(true);
+  logAudit('TOTE_SCANNED','orders',t.orderId,null,{orderId:t.orderId,toteId:tote,taskId:t.id,packer:me,stage:'pack_lookup_mobile'});
   await startMobilePack(idx, true); // tote already verified by the scan that opened this task
 }
 function handleToteScan(tote){
@@ -10988,8 +10990,10 @@ function handleToteScan(tote){
     const expected=activeTask?.toteId;
     if(expected && expected!==tote){
       toast(`⚠ Wrong tote — this task expects ${expected}, you scanned ${tote}`,'w');
+      if(activeTask) logAudit('WRONG_TOTE_SCANNED','orders',activeTask.orderId,null,{orderId:activeTask.orderId,expectedTote:expected,scannedTote:tote,packer:currentProfile?.full_name,stage:'pack_verify'});
     } else {
       toast(`✓ Tote ${tote} confirmed for this task`,'s');
+      if(activeTask) logAudit('TOTE_SCANNED','orders',activeTask.orderId,null,{orderId:activeTask.orderId,toteId:tote,packer:currentProfile?.full_name,stage:'pack_verify'});
     }
   } else if(_barcodeTarget==='desktop-pack-tote-gate'){
     const activeTask=packingQueue[_activePackIdx];
@@ -11003,15 +11007,18 @@ function handleToteScan(tote){
       unlockPmChecklistAfterToteGate();
     } else {
       toast(`⚠ Wrong tote — this order was picked into ${expected}, you scanned ${tote}. Do not pack from this bag.`,'w');
+      if(activeTask) logAudit('WRONG_TOTE_SCANNED','orders',activeTask.orderId,null,{orderId:activeTask.orderId,expectedTote:expected,scannedTote:tote,packer:currentProfile?.full_name,stage:'pack_verify'});
     }
   } else if(_barcodeTarget==='mobile-pack'){
     const expected=mobilePackActive?.task?.toteId;
     if(expected && expected!==tote){
       toast(`⚠ Wrong tote — this task expects ${expected}, you scanned ${tote}`,'w');
       mobileScanFeedback(false);
+      if(mobilePackActive) logAudit('WRONG_TOTE_SCANNED','orders',mobilePackActive.task.orderId,null,{orderId:mobilePackActive.task.orderId,expectedTote:expected,scannedTote:tote,packer:currentProfile?.full_name,stage:'pack_verify_mobile'});
     } else {
       toast(`✓ Tote ${tote} confirmed for this task`,'s');
       mobileScanFeedback(true);
+      if(mobilePackActive) logAudit('TOTE_SCANNED','orders',mobilePackActive.task.orderId,null,{orderId:mobilePackActive.task.orderId,toteId:tote,packer:currentProfile?.full_name,stage:'pack_verify_mobile'});
     }
   } else if(_barcodeTarget==='mobile-pack-tote-gate'){
     const expected=mobilePackActive?.task?.toteId;
@@ -11020,12 +11027,14 @@ function handleToteScan(tote){
       toast(`✓ Tote ${tote} confirmed — now scan items to verify`,'s');
       if(mobilePackActive){
         logOrderEvent(mobilePackActive.task.orderId,'tote_scanned',currentProfile?.full_name,{toteId:tote,stage:'pack_verify'});
+        logAudit('TOTE_SCANNED','orders',mobilePackActive.task.orderId,null,{orderId:mobilePackActive.task.orderId,toteId:tote,packer:currentProfile?.full_name,stage:'pack_verify_mobile'});
         mobilePackActive.stage='checklist';
       }
       renderMobilePackQueue();
     } else {
       mobileScanFeedback(false);
       toast(`⚠ Wrong tote — this order was picked into ${expected}, you scanned ${tote}. Do not pack from this bag.`,'w');
+      if(mobilePackActive) logAudit('WRONG_TOTE_SCANNED','orders',mobilePackActive.task.orderId,null,{orderId:mobilePackActive.task.orderId,expectedTote:expected,scannedTote:tote,packer:currentProfile?.full_name,stage:'pack_verify_mobile'});
     }
   } else {
     toast(`Tote barcode ${tote} scanned`,'s');
