@@ -5260,7 +5260,12 @@ async function releaseToPacking(){
   saveInv();
   activeOrder.status='picked';
   activeOrder.pickedTaskId=tid;
-  await saveOrderRow(activeOrder);
+  const statusOk=await saveOrderRow(activeOrder);
+  if(!statusOk){
+    console.error('Order status sync to \'picked\' failed for',oid);
+    logAudit('ORDER_STATUS_SYNC_FAILED','orders',oid,null,{orderId:oid,attemptedStatus:'picked'});
+    toast(`Order ${oid} released to packing, but its status could not be updated to "picked" — it may still show as assigned. Flag this to a supervisor.`,'w');
+  }
   logAudit('RELEASE_TO_PACKING','packing_queue',tid,null,{orderId:oid,items:newTask.items.length,picker});
   pkItemsList=[];pkSessionId=null;activeOrder=null;
   pkPickStartTime=null;pkPickStartTs=null;
@@ -5394,7 +5399,10 @@ function pmScanItem(sku){
   if(item.scannedQty>=item.expectedQty){ toast(sku.sku+' already fully verified','w'); return; }
   item.scannedQty+=1;
   const activeTask=packingQueue[_activePackIdx];
-  if(activeTask) logOrderEvent(activeTask.orderId,'pack_item_verified',currentProfile?.full_name,{sku:sku.sku});
+  if(activeTask){
+    logOrderEvent(activeTask.orderId,'pack_item_verified',currentProfile?.full_name,{sku:sku.sku});
+    logAudit('PACK_ITEM_VERIFIED','orders',activeTask.orderId,null,{orderId:activeTask.orderId,sku:sku.sku,scannedQty:item.scannedQty,expectedQty:item.expectedQty,packer:currentProfile?.full_name});
+  }
   toast(`✓ ${sku.sku} verified (${item.scannedQty}/${item.expectedQty})`,'s');
   renderPmChecklist();
 }
@@ -5499,7 +5507,15 @@ async function confirmPackWithDetails(){
     toast('Order packed and saved, but the old packing task could not be cleared from the queue — flag this to a supervisor.','w');
   }
   const ord=orders.find(x=>x.id===t.orderId);
-  if(ord){ ord.status='packed'; await saveOrderRow(ord); }
+  if(ord){
+    ord.status='packed';
+    const statusOk=await saveOrderRow(ord);
+    if(!statusOk){
+      console.error('Order status sync to \'packed\' failed for',t.orderId);
+      logAudit('ORDER_STATUS_SYNC_FAILED','orders',t.orderId,null,{orderId:t.orderId,attemptedStatus:'packed'});
+      toast(`Order ${t.orderId} packed and saved, but its status could not be updated — it may still show as picked. Flag this to a supervisor.`,'w');
+    }
+  }
   closePackModal();
   packingQueue.splice(i,1);
   history.push(packedObj);
@@ -5826,7 +5842,15 @@ async function confirmCourierDispatch(){
   Object.assign(packed,updated);
   history.push(dispatchRecord);
   const ord=orders.find(x=>x.id===packed.orderId);
-  if(ord){ ord.status='dispatched'; await saveOrderRow(ord); }
+  if(ord){
+    ord.status='dispatched';
+    const statusOk=await saveOrderRow(ord);
+    if(!statusOk){
+      console.error('Order status sync to \'dispatched\' failed for',packed.orderId);
+      logAudit('ORDER_STATUS_SYNC_FAILED','orders',packed.orderId,null,{orderId:packed.orderId,attemptedStatus:'dispatched'});
+      toast(`Order ${packed.orderId} dispatched and saved, but its status could not be updated — it may still show as packed. Flag this to a supervisor.`,'w');
+    }
+  }
   logAudit('CONFIRM_DISPATCH','history',pkdId,null,{orderId:packed.orderId,awb,courier,dispatchWeight});
   renderDispatchPage();
   document.getElementById('disp-search-order').value='';
@@ -6695,7 +6719,12 @@ async function completeMobilePick(){
   const o=mobilePickSession.order;
   o.status='picked';
   o.pickedTaskId=tid;
-  await saveOrderRow(o);
+  const statusOk=await saveOrderRow(o);
+  if(!statusOk){
+    console.error('Order status sync to \'picked\' failed for',mobilePickSession.orderId);
+    logAudit('ORDER_STATUS_SYNC_FAILED','orders',mobilePickSession.orderId,null,{orderId:mobilePickSession.orderId,attemptedStatus:'picked'});
+    toast(`Order ${mobilePickSession.orderId} sent to packing, but its status could not be updated — it may still show as assigned. Flag this to a supervisor.`,'w');
+  }
   logAudit('MOBILE_PICK_COMPLETE','packing_queue',tid,null,{orderId:mobilePickSession.orderId,items:mobilePickSession.items.length,picker});
   toast(`Pick complete — ${mobilePickSession.orderId} sent to packing`,'s');
   mobilePickSession=null;
@@ -6819,6 +6848,7 @@ function mobilePackScan(sku){
   item.scannedQty+=1;
   mobileScanFeedback(true);
   logOrderEvent(mobilePackActive.task.orderId,'pack_item_verified',currentProfile?.full_name,{sku:sku.sku});
+  logAudit('PACK_ITEM_VERIFIED','orders',mobilePackActive.task.orderId,null,{orderId:mobilePackActive.task.orderId,sku:sku.sku,scannedQty:item.scannedQty,expectedQty:item.expectedQty,packer:currentProfile?.full_name,stage:'pack_mobile'});
   renderMobilePackChecklist();
 }
 
@@ -6953,7 +6983,15 @@ async function completeMobilePack(){
       logAudit('PACKING_QUEUE_CLEANUP_FAILED','packing_queue',t.id,null,{orderId:t.orderId,error:String(delRes.error)});
     }
     const ord=orders.find(x=>x.id===t.orderId);
-    if(ord){ ord.status='packed'; await saveOrderRow(ord); }
+    if(ord){
+      ord.status='packed';
+      const statusOk=await saveOrderRow(ord);
+      if(!statusOk){
+        console.error('Order status sync to \'packed\' failed for',t.orderId);
+        logAudit('ORDER_STATUS_SYNC_FAILED','orders',t.orderId,null,{orderId:t.orderId,attemptedStatus:'packed'});
+        toast(`Order ${t.orderId} packed and saved, but its status could not be updated — it may still show as picked. Flag this to a supervisor.`,'w');
+      }
+    }
     const idx=packingQueue.findIndex(p=>p.id===t.id);
     if(idx>-1) packingQueue.splice(idx,1);
     history.push(packedObj);
@@ -10713,7 +10751,7 @@ async function renderAuditLog(){
     if(!rows.length){el.innerHTML='<div class="empty">No audit records found</div>';return;}
     const actionColor={INSERT:'var(--st)',UPDATE:'var(--it)',DELETE:'var(--dt)',LOGIN:'var(--gold)',LOGOUT:'var(--t3)',CREATE_USER:'var(--st)',UPDATE_ROLE:'var(--wt)',DEACTIVATE_USER:'var(--dt)',ACTIVATE_USER:'var(--st)'};
     el.innerHTML=`<div style="font-size:10px;color:var(--t3);margin-bottom:6px">${rows.length} records</div>
-    <div class="tw"><table><thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Table</th><th>Record ID</th></tr></thead><tbody>
+    <div class="tw"><table><thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Table</th><th>Record ID</th><th>Detail</th></tr></thead><tbody>
     ${rows.map(r=>{
       const color=actionColor[r.action]||'var(--t2)';
       const time=new Date(r.created_at).toLocaleString('en-IN');
@@ -10724,10 +10762,29 @@ async function renderAuditLog(){
         <td><span style="color:${color};font-weight:700;font-size:11px">${esc(r.action)}</span></td>
         <td style="font-size:10px;color:var(--t2)">${esc(r.entity_type||'')}</td>
         <td style="font-size:10px;font-family:monospace">${esc(r.entity_id||'')}</td>
+        <td style="font-size:10px;color:var(--t2);max-width:340px">${esc(auditDetailSummary(r))}</td>
       </tr>`;
     }).join('')}
     </tbody></table></div>`;
   } catch(e){ el.innerHTML='<div class="empty">Error loading audit log: '+esc(e.message)+'</div>'; }
+}
+// Flattens an audit_log row's old_values/new_values JSON into a short,
+// human-readable "key: value · key: value" string, so the rich detail
+// every logAudit() call already captures (which order, which tote/shelf/
+// SKU, which picker/packer, what failed and why) is actually visible on
+// the Audit Trail page instead of sitting invisibly in the JSON columns.
+function auditDetailSummary(r){
+  const src=r.new_values||r.old_values;
+  if(!src||typeof src!=='object') return '—';
+  const parts=[];
+  for(const k in src){
+    let v=src[k];
+    if(v===null||v===undefined||v==='') continue;
+    if(Array.isArray(v)) v=v.length+' item(s)';
+    else if(typeof v==='object') v=JSON.stringify(v);
+    parts.push(`${k}: ${v}`);
+  }
+  return parts.length?parts.join(' · '):'—';
 }
 
 // ═══════════════════════════════════════════
@@ -10845,8 +10902,10 @@ function handleShelfLocationScan(loc){
   if(_barcodeTarget==='mobile-pick'||_barcodeTarget==='mobile-pack'){ mobileScanFeedback(true); }
   if(_barcodeTarget==='picking' && activeOrder){
     logOrderEvent(activeOrder.id,'shelf_scanned',currentProfile?.full_name,{rack:loc.rack,shelf:loc.shelf});
+    logAudit('SHELF_SCANNED','orders',activeOrder.id,null,{orderId:activeOrder.id,rack:loc.rack,shelf:loc.shelf,picker:currentProfile?.full_name,stage:'pick'});
   } else if(_barcodeTarget==='mobile-pick' && mobilePickSession){
     logOrderEvent(mobilePickSession.orderId,'shelf_scanned',currentProfile?.full_name,{rack:loc.rack,shelf:loc.shelf});
+    logAudit('SHELF_SCANNED','orders',mobilePickSession.orderId,null,{orderId:mobilePickSession.orderId,rack:loc.rack,shelf:loc.shelf,picker:currentProfile?.full_name,stage:'pick_mobile'});
   }
   if(!itemsHere.length){
     toast(`📍 Rack ${loc.rack} Shelf ${loc.shelf} confirmed — no SKUs assigned to this shelf yet`,'w');
@@ -10903,10 +10962,17 @@ function handleToteScan(tote){
   if(_barcodeTarget==='picking'){
     pkToteId=tote;
     updateToteBadge();
-    if(activeOrder) logOrderEvent(activeOrder.id,'tote_scanned',currentProfile?.full_name,{toteId:tote});
+    if(activeOrder){
+      logOrderEvent(activeOrder.id,'tote_scanned',currentProfile?.full_name,{toteId:tote});
+      logAudit('TOTE_SCANNED','orders',activeOrder.id,null,{orderId:activeOrder.id,toteId:tote,picker:currentProfile?.full_name,stage:'pick'});
+    }
     toast(`📦 Tote ${tote} assigned to this pick — now scan the shelf label, then items`,'s');
   } else if(_barcodeTarget==='mobile-pick'){
-    if(mobilePickSession){ mobilePickSession.toteId=tote; logOrderEvent(mobilePickSession.orderId,'tote_scanned',currentProfile?.full_name,{toteId:tote}); }
+    if(mobilePickSession){
+      mobilePickSession.toteId=tote;
+      logOrderEvent(mobilePickSession.orderId,'tote_scanned',currentProfile?.full_name,{toteId:tote});
+      logAudit('TOTE_SCANNED','orders',mobilePickSession.orderId,null,{orderId:mobilePickSession.orderId,toteId:tote,picker:currentProfile?.full_name,stage:'pick_mobile'});
+    }
     updateToteBadge();
     mobileScanFeedback(true);
     toast(`📦 Tote ${tote} assigned — now scan the shelf label, then items`,'s');
@@ -10926,7 +10992,10 @@ function handleToteScan(tote){
     const activeTask=packingQueue[_activePackIdx];
     const expected=activeTask?.toteId;
     if(expected && expected===tote){
-      if(activeTask) logOrderEvent(activeTask.orderId,'tote_scanned',currentProfile?.full_name,{toteId:tote,stage:'pack_verify'});
+      if(activeTask){
+        logOrderEvent(activeTask.orderId,'tote_scanned',currentProfile?.full_name,{toteId:tote,stage:'pack_verify'});
+        logAudit('TOTE_SCANNED','orders',activeTask.orderId,null,{orderId:activeTask.orderId,toteId:tote,packer:currentProfile?.full_name,stage:'pack_verify'});
+      }
       toast(`✓ Tote ${tote} confirmed — now scan items to verify`,'s');
       unlockPmChecklistAfterToteGate();
     } else {
@@ -11003,6 +11072,14 @@ function processBarcodeInput(barcode){
       logAudit('LOCATION_MISMATCH','inventory',sku.sku,null,{scannedAt:confirmedShelf,expected:validLocs});
       return;
     }
+    // Granular, order-scoped scan record — this is what makes "who scanned
+    // which item for which order, at which shelf" visible on the Audit
+    // Trail page (previously only logged to order_events, which only shows
+    // on the Order Status timeline, not here).
+    const _scanOrderId=_barcodeTarget==='picking'?activeOrder?.id:mobilePickSession?.orderId;
+    if(_scanOrderId){
+      logAudit('ITEM_SCANNED','orders',_scanOrderId,null,{orderId:_scanOrderId,sku:sku.sku,rack:confirmedShelf.rack,shelf:confirmedShelf.shelf,picker:currentProfile?.full_name,stage:_barcodeTarget==='picking'?'pick':'pick_mobile'});
+    }
   }
   if(_barcodeTarget==='inbound'){
     // Auto-fill SKU in inbound form
@@ -11042,8 +11119,12 @@ function processBarcodeInput(barcode){
     if(_barcodeTarget==='mobile-pack-tote-gate') mobileScanFeedback(false);
     toast('Scan the tote bag first — items won\'t be counted until the tote is confirmed','w');
   }
-  // Log the scan
-  logAudit('BARCODE_SCAN','inventory',sku.sku,null,{sku:sku.sku,target:_barcodeTarget,barcode});
+  // Log the scan — item scans during picking already got a richer,
+  // order-scoped ITEM_SCANNED entry above, so skip the generic duplicate
+  // for those two targets.
+  if(_barcodeTarget!=='picking' && _barcodeTarget!=='mobile-pick'){
+    logAudit('BARCODE_SCAN','inventory',sku.sku,null,{sku:sku.sku,target:_barcodeTarget,barcode});
+  }
 }
 
 // ═══════════════════════════════════════════
