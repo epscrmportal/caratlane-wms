@@ -12118,11 +12118,17 @@ function processBarcodeInput(barcode){
     handleShelfLocationScan(loc);
     return;
   }
-  // Dispatch "left warehouse" labels (PKD-{id}, printed as a 4×6 thermal
-  // label) are scanned to mark a packed order as physically out of the
-  // building — a distinct, non-SKU barcode format, so check it before
-  // falling through to the SKU lookup below.
-  if(_barcodeTarget==='dispatch-warehouse-exit'){
+  // Dispatch "left warehouse" labels (PKD-{id}, printed on the Proforma
+  // Invoice) are scanned to mark a packed order as physically out of the
+  // building. Like the TOTE-/LOC- codes above, this is now recognized by
+  // its own self-describing prefix rather than gated on
+  // _barcodeTarget==='dispatch-warehouse-exit' — previously a scan made
+  // without first clicking "Scan Proforma Invoice Barcode" (or made while
+  // the scanner was left in a different mode from an earlier action on
+  // another page/tab) fell through to the SKU lookup below and failed
+  // with a confusing "Unknown barcode" toast, even though the barcode
+  // itself was perfectly valid.
+  if(/^PKD-/i.test((barcode||'').trim())){
     handleDispatchExitScan(barcode);
     return;
   }
