@@ -5367,7 +5367,21 @@ function openPackModal(i, toteAlreadyVerified){
   document.getElementById('pm-start-time').textContent=t.packStartTs||ts();
   document.getElementById('pm-items-list').innerHTML=t.items.map(it=>`<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:0.5px solid var(--b)"><span>${it.sku} — ${it.variant||''}</span><span style="font-weight:600">×${it.qty}</span></div>`).join('')||'<div style="color:var(--t3)">No items</div>';
   document.getElementById('pm-tote-line').innerHTML=t.toteId?`<i class="ti ti-package"></i> Tote ${esc(t.toteId)}`:`<span style="color:var(--t3);font-weight:400">No tote recorded for this pick</span>`;
-  pmChecklist=t.items.map(it=>({sku:it.sku,name:it.name,variant:it.variant,expectedQty:it.qty,scannedQty:0}));
+  // Merge multiple lines for the same SKU into ONE checklist entry — a
+  // split-location pick (the same SKU picked from 2+ bins) used to create
+  // a separate line per bin here, and pmScanItem()'s lookup below always
+  // matched the FIRST one it found for a SKU; every unit that had come
+  // from a second/third bin then got rejected on scan as "already fully
+  // verified" (its own line stuck at 0/expectedQty forever), silently
+  // blocking Complete. Summing qty across same-SKU lines up front means
+  // there's only ever one entry per SKU for a scan to match against.
+  const pmMerged={};
+  t.items.forEach(it=>{
+    const key=(it.sku||'').trim().toUpperCase();
+    if(!pmMerged[key]) pmMerged[key]={sku:it.sku,name:it.name,variant:it.variant,expectedQty:0,scannedQty:0};
+    pmMerged[key].expectedQty+=(it.qty||0);
+  });
+  pmChecklist=Object.values(pmMerged);
   // Gate: if this task has a tote on record and it hasn't already been
   // verified (e.g. by scanning it to open this very task), the packer
   // must scan the tote and have it confirmed against this order BEFORE
@@ -6970,11 +6984,24 @@ async function startMobilePack(i, toteAlreadyVerified){
     return;
   }
   const needsToteGate=!!task.toteId && !toteAlreadyVerified;
+  // Same merge-by-SKU fix as the desktop pack modal (see openPackModal):
+  // a split-location pick creates one task.items line per bin for the
+  // same SKU, and the old per-line checklist meant only the first bin's
+  // unit could ever be scanned — every unit from a second bin got
+  // rejected as "already fully verified" and the checklist could never
+  // reach all-done. Bins are combined into one display string per SKU.
+  const mpMerged={};
+  task.items.forEach(it=>{
+    const key=(it.sku||'').trim().toUpperCase();
+    if(!mpMerged[key]) mpMerged[key]={sku:it.sku,name:it.name,variant:it.variant,bins:[],expectedQty:0,scannedQty:0};
+    mpMerged[key].expectedQty+=(it.qty||0);
+    if(it.bin) mpMerged[key].bins.push(it.bin);
+  });
   mobilePackActive={
     taskIdx:i,
     task,
     stage: needsToteGate ? 'tote-gate' : 'checklist',
-    checklist:task.items.map(it=>({sku:it.sku,name:it.name,variant:it.variant,bin:it.bin,expectedQty:it.qty,scannedQty:0}))
+    checklist:Object.values(mpMerged).map(m=>({sku:m.sku,name:m.name,variant:m.variant,bin:m.bins.join(', '),expectedQty:m.expectedQty,scannedQty:0}))
   };
   document.getElementById('mp-pack-order-label').textContent='Order '+task.orderId;
   document.getElementById('mp-pack-summary').textContent=`${task.items.length} SKU(s) · ${task.priority} · ${task.method}${task.toteId?' · Tote '+task.toteId:''}`;
