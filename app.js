@@ -9839,6 +9839,18 @@ function initBarcodeScanner(){
   // produces NOTHING in this log, the keystrokes aren't reaching the
   // browser tab at all (focus/hardware issue) rather than an app bug —
   // open DevTools Console (F12) right before scanning to check.
+  //
+  // Registered on the CAPTURE phase (the `true` 3rd argument), not the
+  // default bubble phase — on some tablet browsers a Bluetooth/USB HID
+  // scanner's keystrokes went straight into whatever text input already
+  // had focus (a search box, etc.) and got typed there as literal text
+  // instead of ever reaching this handler; this happened even though the
+  // exact same scan worked fine on a laptop. Capturing intercepts the
+  // event on its way DOWN to that focused element, before it can consume
+  // it, so scanning now works the same regardless of what has focus —
+  // and while the scanner is armed, we also preventDefault()/
+  // stopPropagation() so a scanned code can never leak into a visible
+  // field as typed text.
   document.addEventListener('keydown', e=>{
     if(!_barcodeActive){
       return;
@@ -9846,6 +9858,7 @@ function initBarcodeScanner(){
     console.log('[scanner] key event:', JSON.stringify(e.key), '| target:', _barcodeTarget, '| buffer before:', JSON.stringify(_barcodeBuffer), '| active element:', document.activeElement ? document.activeElement.tagName+(document.activeElement.id?'#'+document.activeElement.id:'') : 'none');
     // USB/BT scanners send chars very fast then Enter
     if(e.key==='Enter'){
+      e.preventDefault(); e.stopPropagation();
       if(_barcodeBuffer.length>2){
         processBarcodeInput(_barcodeBuffer.trim());
       } else if(_barcodeBuffer.length>0){
@@ -9857,6 +9870,7 @@ function initBarcodeScanner(){
     }
     // Ignore modifier keys
     if(e.key.length>1) return;
+    e.preventDefault(); e.stopPropagation();
     _barcodeBuffer+=e.key;
     clearTimeout(_barcodeTimer);
     // Auto-flush after 100ms (scanner done)
@@ -9868,7 +9882,7 @@ function initBarcodeScanner(){
       }
       _barcodeBuffer='';
     },100);
-  });
+  }, true);
 }
 
 function enableBarcodeScanner(target){
