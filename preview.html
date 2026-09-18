@@ -5667,37 +5667,69 @@ function printProformaInvoice(orderId){
     document.body.removeChild(tmpSvg);
     printWindow.document.write(`
       <!DOCTYPE html><html><head><title>Proforma Invoice — ${esc(o.id)}</title>
+      <style id="pfi-page-style">
+        @page{size:4in 6in;margin:0}
+      </style>
       <style>
         *{box-sizing:border-box}
-        body{font-family:Arial,sans-serif;margin:0;color:#222;font-size:9pt}
-        .label{width:4in;height:6in;padding:0.15in;display:flex;flex-direction:column}
-        .header{border-bottom:1.5px solid #000;padding-bottom:4px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:flex-end}
-        .company{font-size:11pt;font-weight:bold}
-        .subtitle{font-size:7pt;color:#666;margin-top:1px}
-        .orderid{font-size:13pt;font-weight:bold;text-align:right}
-        .meta{font-size:8pt;margin-bottom:6px;line-height:1.4}
+        body{font-family:Arial,sans-serif;margin:0;color:#222}
+        .header{border-bottom:1.5px solid #000;display:flex;justify-content:space-between;align-items:flex-end}
         .meta b{color:#000}
-        table{width:100%;border-collapse:collapse;margin-top:2px;font-size:7.5pt}
-        th{background:#f0f0f0;padding:3px 4px;text-align:left;border:1px solid #ccc}
-        td{padding:3px 4px;border:1px solid #ccc}
-        .totals{margin-top:6px;font-size:8.5pt;text-align:right}
-        .totals .grand{font-size:10pt;font-weight:bold;margin-top:2px}
-        .note{margin-top:6px;font-size:6.5pt;color:#888}
-        .barcode-wrap{text-align:center;margin:6px 0 2px}
-        .barcode-wrap img{max-width:100%;max-height:0.55in}
-        .barcode-id{font-size:7.5pt;font-family:monospace;text-align:center;letter-spacing:0.5px}
-        .scan-note{font-size:6.5pt;color:#555;text-align:center;margin-top:2px}
-        .footer{margin-top:auto;font-size:6.5pt;color:#999;text-align:center;padding-top:4px;border-top:0.5px solid #ddd}
-        .no-print{position:fixed;top:8px;right:8px;display:flex;gap:8px}
+        table{width:100%;border-collapse:collapse}
+        th{background:#f0f0f0;text-align:left;border:1px solid #ccc}
+        td{border:1px solid #ccc}
+        .barcode-wrap{text-align:center}
+        .barcode-wrap img{max-width:100%;object-fit:contain}
+        .barcode-id{font-family:monospace;text-align:center;letter-spacing:0.5px}
+        .scan-note{color:#555;text-align:center}
+        .footer{color:#999;text-align:center}
+        .no-print{position:fixed;top:8px;right:8px;display:flex;gap:8px;z-index:9}
+        /* ── 4×6in thermal-label layout (default) ── */
+        body.size-46{font-size:9pt}
+        body.size-46 .label{width:4in;height:6in;padding:0.15in;display:flex;flex-direction:column}
+        body.size-46 .header{padding-bottom:4px;margin-bottom:6px}
+        body.size-46 .company{font-size:11pt;font-weight:bold}
+        body.size-46 .subtitle{font-size:7pt;color:#666;margin-top:1px}
+        body.size-46 .orderid{font-size:13pt;font-weight:bold;text-align:right}
+        body.size-46 .meta{font-size:8pt;margin-bottom:6px;line-height:1.4}
+        body.size-46 table{margin-top:2px;font-size:7.5pt}
+        body.size-46 th,body.size-46 td{padding:3px 4px}
+        body.size-46 .totals{margin-top:6px;font-size:8.5pt;text-align:right}
+        body.size-46 .totals .grand{font-size:10pt;font-weight:bold;margin-top:2px}
+        body.size-46 .note{margin-top:6px;font-size:6.5pt;color:#888}
+        body.size-46 .barcode-wrap{margin:6px 0 2px}
+        body.size-46 .barcode-wrap img{max-height:0.55in}
+        body.size-46 .barcode-id{font-size:7.5pt}
+        body.size-46 .scan-note{font-size:6.5pt;margin-top:2px}
+        body.size-46 .footer{margin-top:auto;font-size:6.5pt;padding-top:4px;border-top:0.5px solid #ddd}
+        /* ── A4 full-page layout ── */
+        body.size-a4{font-size:12px}
+        body.size-a4 .label{width:auto;padding:18mm}
+        body.size-a4 .header{padding-bottom:12px;margin-bottom:16px}
+        body.size-a4 .company{font-size:18px;font-weight:bold}
+        body.size-a4 .subtitle{font-size:11px;color:#666;margin-top:2px}
+        body.size-a4 .orderid{font-size:22px;font-weight:bold;text-align:right}
+        body.size-a4 .meta{display:grid;grid-template-columns:1fr 1fr;gap:6px 20px;font-size:12px;margin:14px 0}
+        body.size-a4 table{margin-top:10px;font-size:12px}
+        body.size-a4 th{padding:8px}
+        body.size-a4 td{padding:9px 8px}
+        body.size-a4 .totals{margin-top:10px;font-size:13px;text-align:right}
+        body.size-a4 .totals .grand{font-size:16px;font-weight:bold;margin-top:4px}
+        body.size-a4 .note{margin-top:14px;font-size:10.5px;color:#888;border-top:1px solid #ccc;padding-top:8px}
+        body.size-a4 .barcode-wrap{margin:18px 0 4px}
+        body.size-a4 .barcode-wrap img{max-height:1in}
+        body.size-a4 .barcode-id{font-size:12px}
+        body.size-a4 .scan-note{font-size:11px;margin-top:4px}
+        body.size-a4 .footer{margin-top:30px;font-size:10px;padding-top:8px;border-top:1px solid #ddd}
         @media print{
           .no-print{display:none !important}
-          @page{size:4in 6in;margin:0}
           body{margin:0}
         }
-      </style></head><body>
+      </style></head><body class="size-46">
       <div class="no-print">
-        <button onclick="window.print()" style="padding:8px 16px;background:#B8860B;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px">🖨 Print</button>
-        <button onclick="window.close()" style="padding:8px 16px;background:#f0f0f0;border:none;border-radius:6px;cursor:pointer;font-size:12px">Close</button>
+        <button onclick="setPfiSize('46')" style="padding:8px 14px;background:#B8860B;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px">🖨 Print 4×6</button>
+        <button onclick="setPfiSize('a4')" style="padding:8px 14px;background:#444;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px">🖨 Print A4</button>
+        <button onclick="window.close()" style="padding:8px 14px;background:#f0f0f0;border:none;border-radius:6px;cursor:pointer;font-size:12px">Close</button>
       </div>
       <div class="label">
         <div class="header">
@@ -5727,13 +5759,26 @@ function printProformaInvoice(orderId){
           <div class="barcode-id">${esc(barcodeValue)}</div>
         </div>
         <div class="scan-note">${packed?'Scan at "Scan Proforma Invoice Barcode" on the Dispatch page to mark left warehouse — AWB is added separately by a supervisor/admin.':'Not yet packed — this barcode becomes scannable to mark "left warehouse" once packing is complete.'}</div>
-        <div class="footer">Printed ${new Date().toLocaleString('en-IN')} · CaratLane WMS · 4×6in thermal label</div>
+        <div class="footer" id="pfi-footer">Printed ${new Date().toLocaleString('en-IN')} · CaratLane WMS · 4×6in thermal label</div>
       </div>
+      <script>
+        function setPfiSize(mode){
+          document.body.className = 'size-' + mode;
+          const pageStyle = document.getElementById('pfi-page-style');
+          pageStyle.textContent = mode === 'a4'
+            ? '@page{size:A4;margin:15mm}'
+            : '@page{size:4in 6in;margin:0}';
+          const footer = document.getElementById('pfi-footer');
+          if(footer){
+            footer.textContent = footer.textContent.replace(/(4×6in thermal label|A4)$/, mode === 'a4' ? 'A4' : '4×6in thermal label');
+          }
+          setTimeout(()=>window.print(), 50);
+        }
+      <\/script>
       </body></html>
     `);
     printWindow.document.close();
     printWindow.focus();
-    setTimeout(()=>printWindow.print(),300);
   });
 }
 function renderPackedOrdersList(){
