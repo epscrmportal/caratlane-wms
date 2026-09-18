@@ -7074,6 +7074,58 @@ function getUnplacedSKUs(){
   });
   return out;
 }
+// ═══ STOCK TALLY (Rack View) ═══
+// A one-click, always-current consistency check — not the same thing as
+// a physical Cycle Count (which reconciles the system against someone
+// walking the floor and counting bins by hand, over days). This instead
+// re-derives, from data already in memory, whether each SKU's recorded
+// total (inv[sku].qty) still matches the sum of its own bin-level
+// locations[] entries. addStockAtLocation()/removeStockAtLocation() are
+// supposed to keep those two numbers in lockstep on every write — this
+// button is the fast way to catch it if something (a stale write path,
+// a bad manual edit, bad data brought in via Restore) ever let them
+// drift apart, without waiting for the next full physical count.
+function runStockTally(){
+  const el=document.getElementById('stock-tally-report');
+  if(!el) return;
+  el.style.display='block';
+  el.innerHTML='<div style="color:var(--t3);font-size:11px;padding:8px">Running tally...</div>';
+  const rows=[];
+  SKUS.forEach(s=>{
+    const locs=getSkuLocations(s.sku);
+    const locSum=locs.reduce((a,l)=>a+(Number(l.qty)||0),0);
+    const recordedRaw=inv[s.sku]?inv[s.sku].qty:0;
+    const recorded=Number(recordedRaw)||0;
+    const negLocs=locs.filter(l=>Number(l.qty)<0);
+    const badRecorded=recordedRaw!=null && isNaN(Number(recordedRaw));
+    if(locSum!==recorded || negLocs.length || badRecorded){
+      rows.push({sku:s.sku, sub:s.sub||'', variant:s.variant||'', recorded, locSum, diff:recorded-locSum, locs, negLocs:negLocs.length>0, badRecorded});
+    }
+  });
+  const checked=SKUS.length;
+  if(!rows.length){
+    el.innerHTML=`<div class="empty" style="color:var(--st)"><i class="ti ti-circle-check"></i> Stock tallies clean — all ${checked} SKU(s) match between their recorded total and their bin-level locations. Checked ${ts()}.<button class="btn-sm" style="margin-left:10px" onclick="document.getElementById('stock-tally-report').style.display='none'">Dismiss</button></div>`;
+    return;
+  }
+  el.innerHTML=`
+    <div style="font-size:11px;color:var(--wt);margin-bottom:8px;display:flex;align-items:center;gap:8px">
+      <i class="ti ti-alert-triangle"></i> ${rows.length} of ${checked} SKU(s) don't tally — recorded total qty doesn't match the sum of its bin-level locations
+      <button class="btn-sm" style="margin-left:auto" onclick="runStockTally()"><i class="ti ti-refresh"></i>Re-run</button>
+      <button class="btn-sm" onclick="document.getElementById('stock-tally-report').style.display='none'">Dismiss</button>
+    </div>
+    <div class="tw"><table><thead><tr><th>SKU</th><th>Product</th><th>Recorded qty</th><th>Sum of bins</th><th>Diff</th><th>Bin breakdown</th></tr></thead><tbody>
+    ${rows.map(r=>`<tr style="background:var(--dbg)">
+      <td class="mono" style="font-weight:700;color:var(--dt)">${esc(r.sku)}</td>
+      <td style="font-size:11px">${esc(r.sub)}${r.variant?' — '+esc(r.variant):''}${r.negLocs?' <span class="pill p-hold" style="font-size:9px">negative bin qty</span>':''}${r.badRecorded?' <span class="pill p-hold" style="font-size:9px">invalid recorded qty</span>':''}</td>
+      <td style="text-align:center;font-weight:600;color:var(--dt)">${r.recorded}</td>
+      <td style="text-align:center;font-weight:600;color:var(--dt)">${r.locSum}</td>
+      <td style="text-align:center;font-weight:700;color:var(--dt)">${r.diff>0?'+':''}${r.diff}</td>
+      <td style="font-size:10px;color:var(--t2)">${r.locs.length?r.locs.map(l=>`${esc(l.rack)}${esc(String(l.shelf))}: ${l.qty}`).join(', '):'no locations recorded'}</td>
+    </tr>`).join('')}
+    </tbody></table></div>
+    <div style="font-size:10px;color:var(--t3);margin-top:6px">Checked ${checked} SKU(s) · Last run ${ts()}</div>
+  `;
+}
 function renderRack(){
   const container=document.getElementById('rack-view-container');
   if(!container) return;
