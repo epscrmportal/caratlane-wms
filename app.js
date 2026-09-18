@@ -9855,7 +9855,9 @@ function initBarcodeScanner(){
     if(!_barcodeActive){
       return;
     }
-    console.log('[scanner] key event:', JSON.stringify(e.key), '| target:', _barcodeTarget, '| buffer before:', JSON.stringify(_barcodeBuffer), '| active element:', document.activeElement ? document.activeElement.tagName+(document.activeElement.id?'#'+document.activeElement.id:'') : 'none');
+    const activeElDesc=document.activeElement ? document.activeElement.tagName+(document.activeElement.id?'#'+document.activeElement.id:'') : 'none';
+    console.log('[scanner] key event:', JSON.stringify(e.key), '| target:', _barcodeTarget, '| buffer before:', JSON.stringify(_barcodeBuffer), '| active element:', activeElDesc);
+    _scannerDebugEcho('key: '+JSON.stringify(e.key)+' | buffer: '+JSON.stringify(_barcodeBuffer+ (e.key.length===1?e.key:''))+' | focus: '+activeElDesc);
     // USB/BT scanners send chars very fast then Enter
     if(e.key==='Enter'){
       e.preventDefault(); e.stopPropagation();
@@ -9863,6 +9865,7 @@ function initBarcodeScanner(){
         processBarcodeInput(_barcodeBuffer.trim());
       } else if(_barcodeBuffer.length>0){
         console.log('[scanner] buffer too short to process ('+_barcodeBuffer.length+' chars):', JSON.stringify(_barcodeBuffer));
+        _scannerDebugEcho('Enter received but buffer too short ('+_barcodeBuffer.length+' chars): '+JSON.stringify(_barcodeBuffer));
       }
       _barcodeBuffer='';
       clearTimeout(_barcodeTimer);
@@ -9879,10 +9882,19 @@ function initBarcodeScanner(){
         processBarcodeInput(_barcodeBuffer.trim());
       } else if(_barcodeBuffer.length>0){
         console.log('[scanner] idle-flush: buffer too short to process ('+_barcodeBuffer.length+' chars):', JSON.stringify(_barcodeBuffer));
+        _scannerDebugEcho('Idle-flush: buffer too short ('+_barcodeBuffer.length+' chars): '+JSON.stringify(_barcodeBuffer));
       }
       _barcodeBuffer='';
     },100);
   }, true);
+}
+// Writes a line to the on-screen scanner-debug overlay (see the fixed
+// #scanner-debug-overlay div near the top of <body>) — the visible,
+// no-DevTools-needed counterpart to the console.log calls above, for
+// diagnosing scanner input issues directly on a tablet in the warehouse.
+function _scannerDebugEcho(line){
+  const el=document.getElementById('scanner-debug-log');
+  if(el) el.textContent=line;
 }
 
 function enableBarcodeScanner(target){
@@ -9890,6 +9902,11 @@ function enableBarcodeScanner(target){
   _barcodeTarget=target;
   const indicators=document.querySelectorAll('.barcode-indicator');
   indicators.forEach(el=>el.style.display='flex');
+  const dbg=document.getElementById('scanner-debug-overlay');
+  if(dbg){
+    dbg.style.display='block';
+    document.getElementById('scanner-debug-log').textContent='Armed for "'+target+'" — waiting for a keystroke...';
+  }
   const msgs={
     'packing-lookup':'Barcode scanner active — scan a tote bag to open its packing task',
     'mobile-pack-lookup':'Barcode scanner active — scan a tote bag to open its packing task',
@@ -9906,6 +9923,8 @@ function disableBarcodeScanner(){
   _barcodeTarget=null;
   const indicators=document.querySelectorAll('.barcode-indicator');
   indicators.forEach(el=>el.style.display='none');
+  const dbg=document.getElementById('scanner-debug-overlay');
+  if(dbg) dbg.style.display='none';
   clearConfirmedShelf();
 }
 
