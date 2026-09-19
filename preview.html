@@ -960,6 +960,17 @@ tr:hover td{background:var(--s2)}
   </div>
   <div id="disp-awb-pending-banner"></div>
   <div style="margin-bottom:8px;font-size:10px;color:var(--t2);line-height:1.5">Scan the Proforma Invoice, then immediately scan that parcel's AWB sticker — dispatch completes automatically (recipient, address, weight and courier are pulled from the order). If a second Proforma Invoice is scanned before the AWB, the first order stays "Left Warehouse — AWB Pending" (not dispatched) and you'll get a warning.</div>
+  <div class="panel" style="margin-bottom:14px">
+    <div class="ph"><i class="ti ti-file-spreadsheet"></i>Shree Maruti Dispatch Sheet</div>
+    <div class="pb">
+      <div style="font-size:10px;color:var(--t2);margin-bottom:8px;line-height:1.5">Generates the Account Booking Bulk Format Shree Maruti needs to register a day's parcels — every order dispatched that day via a Shree Maruti courier, one row per AWB. Download it and send it to them as-is.</div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <label for="sm-sheet-date" style="font-size:10px;font-weight:600;color:var(--t2)">Date:</label>
+        <input type="date" id="sm-sheet-date" style="padding:6px 9px;font-size:11px;border:0.5px solid var(--b);border-radius:4px">
+        <button class="btn-primary" onclick="downloadShreeMarutiDispatchSheet()"><i class="ti ti-download"></i>Shree Maruti Dispatch Sheet</button>
+      </div>
+    </div>
+  </div>
   <div class="fg2">
     <div>
       <div class="stitle">Packed orders awaiting dispatch</div>
@@ -5620,6 +5631,90 @@ function renderDispatchPage(){
   renderDispatchCompletedLog();
   renderDispatchSameDayAlert();
   renderAwbPendingBanner();
+  const smDateEl=document.getElementById('sm-sheet-date');
+  if(smDateEl && !smDateEl.value){
+    const now=new Date();
+    smDateEl.value=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+  }
+}
+// ── Shree Maruti Dispatch Sheet ─────────────────────────────────────────
+// Builds the courier's own "Account Booking Bulk Format" — one row per
+// AWB, exact header order/text matching Account_Booking_Bulk_Format_New.xls
+// — for every order dispatched via a Shree Maruti courier on the chosen
+// date. This is what actually registers each pre-printed AWB with Shree
+// Maruti's system; without it they don't know these AWBs were used.
+//
+// Fields not derivable from our own data (per the user's explicit
+// choices when this was built): Service Type is always "STANDARD",
+// Content is always "NON DOX" (same as Product Category), and Parcel By
+// falls back to "SURFACE" when courier_partner doesn't clearly say SUF or
+// AIR. Value is computed from the SKU catalog's price field (sum of
+// price×qty per item) — 0 if none of the order's SKUs have a price on
+// file. Parent Awb No./Address2/E-Way Bills are always left blank — this
+// WMS doesn't track multi-box shipments, a split address line, or e-way
+// bill numbers.
+function downloadShreeMarutiDispatchSheet(){
+  const dateEl=document.getElementById('sm-sheet-date');
+  const dateVal=dateEl&&dateEl.value;
+  if(!dateVal){ toast('Pick a date first','w'); return; }
+  const d=new Date(dateVal+'T00:00:00');
+  if(isNaN(d.getTime())){ toast('Invalid date','w'); return; }
+  // dispatchedAt is stored as a formatted string with no year (see ts()) —
+  // "19 Sep" — so that's the only reliable prefix to match a chosen date
+  // against.
+  const datePrefix=d.toLocaleString('en-IN',{day:'2-digit',month:'short'});
+  const rows=history.filter(h=>h.type==='dispatched' && h.courierPartner && /shree\s*maruti/i.test(h.courierPartner) && h.dispatchedAt && h.dispatchedAt.startsWith(datePrefix));
+  if(!rows.length){ toast(`No Shree Maruti dispatches found for ${datePrefix}`,'w'); return; }
+  loadXLSXLib(()=>{
+    const header=['Awb No.','Parent Awb No.','Name','Address1','Address2','Pin','Tel','Weight','Width (cm)','Height (cm)','Length (cm)','Value','Product Category','Service Type','Parcel By','Content','Remark','E-Way Bills'];
+    const aoa=[header];
+    rows.slice().sort((a,b)=>(a.orderId||'').localeCompare(b.orderId||'')).forEach(h=>{
+      const ord=orders.find(x=>x.id===h.orderId);
+      const items=h.items||[];
+      let value=0;
+      items.forEach(it=>{
+        const sku=SKUS.find(s=>s.sku===it.sku);
+        const price=sku&&sku.price!=null?sku.price:null;
+        if(price!=null) value+=price*(it.qty||0);
+      });
+      const cp=(h.courierPartner||'').toUpperCase();
+      const parcelBy=cp.includes('SUF')?'SURFACE':cp.includes('AIR')?'AIR':'SURFACE';
+      aoa.push([
+        h.awb||'',
+        '',
+        h.recipientName||(ord&&ord.customerName)||'',
+        h.address||(ord&&ord.address)||'',
+        '',
+        h.pincode||(ord&&ord.pincode)||'',
+        h.phone||(ord&&ord.phone)||'',
+        h.dispatchWeight||h.chargeableWeight||h.actualWeight||'',
+        h.boxW||'',
+        h.boxH||'',
+        h.boxL||'',
+        value||'',
+        'NON DOX',
+        'STANDARD',
+        parcelBy,
+        'NON DOX',
+        h.orderId||'',
+        ''
+      ]);
+    });
+    const ws=XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols']=[{wch:16},{wch:14},{wch:32},{wch:36},{wch:20},{wch:8},{wch:12},{wch:8},{wch:10},{wch:10},{wch:10},{wch:8},{wch:12},{wch:10},{wch:10},{wch:10},{wch:12},{wch:14}];
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,'Sheet 1');
+    const buf=XLSX.write(wb,{type:'array',bookType:'xlsx'});
+    const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const url=URL.createObjectURL(blob);
+    const link=document.createElement('a');
+    link.href=url;
+    link.download=`Shree Maruti Dispatch Sheet - ${dateVal}.xlsx`;
+    document.body.appendChild(link); link.click(); link.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),2000);
+    logAudit('SHREE_MARUTI_SHEET_DOWNLOADED',null,null,null,{date:dateVal,orderCount:rows.length});
+    toast(`✓ Downloaded Shree Maruti Dispatch Sheet — ${rows.length} order(s) for ${datePrefix}`,'s');
+  });
 }
 function printPackingSlip(historyId){
   const p=history.find(h=>h.id===historyId);
@@ -5853,6 +5948,10 @@ function renderPackedOrdersList(){
     // had been scanned, hiding that progress from whoever assigns the AWB.
     const ord=orders.find(x=>x.id===p.orderId);
     const leftWh=ord&&ord.status==='left_warehouse';
+    // Whether THIS order is the one currently armed for an AWB scan — the
+    // "Arm for AWB scan" button below only needs to show when it isn't,
+    // since re-clicking an already-armed order is a no-op.
+    const isArmed=leftWh&&_awbPendingOrder&&_awbPendingOrder.orderId===p.orderId;
     const pillHtml=leftWh?'<span class="pill p-ok">Left Warehouse — AWB Pending</span>':'<span class="pill p-info">Awaiting AWB</span>';
     return `<div class="hist-entry" style="cursor:pointer">
       <div class="hist-head" onclick="selectDispatchOrder('${p.id}')"><span class="hist-id">${p.id}</span>${pillHtml}</div>
@@ -5863,6 +5962,7 @@ function renderPackedOrdersList(){
       <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
         <button class="btn-sm" onclick="event.stopPropagation();printPackingSlip('${p.id}')"><i class="ti ti-printer"></i>Print slip</button>
         <button class="btn-sm" onclick="event.stopPropagation();printProformaInvoice('${p.orderId}')"><i class="ti ti-file-invoice"></i>Proforma Invoice</button>
+        ${leftWh&&!isArmed?`<button class="btn-sm" onclick="event.stopPropagation();armAwbScan('${p.id}')" title="Re-arms the scanner for this order's AWB even if the page was reloaded or the arm timed out"><i class="ti ti-scan"></i>Arm for AWB scan</button>`:''}
       </div>
     </div>`;
   }).join(''):'<div class="empty">No packed orders yet — create and pack orders first</div>';
@@ -5885,7 +5985,7 @@ function renderPackedOrdersList(){
 // (left_warehouse, NOT dispatched) rather than silently losing it.
 let _awbPendingOrder=null; // {orderId, packedId, armedAt}
 let _awbScanCourier='Shree Maruti'; // courier used for dispatches completed via AWB-sticker scan; editable on the Dispatch page
-const AWB_SCAN_ARM_TIMEOUT_MS=120000;
+const AWB_SCAN_ARM_TIMEOUT_MS=300000; // 5 min — generous enough that hunting for the right sticker in a big batch doesn't routinely trip it; the "Arm for AWB scan" button and re-scanning the Proforma Invoice both recover from it anyway
 async function handleDispatchExitScan(barcode){
   const packed=history.find(h=>h.id===barcode && h.type==='packed');
   if(!packed){
@@ -5903,10 +6003,23 @@ async function markLeftWarehouse(packed){
   const ord=orders.find(x=>x.id===packed.orderId);
   if(!ord){ toast('Order record not found for '+packed.orderId,'w'); return; }
   if(ord.status==='left_warehouse'){
-    // Same Proforma Invoice scanned again instead of its AWB sticker —
-    // this is the exact mis-scan this whole arming scheme exists to catch.
-    // Nothing changes: the order stays left_warehouse, NOT dispatched.
-    toast(`⚠ Order ${ord.id} is already "Left Warehouse — AWB Pending". Scan its AWB sticker next, not the Proforma Invoice again — it has NOT been dispatched.`,'w');
+    // Re-scanning THIS order's own Proforma Invoice while it's already
+    // left_warehouse — deliberately RE-ARMS rather than just warning.
+    // Originally this only warned, on the theory that a repeat scan meant
+    // "AWB sticker never came in, don't touch anything" — but that left no
+    // way to recover once the in-memory _awbPendingOrder arm was lost
+    // (page reload, the 5-min timeout, or a fast follow-up AWB scan racing
+    // ahead of the network save that originally armed it — all of which
+    // happen in practice) even though the order's own left_warehouse
+    // status is safely persisted in the DB the whole time. Re-scanning the
+    // physical Proforma Invoice sticker is the operator's natural recovery
+    // move, so make it actually work: it never dispatches anything by
+    // itself, it only re-arms the next scan to be treated as this order's
+    // AWB. Scanning a DIFFERENT order's Proforma Invoice while this one is
+    // still pending is the real mis-scan case — that's handled below.
+    _awbPendingOrder={orderId:ord.id,packedId:packed.id,armedAt:Date.now()};
+    renderAwbPendingBanner();
+    toast(`Order ${ord.id} is already "Left Warehouse — AWB Pending" — armed again for its AWB scan. Scan the AWB sticker now.`,'w');
     return;
   }
   if(ord.status==='dispatched'){ toast(`Order ${ord.id} is already fully dispatched`,'w'); return; }
@@ -5922,11 +6035,23 @@ async function markLeftWarehouse(packed){
     logAudit('AWB_SCAN_SKIPPED','orders',stuck.orderId,null,{orderId:stuck.orderId,packedId:stuck.packedId,reason:'another Proforma Invoice scanned before AWB was captured',supersededBy:ord.id});
     logOrderEvent(stuck.orderId,'awb_scan_skipped',currentProfile?.full_name,{packedId:stuck.packedId,reason:'superseded',supersededBy:ord.id});
   }
+  // Arm BEFORE the network round-trip below, not after — a handheld
+  // scanner firing the Proforma Invoice and AWB sticker scans back-to-back
+  // (exactly the intended workflow) can otherwise land the AWB scan while
+  // saveOrderRow() is still in flight, when _awbPendingOrder was still
+  // null: it would fall through to the SKU lookup and show "Unknown
+  // barcode" even though everything was scanned correctly and in order.
+  // Rolled back below if the save actually fails.
+  const prevArmed=_awbPendingOrder;
+  _awbPendingOrder={orderId:ord.id,packedId:packed.id,armedAt:Date.now()};
+  renderAwbPendingBanner();
   const prevStatus=ord.status;
   ord.status='left_warehouse';
   const statusOk=await saveOrderRow(ord);
   if(!statusOk){
     ord.status=prevStatus; // don't let the UI show a status that failed to save
+    _awbPendingOrder=prevArmed; // undo the optimistic arm — this order never actually got confirmed left_warehouse
+    renderAwbPendingBanner();
     console.error('Order status sync to \'left_warehouse\' failed for',ord.id);
     logAudit('ORDER_STATUS_SYNC_FAILED','orders',ord.id,null,{orderId:ord.id,attemptedStatus:'left_warehouse'});
     toast(`Order ${ord.id} scan recorded, but its status could not be updated to "left warehouse" — try scanning again, or flag this to a supervisor.`,'w');
@@ -5934,13 +6059,35 @@ async function markLeftWarehouse(packed){
   }
   logAudit('LEFT_WAREHOUSE','orders',ord.id,null,{orderId:ord.id,packedId:packed.id});
   logOrderEvent(ord.id,'left_warehouse',currentProfile?.full_name,{packedId:packed.id});
-  // Arm the scanner: the very next scan is expected to be this order's AWB
-  // sticker (handleAwbStickerScan(), routed from processBarcodeInput()).
-  _awbPendingOrder={orderId:ord.id,packedId:packed.id,armedAt:Date.now()};
-  renderAwbPendingBanner();
   toast(`✓ Order ${ord.id} marked as left warehouse — now scan its AWB sticker to complete dispatch`,'s');
   renderPackedOrdersList();
   if(document.getElementById('page-orders')?.classList.contains('active')){renderOrdersBoard();}
+}
+// Non-scan recovery path — re-arms _awbPendingOrder for an order that's
+// already left_warehouse in the DB but whose in-memory arm was lost
+// (page reload, the 5-min timeout, another order superseding it) without
+// needing the physical Proforma Invoice sticker in hand. Same effect as
+// re-scanning that sticker (see markLeftWarehouse above), reachable from
+// the "Left Warehouse — AWB Pending" card in the packed-orders list.
+function armAwbScan(pkdId){
+  const packed=history.find(h=>h.id===pkdId);
+  if(!packed){ toast('Packed order record not found','w'); return; }
+  const ord=orders.find(x=>x.id===packed.orderId);
+  if(!ord){ toast('Order record not found','w'); return; }
+  if(ord.status!=='left_warehouse'){
+    toast(`Order ${ord.id} isn't in "Left Warehouse — AWB Pending" state — nothing to arm`,'w');
+    return;
+  }
+  if(_awbPendingOrder && _awbPendingOrder.orderId!==ord.id){
+    const stuck=_awbPendingOrder;
+    toast(`⚠ Order ${stuck.orderId} never had its AWB sticker scanned — it is still "Left Warehouse — AWB Pending", NOT dispatched.`,'w');
+    logAudit('AWB_SCAN_SKIPPED','orders',stuck.orderId,null,{orderId:stuck.orderId,packedId:stuck.packedId,reason:'another order armed for AWB scan before AWB was captured',supersededBy:ord.id});
+    logOrderEvent(stuck.orderId,'awb_scan_skipped',currentProfile?.full_name,{packedId:stuck.packedId,reason:'superseded',supersededBy:ord.id});
+  }
+  _awbPendingOrder={orderId:ord.id,packedId:packed.id,armedAt:Date.now()};
+  renderAwbPendingBanner();
+  renderPackedOrdersList();
+  toast(`Armed for order ${ord.id} — scan its AWB sticker now`,'s');
 }
 function renderAwbPendingBanner(){
   const el=document.getElementById('disp-awb-pending-banner');
