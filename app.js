@@ -4063,6 +4063,7 @@ function renderDispatchPage(){
   updateDispatchOrderSelect();
   renderDispatchCompletedLog();
   renderDispatchSameDayAlert();
+  renderAwbPendingBanner();
 }
 function printPackingSlip(historyId){
   const p=history.find(h=>h.id===historyId);
@@ -4346,9 +4347,26 @@ async function handleDispatchExitScan(barcode){
 async function markLeftWarehouse(packed){
   const ord=orders.find(x=>x.id===packed.orderId);
   if(!ord){ toast('Order record not found for '+packed.orderId,'w'); return; }
-  if(ord.status==='left_warehouse'){ toast(`Order ${ord.id} was already marked as left warehouse — AWB still pending`,'w'); return; }
+  if(ord.status==='left_warehouse'){
+    // Same Proforma Invoice scanned again instead of its AWB sticker —
+    // this is the exact mis-scan this whole arming scheme exists to catch.
+    // Nothing changes: the order stays left_warehouse, NOT dispatched.
+    toast(`⚠ Order ${ord.id} is already "Left Warehouse — AWB Pending". Scan its AWB sticker next, not the Proforma Invoice again — it has NOT been dispatched.`,'w');
+    return;
+  }
   if(ord.status==='dispatched'){ toast(`Order ${ord.id} is already fully dispatched`,'w'); return; }
   if(!rateLimit('dispatch-exit-'+packed.id,2000)){ toast('Please wait before scanning again','w'); return; }
+  // A DIFFERENT order is still armed, waiting for its AWB — scanning this
+  // Proforma Invoice instead means that other order's AWB never came in.
+  // Warn loudly rather than silently dropping it; it's untouched and stays
+  // left_warehouse/NOT dispatched until its own AWB gets scanned (or it's
+  // finished manually via "Assign courier & AWB").
+  if(_awbPendingOrder && _awbPendingOrder.orderId!==ord.id){
+    const stuck=_awbPendingOrder;
+    toast(`⚠ Order ${stuck.orderId} never had its AWB sticker scanned — it is still "Left Warehouse — AWB Pending", NOT dispatched. Go back and scan its AWB.`,'w');
+    logAudit('AWB_SCAN_SKIPPED','orders',stuck.orderId,null,{orderId:stuck.orderId,packedId:stuck.packedId,reason:'another Proforma Invoice scanned before AWB was captured',supersededBy:ord.id});
+    logOrderEvent(stuck.orderId,'awb_scan_skipped',currentProfile?.full_name,{packedId:stuck.packedId,reason:'superseded',supersededBy:ord.id});
+  }
   const prevStatus=ord.status;
   ord.status='left_warehouse';
   const statusOk=await saveOrderRow(ord);
@@ -4361,9 +4379,111 @@ async function markLeftWarehouse(packed){
   }
   logAudit('LEFT_WAREHOUSE','orders',ord.id,null,{orderId:ord.id,packedId:packed.id});
   logOrderEvent(ord.id,'left_warehouse',currentProfile?.full_name,{packedId:packed.id});
-  toast(`✓ Order ${ord.id} marked as left warehouse — AWB still needs to be added by a supervisor/admin`,'s');
+  // Arm the scanner: the very next scan is expected to be this order's AWB
+  // sticker (handleAwbStickerScan(), routed from processBarcodeInput()).
+  _awbPendingOrder={orderId:ord.id,packedId:packed.id,armedAt:Date.now()};
+  renderAwbPendingBanner();
+  toast(`✓ Order ${ord.id} marked as left warehouse — now scan its AWB sticker to complete dispatch`,'s');
   renderPackedOrdersList();
   if(document.getElementById('page-orders')?.classList.contains('active')){renderOrdersBoard();}
+}
+function renderAwbPendingBanner(){
+  const el=document.getElementById('disp-awb-pending-banner');
+  if(!el)return;
+  el.innerHTML=_awbPendingOrder?`<div style="margin-bottom:10px;padding:8px 12px;background:var(--ibg);border-radius:6px;font-size:11px;color:var(--it);font-weight:600;display:flex;align-items:center;gap:6px"><i class="ti ti-scan"></i>Waiting for AWB sticker scan for order <strong>${_awbPendingOrder.orderId}</strong> — scan it now to complete dispatch</div>`:'';
+}
+function updateAwbScanCourier(){
+  const el=document.getElementById('disp-awb-scan-courier');
+  _awbScanCourier=(el&&el.value.trim())||'Shree Maruti';
+}
+// ── Scan-to-complete dispatch: AWB sticker ─────────────────────────────
+// Fires from processBarcodeInput() when a barcode arrives while an order
+// is "armed" (see markLeftWarehouse) waiting for its courier AWB. Unlike
+// TOTE-/LOC-/PKD-, a raw AWB sticker (e.g. "26201300046059") has no
+// self-describing prefix — it's just digits — so it can only be
+// recognized by this armed context, never by its own shape. On success
+// this fully completes the dispatch, same as clicking "Confirm dispatch &
+// assign AWB" in the form, using the recipient/address/phone/pincode
+// already on the order and the pack-time weight — nothing left to type.
+async function handleAwbStickerScan(barcode){
+  const pending=_awbPendingOrder;
+  if(!pending){ return; }
+  const awb=(barcode||'').trim();
+  if(!validateAWB(awb)){
+    toast(`"${awb}" doesn't look like a valid AWB — order ${pending.orderId} is still waiting for its AWB sticker to be scanned`,'w');
+    return;
+  }
+  const packed=history.find(h=>h.id===pending.packedId);
+  const ord=orders.find(x=>x.id===pending.orderId);
+  if(!packed||!ord){
+    toast(`Order ${pending.orderId} record not found — AWB not applied, use the manual form`,'w');
+    _awbPendingOrder=null; renderAwbPendingBanner();
+    return;
+  }
+  if(ord.status==='dispatched'||packed.type==='dispatched'){
+    toast(`Order ${pending.orderId} was already dispatched — this AWB scan was ignored`,'w');
+    _awbPendingOrder=null; renderAwbPendingBanner();
+    return;
+  }
+  // Duplicate protection — never let one AWB sticker get assigned to two
+  // parcels (double-scan of the same sticker, or the wrong sticker peeled
+  // onto this box).
+  const dupe=history.find(h=>h.type==='dispatched' && h.awb && h.awb.toUpperCase()===awb.toUpperCase());
+  if(dupe){
+    toast(`⚠ AWB ${awb} is already assigned to order ${dupe.orderId} — can't reuse it for ${pending.orderId}. Check the sticker sheet.`,'w');
+    logAudit('AWB_DUPLICATE_SCAN','history',pending.packedId,null,{orderId:pending.orderId,awb,alreadyUsedBy:dupe.orderId});
+    return;
+  }
+  if(!rateLimit('awb-scan-'+packed.id,2000)){ toast('Please wait before scanning again','w'); return; }
+  const dispatchWeight=packed.chargeableWeight||packed.actualWeight||0;
+  if(!dispatchWeight||!validateWeight(dispatchWeight)){
+    // No usable weight on file — completing the dispatch record without
+    // one would defeat validateWeight's own purpose. Hand the AWB straight
+    // into the manual form instead of losing it.
+    toast(`Order ${pending.orderId} has no usable pack weight on file — can't auto-complete dispatch by scan. AWB ${awb} filled into "Assign courier & AWB" below — finish it there.`,'w');
+    _awbPendingOrder=null; renderAwbPendingBanner();
+    selectDispatchOrder(pending.packedId);
+    setTimeout(()=>{ const awbEl=document.getElementById('disp-awb'); if(awbEl) awbEl.value=awb; },250);
+    return;
+  }
+  const courier=_awbScanCourier||'Shree Maruti';
+  const did=newId('DSP');
+  const updated=Object.assign({},packed,{
+    type:'dispatched',dispatchedAt:ts(),awb,recipientName:ord.customerName||'',address:ord.address||'',
+    pincode:ord.pincode||'',phone:ord.phone||'',shippingMethod:'Standard Road',courierPartner:courier,
+    dispatchWeight,podPhoto:null
+  });
+  let histRes=await saveHistRecord(updated);
+  if(!histRes.success) histRes=await saveHistRecord(updated);
+  if(!histRes.success){
+    console.error('Scan-to-dispatch failed to save for',pending.packedId,histRes.error);
+    logAudit('AWB_SCAN_DISPATCH_FAILED','history',pending.packedId,null,{orderId:pending.orderId,awb,error:String(histRes.error)});
+    toast(`Could not complete dispatch for ${pending.orderId} — connection issue. Nothing was changed; scan the AWB again, or use "Assign courier & AWB" manually.`,'w');
+    return;
+  }
+  const dispatchRecord={id:did,type:'dispatch',ts:ts(),detail:`AWB: ${awb} · Courier: ${courier} · To: ${ord.customerName||''}, ${ord.pincode||''} · Weight: ${dispatchWeight}kg · ${(packed.items||[]).length} SKUs · scanned to dispatch`,packedId:pending.packedId,orderId:pending.orderId};
+  let dispRes=await saveHistRecord(dispatchRecord);
+  if(!dispRes.success) dispRes=await saveHistRecord(dispatchRecord);
+  if(!dispRes.success){
+    console.error('Dispatch log entry failed to save for',did,dispRes.error);
+    logAudit('AWB_SCAN_DISPATCH_RECORD_FAILED','history',did,null,{orderId:pending.orderId,error:String(dispRes.error)});
+    toast('Dispatch confirmed, but the dispatch log entry failed to save — flag this to a supervisor.','w');
+  }
+  Object.assign(packed,updated);
+  history.push(dispatchRecord);
+  logOrderEvent(pending.orderId,'dispatch_confirmed',currentProfile?.full_name,{awb,courier,shippingMethod:'Standard Road',dispatchWeight,recipientName:ord.customerName,address:ord.address,pincode:ord.pincode,phone:ord.phone,via:'awb-sticker-scan'});
+  ord.status='dispatched';
+  const statusOk=await saveOrderRow(ord);
+  if(!statusOk){
+    console.error('Order status sync to \'dispatched\' failed for',pending.orderId);
+    logAudit('ORDER_STATUS_SYNC_FAILED','orders',pending.orderId,null,{orderId:pending.orderId,attemptedStatus:'dispatched'});
+    toast(`Order ${pending.orderId} dispatched and saved, but its status could not be updated — flag this to a supervisor.`,'w');
+  }
+  logAudit('CONFIRM_DISPATCH','history',pending.packedId,null,{orderId:pending.orderId,awb,courier,dispatchWeight,via:'awb-sticker-scan'});
+  _awbPendingOrder=null;
+  renderDispatchPage();
+  if(document.getElementById('page-orders')?.classList.contains('active')){renderOrdersBoard();}
+  toast(`✓ Dispatch ${did} confirmed via AWB scan · ${awb} → ${pending.orderId} · ${dispatchWeight}kg`,'s');
 }
 function filterDispatchOrders(){
   const q=(document.getElementById('disp-search-order').value||'').toLowerCase();
@@ -4454,6 +4574,19 @@ function selectDispatchOrder(pkdId){
 let dispPodPhotoData=null, pmWeightPhotoData=null, mpWeightPhotoData=null;
 let _dispWeightAutofilled=false;
 let _dispWeightOriginal=null; // the packing-weight figure the dispatch form was autofilled with, kept so a manual override can be flagged at confirm time
+// ── Scan-to-complete dispatch: AWB sticker capture ─────────────────────
+// Set by markLeftWarehouse() right after a Proforma Invoice scan marks an
+// order 'left_warehouse' — the very next barcode scan (anywhere in the
+// app, since a bare AWB number has no self-describing prefix like TOTE-/
+// LOC-/PKD-) is treated as that order's courier AWB by
+// handleAwbStickerScan() in processBarcodeInput(). Cleared once that AWB
+// is captured, once it goes stale (see AWB_SCAN_ARM_TIMEOUT_MS), or when
+// another Proforma Invoice is scanned before the AWB ever came in — each
+// of those last two logs a warning and leaves the order exactly as-is
+// (left_warehouse, NOT dispatched) rather than silently losing it.
+let _awbPendingOrder=null; // {orderId, packedId, armedAt}
+let _awbScanCourier='Shree Maruti'; // courier used for dispatches completed via AWB-sticker scan; editable on the Dispatch page
+const AWB_SCAN_ARM_TIMEOUT_MS=120000;
 function compressImageFile(file, maxDim, quality){
   return new Promise((resolve,reject)=>{
     const reader=new FileReader();
@@ -10233,6 +10366,26 @@ function processBarcodeInput(barcode){
   if(/^PKD-/i.test((barcode||'').trim())){
     handleDispatchExitScan(barcode);
     return;
+  }
+  // AWB sticker capture — see markLeftWarehouse()/handleAwbStickerScan().
+  // A scan here is treated as the armed order's AWB only while that arm is
+  // fresh; stale enough (2 min) and the sequence was almost certainly
+  // broken by something else in between (interrupted mid-scan, walked
+  // away), so warn that the AWB was never captured — same as if another
+  // Proforma Invoice had been scanned instead — rather than silently
+  // mis-assigning a stale AWB to whatever gets scanned next.
+  if(_awbPendingOrder){
+    if(Date.now()-_awbPendingOrder.armedAt>AWB_SCAN_ARM_TIMEOUT_MS){
+      const stuck=_awbPendingOrder;
+      toast(`⚠ Order ${stuck.orderId} never had its AWB sticker scanned in time — it is still "Left Warehouse — AWB Pending", NOT dispatched.`,'w');
+      logAudit('AWB_SCAN_TIMEOUT','orders',stuck.orderId,null,{orderId:stuck.orderId,packedId:stuck.packedId});
+      logOrderEvent(stuck.orderId,'awb_scan_skipped',currentProfile?.full_name,{packedId:stuck.packedId,reason:'timeout'});
+      _awbPendingOrder=null;
+      renderAwbPendingBanner();
+    } else {
+      handleAwbStickerScan(barcode);
+      return;
+    }
   }
   // Find matching SKU
   const sku=SKUS.find(s=>s.sku===barcode||s.sku.toUpperCase()===barcode.toUpperCase()||(s.shortCode!=null&&String(s.shortCode).padStart(4,'0')===barcode));
