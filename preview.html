@@ -4854,6 +4854,14 @@ async function createOrder(){
   const ok=await saveOrderRow(o);
   if(!ok) return;
   if(isEdit){
+    // Snapshot before the old values are gone — editing overwrites the
+    // order's own row in place, so this is the only place the prior
+    // items/address/customer/phone/pincode survive if the edit turns out
+    // to be wrong or something later needs to be traced back.
+    logOrderEvent(id,'order_edited',currentProfile?.full_name,{
+      before:{customerName:existing.customerName,address:existing.address,pincode:existing.pincode,phone:existing.phone,items:existing.items},
+      after:{customerName:o.customerName,address:o.address,pincode:o.pincode,phone:o.phone,items:o.items}
+    });
     const idx=orders.findIndex(x=>x.id===editingOrderId);
     if(idx>-1) orders[idx]=o;
   } else {
@@ -5564,6 +5572,12 @@ async function confirmPackWithDetails(){
     toast('Could not save the pack record — connection issue. Nothing was changed; please try completing the pack again.','w');
     return;
   }
+  // Redundant copy of the box dims/weight into the append-only order_events
+  // audit trail — if the history row's own boxL/boxW/boxH/actualWeight/
+  // volWeight/chargeableWeight ever gets lost or overwritten (e.g. by the
+  // dispatch-time update-in-place), this event is a second place to
+  // recover the same numbers from. Best-effort, never blocks packing.
+  logOrderEvent(t.orderId,'pack_weight_captured',packedObj.packer,{boxL:L,boxW:W,boxH:H,actualWeight:actual,volWeight:vol,chargeableWeight:chargeable,packMaterials});
   let delRes=await deletePackingQueueItem(t.id);
   if(!delRes.success) delRes=await deletePackingQueueItem(t.id);
   if(!delRes.success){
@@ -6030,6 +6044,13 @@ async function confirmCourierDispatch(){
   }
   Object.assign(packed,updated);
   history.push(dispatchRecord);
+  // Redundant structured copy of the dispatch details into the append-only
+  // order_events trail — until now this data only lived in the ONE history
+  // row that pack time already wrote (mutated in place, same as the weight
+  // fields) plus a free-text detail string on the dispatch log row. This
+  // gives AWB/courier/dispatch weight/recipient a durable, structured
+  // second home. Best-effort, never blocks confirming the dispatch.
+  logOrderEvent(packed.orderId,'dispatch_confirmed',currentProfile?.full_name,{awb,courier,shippingMethod:shipping,dispatchWeight,recipientName:name,address:addr,pincode:pin,phone});
   const ord=orders.find(x=>x.id===packed.orderId);
   if(ord){
     ord.status='dispatched';
@@ -7150,6 +7171,11 @@ async function completeMobilePack(){
     packMaterials:packMaterials,
     packNotes:notes
   };
+  // Redundant copy of the box dims/weight into the append-only order_events
+  // audit trail — same reasoning as the desktop pack flow: a second place
+  // to recover these numbers if the history row's own copy is ever lost or
+  // overwritten. Best-effort (silently skipped if offline), never blocks packing.
+  logOrderEvent(t.orderId,'pack_weight_captured',packedObj.packer,{boxL:L,boxW:W,boxH:H,actualWeight:actual,volWeight:vol,chargeableWeight:chargeable,packMaterials});
   if(!navigator.onLine){
     // Offline: deliberately queued for later sync — untouched, this is the
     // app's existing offline-first mechanism, separate from the online
@@ -10969,6 +10995,33 @@ async function renderDataIntegrityCheck(){
         detail:'This looks like a duplicate/phantom packing task from a bad recovery or a double-write — the order was already completed elsewhere.'});
     }
   });
+  // Self-check the order_events safety net itself — for every packed/
+  // dispatched order whose weight/dims or dispatch details actually got
+  // captured, confirm the matching backup event also made it into
+  // order_events. Low severity because any order packed/dispatched
+  // before this redundancy existed will always show up here (expected,
+  // nothing to fix) — this is for catching a genuinely failed
+  // logOrderEvent call on a RECENT order, not for old data.
+  try{
+    const packedOrDispatched=history.filter(h=>(h.type==='packed'||h.type==='dispatched') && h.orderId);
+    const relevantOrderIds=[...new Set(packedOrDispatched.map(h=>h.orderId))];
+    if(relevantOrderIds.length && supa){
+      const {data:evRows,error:evErr}=await supa.from('order_events').select('order_id,event_type').in('order_id',relevantOrderIds).in('event_type',['pack_weight_captured','dispatch_confirmed']);
+      if(evErr) throw evErr;
+      const hasPackEvent=new Set((evRows||[]).filter(r=>r.event_type==='pack_weight_captured').map(r=>r.order_id));
+      const hasDispatchEvent=new Set((evRows||[]).filter(r=>r.event_type==='dispatch_confirmed').map(r=>r.order_id));
+      packedOrDispatched.forEach(h=>{
+        if(h.actualWeight && !hasPackEvent.has(h.orderId)){
+          issues.push({severity:'low',orderId:h.orderId,issue:'Pack weight has no audit-trail backup',
+            detail:'This order\'s box dims/weight exist on its history row but there\'s no matching pack_weight_captured event in order_events — either it was packed before that redundancy was added, or the backup write silently failed. Safe to ignore for older orders; worth a look if this is a recent pack.'});
+        }
+        if(h.type==='dispatched' && h.awb && !hasDispatchEvent.has(h.orderId)){
+          issues.push({severity:'low',orderId:h.orderId,issue:'Dispatch confirmation has no audit-trail backup',
+            detail:'This order\'s AWB/courier/dispatch weight exist on its history row but there\'s no matching dispatch_confirmed event in order_events — either it was dispatched before that redundancy was added, or the backup write silently failed. Safe to ignore for older orders; worth a look if this is a recent dispatch.'});
+        }
+      });
+    }
+  }catch(e){ console.warn('order_events safety-net check skipped:',e.message||e); }
   if(!issues.length){
     el.innerHTML=`<div class="empty" style="color:var(--st)"><i class="ti ti-circle-check"></i> No issues found — ${orders.length} orders and ${packingQueue.length} active packing tasks checked.</div>`;
     return;

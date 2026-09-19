@@ -3253,6 +3253,14 @@ async function createOrder(){
   const ok=await saveOrderRow(o);
   if(!ok) return;
   if(isEdit){
+    // Snapshot before the old values are gone — editing overwrites the
+    // order's own row in place, so this is the only place the prior
+    // items/address/customer/phone/pincode survive if the edit turns out
+    // to be wrong or something later needs to be traced back.
+    logOrderEvent(id,'order_edited',currentProfile?.full_name,{
+      before:{customerName:existing.customerName,address:existing.address,pincode:existing.pincode,phone:existing.phone,items:existing.items},
+      after:{customerName:o.customerName,address:o.address,pincode:o.pincode,phone:o.phone,items:o.items}
+    });
     const idx=orders.findIndex(x=>x.id===editingOrderId);
     if(idx>-1) orders[idx]=o;
   } else {
@@ -4013,6 +4021,12 @@ async function confirmPackWithDetails(){
     toast('Could not save the pack record — connection issue. Nothing was changed; please try completing the pack again.','w');
     return;
   }
+  // Redundant copy of the box dims/weight into the append-only order_events
+  // audit trail — if the history row's own boxL/boxW/boxH/actualWeight/
+  // volWeight/chargeableWeight ever gets lost or overwritten (e.g. by the
+  // dispatch-time update-in-place), this event is a second place to
+  // recover the same numbers from. Best-effort, never blocks packing.
+  logOrderEvent(t.orderId,'pack_weight_captured',packedObj.packer,{boxL:L,boxW:W,boxH:H,actualWeight:actual,volWeight:vol,chargeableWeight:chargeable,packMaterials});
   let delRes=await deletePackingQueueItem(t.id);
   if(!delRes.success) delRes=await deletePackingQueueItem(t.id);
   if(!delRes.success){
@@ -4437,8 +4451,9 @@ function selectDispatchOrder(pkdId){
 // single order — hundreds a day — and an uncompressed phone photo
 // (often several MB) straight into a text column doesn't scale the way
 // the occasional QC exception photo elsewhere in this file does. ═══
-let dispPodPhotoData=null, pmWeightPhotoData=null;
+let dispPodPhotoData=null, pmWeightPhotoData=null, mpWeightPhotoData=null;
 let _dispWeightAutofilled=false;
+let _dispWeightOriginal=null; // the packing-weight figure the dispatch form was autofilled with, kept so a manual override can be flagged at confirm time
 function compressImageFile(file, maxDim, quality){
   return new Promise((resolve,reject)=>{
     const reader=new FileReader();
@@ -4507,6 +4522,32 @@ function clearPmWeightPhoto(){
   pmWeightPhotoData=null;
   const inp=document.getElementById('pm-weight-photo'); if(inp) inp.value='';
   const prev=document.getElementById('pm-weight-photo-preview'); if(prev) prev.innerHTML='';
+}
+// Mobile pack flow equivalent of handlePmPhotoUpload/clearPmWeightPhoto
+// above — same reasoning: capture the scale photo right where the
+// packer is standing, not later at dispatch. This didn't exist on the
+// mobile pack flow before, even though that's the primary scan-driven
+// flow this WMS is built around — desktop packs had photo evidence for
+// a disputed weight, mobile packs had none.
+async function handleMpPhotoUpload(evt){
+  const file=evt.target.files[0];
+  if(!file) return;
+  if(!file.type.startsWith('image/')){ toast('Please choose an image file','w'); evt.target.value=''; return; }
+  if(file.size > 15*1024*1024){ toast('Image is too large — please use a photo under 15MB','w'); evt.target.value=''; return; }
+  const previewEl=document.getElementById('mp-weight-photo-preview');
+  try{
+    const dataUrl=await compressImageFile(file, 1280, 0.72);
+    mpWeightPhotoData=dataUrl;
+    previewEl.innerHTML=`<div style="position:relative;display:inline-block"><img src="${dataUrl}" style="width:120px;height:90px;object-fit:cover;border-radius:6px;border:0.5px solid var(--b)"><button type="button" onclick="clearMpWeightPhoto()" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;background:#ff6b6b;border:none;border-radius:50%;color:#fff;cursor:pointer;font-size:12px;padding:0;line-height:1">×</button></div>`;
+  }catch(err){
+    toast('Could not process that image — try a different photo','w');
+    evt.target.value='';
+  }
+}
+function clearMpWeightPhoto(){
+  mpWeightPhotoData=null;
+  const inp=document.getElementById('mp-weight-photo'); if(inp) inp.value='';
+  const prev=document.getElementById('mp-weight-photo-preview'); if(prev) prev.innerHTML='';
 }
 // POD photo can now be added any time after dispatch — typically once
 // the courier actually delivers, which is often hours or days after AWB
@@ -4591,6 +4632,7 @@ function loadDispatchOrder(){
   const weightNote=document.getElementById('disp-weight-note');
   weightInput.value=packWeight||'';
   _dispWeightAutofilled=!!packWeight;
+  _dispWeightOriginal=packWeight||null;
   if(packWeight){
     weightNote.style.display='block';
     weightNote.innerHTML=usedChargeable
@@ -4659,6 +4701,22 @@ async function confirmCourierDispatch(){
   }
   Object.assign(packed,updated);
   history.push(dispatchRecord);
+  // Redundant structured copy of the dispatch details into the append-only
+  // order_events trail — until now this data only lived in the ONE history
+  // row that pack time already wrote (mutated in place, same as the weight
+  // fields) plus a free-text detail string on the dispatch log row. This
+  // gives AWB/courier/dispatch weight/recipient a durable, structured
+  // second home. Best-effort, never blocks confirming the dispatch.
+  logOrderEvent(packed.orderId,'dispatch_confirmed',currentProfile?.full_name,{awb,courier,shippingMethod:shipping,dispatchWeight,recipientName:name,address:addr,pincode:pin,phone});
+  // If the dispatch weight was auto-filled from packing and then changed
+  // by more than a rounding-level amount before confirming, flag it —
+  // could be a genuine re-weigh at the courier desk, or a typo/tampered
+  // box; either way it's worth a durable record of what it was vs. what
+  // got submitted, since the packing-time number will otherwise look like
+  // the only truth once this overwrites it.
+  if(_dispWeightOriginal!=null && Math.abs(_dispWeightOriginal-dispatchWeight)>0.01){
+    logOrderEvent(packed.orderId,'dispatch_weight_overridden',currentProfile?.full_name,{packedWeight:_dispWeightOriginal,dispatchWeight});
+  }
   const ord=orders.find(x=>x.id===packed.orderId);
   if(ord){
     ord.status='dispatched';
@@ -5747,6 +5805,7 @@ function proceedToMobilePackDetails(){
   ['mp-length','mp-width','mp-height','mp-actual-weight','mp-notes'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
   document.querySelectorAll('.mp-material-cb').forEach(cb=>{cb.checked=false;});
   document.getElementById('mp-vol-result').style.display='none';
+  clearMpWeightPhoto();
 }
 
 function backToMobilePackChecklist(){
@@ -5804,8 +5863,14 @@ async function completeMobilePack(){
     boxL:L,boxW:W,boxH:H,
     actualWeight:actual,volWeight:vol,chargeableWeight:chargeable,
     packMaterials:packMaterials,
-    packNotes:notes
+    packNotes:notes,
+    weightPhoto:mpWeightPhotoData||null
   };
+  // Redundant copy of the box dims/weight into the append-only order_events
+  // audit trail — same reasoning as the desktop pack flow: a second place
+  // to recover these numbers if the history row's own copy is ever lost or
+  // overwritten. Best-effort (silently skipped if offline), never blocks packing.
+  logOrderEvent(t.orderId,'pack_weight_captured',packedObj.packer,{boxL:L,boxW:W,boxH:H,actualWeight:actual,volWeight:vol,chargeableWeight:chargeable,packMaterials});
   if(!navigator.onLine){
     // Offline: deliberately queued for later sync — untouched, this is the
     // app's existing offline-first mechanism, separate from the online
@@ -5821,7 +5886,7 @@ async function completeMobilePack(){
       box_l:packedObj.boxL||null,box_w:packedObj.boxW||null,box_h:packedObj.boxH||null,
       actual_weight:packedObj.actualWeight||null,vol_weight:packedObj.volWeight||null,chargeable_weight:packedObj.chargeableWeight||null,
       pack_materials:packedObj.packMaterials||null,
-      pack_notes:packedObj.packNotes||null,items:packedObj.items||[],packer:packedObj.packer||null};
+      pack_notes:packedObj.packNotes||null,items:packedObj.items||[],packer:packedObj.packer||null,weight_photo:packedObj.weightPhoto||null};
     queueOfflineAction('mobile_pack_complete',{historyRow:row,taskId:t.id,orderId:t.orderId,chargeable},`Pack complete · ${t.orderId}`);
     toast(`Offline — Order ${t.orderId} packed in ${durationStr}, queued to sync (${chargeable}kg chargeable)`,'w');
   } else {
@@ -5859,6 +5924,7 @@ async function completeMobilePack(){
     toast(`Order ${t.orderId} packed in ${durationStr} · ${chargeable}kg chargeable`,'s');
   }
   mobilePackActive=null;
+  clearMpWeightPhoto();
   disableBarcodeScanner();
   renderMobilePackQueue();
   updateMobileKPIs();
@@ -9719,6 +9785,33 @@ async function renderDataIntegrityCheck(){
         detail:'This looks like a duplicate/phantom packing task from a bad recovery or a double-write — the order was already completed elsewhere.'});
     }
   });
+  // Self-check the order_events safety net itself — for every packed/
+  // dispatched order whose weight/dims or dispatch details actually got
+  // captured, confirm the matching backup event also made it into
+  // order_events. Low severity because any order packed/dispatched
+  // before this redundancy existed will always show up here (expected,
+  // nothing to fix) — this is for catching a genuinely failed
+  // logOrderEvent call on a RECENT order, not for old data.
+  try{
+    const packedOrDispatched=history.filter(h=>(h.type==='packed'||h.type==='dispatched') && h.orderId);
+    const relevantOrderIds=[...new Set(packedOrDispatched.map(h=>h.orderId))];
+    if(relevantOrderIds.length && supa){
+      const {data:evRows,error:evErr}=await supa.from('order_events').select('order_id,event_type').in('order_id',relevantOrderIds).in('event_type',['pack_weight_captured','dispatch_confirmed']);
+      if(evErr) throw evErr;
+      const hasPackEvent=new Set((evRows||[]).filter(r=>r.event_type==='pack_weight_captured').map(r=>r.order_id));
+      const hasDispatchEvent=new Set((evRows||[]).filter(r=>r.event_type==='dispatch_confirmed').map(r=>r.order_id));
+      packedOrDispatched.forEach(h=>{
+        if(h.actualWeight && !hasPackEvent.has(h.orderId)){
+          issues.push({severity:'low',orderId:h.orderId,issue:'Pack weight has no audit-trail backup',
+            detail:'This order\'s box dims/weight exist on its history row but there\'s no matching pack_weight_captured event in order_events — either it was packed before that redundancy was added, or the backup write silently failed. Safe to ignore for older orders; worth a look if this is a recent pack.'});
+        }
+        if(h.type==='dispatched' && h.awb && !hasDispatchEvent.has(h.orderId)){
+          issues.push({severity:'low',orderId:h.orderId,issue:'Dispatch confirmation has no audit-trail backup',
+            detail:'This order\'s AWB/courier/dispatch weight exist on its history row but there\'s no matching dispatch_confirmed event in order_events — either it was dispatched before that redundancy was added, or the backup write silently failed. Safe to ignore for older orders; worth a look if this is a recent dispatch.'});
+        }
+      });
+    }
+  }catch(e){ console.warn('order_events safety-net check skipped:',e.message||e); }
   if(!issues.length){
     el.innerHTML=`<div class="empty" style="color:var(--st)"><i class="ti ti-circle-check"></i> No issues found — ${orders.length} orders and ${packingQueue.length} active packing tasks checked.</div>`;
     return;
