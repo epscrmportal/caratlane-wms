@@ -3969,7 +3969,7 @@ function calcVolWeight(){
   document.getElementById('pm-show-actual').textContent=actual.toFixed(2);
   document.getElementById('pm-show-vol').textContent=vol.toFixed(2);
   document.getElementById('pm-show-chargeable').textContent=chargeable.toFixed(2);
-  document.getElementById('pm-vol-formula').textContent=`Volumetric = (${L}×${W}×${H}) ÷ 5000 = ${vol} kg · Chargeable = max(actual, volumetric)`;
+  document.getElementById('pm-vol-formula').textContent=`Provisional estimate (Air rate, ÷5000): (${L}×${W}×${H}) ÷ 5000 = ${vol} kg · Chargeable = max(actual, volumetric). Recalculated at dispatch once Air/Surface is chosen — Surface uses ÷27000 instead.`;
   res.style.display='block';
 }
 async function confirmPackWithDetails(){
@@ -4071,6 +4071,46 @@ function renderDispatchPage(){
     smDateEl.value=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
   }
 }
+// dispatchedAt is compared against a chosen calendar date in a few places
+// (the Shree Maruti sheet, below). That used to be done by string-prefix
+// matching a locale-formatted "DD Mon" — which turned out to be fragile in
+// two independent ways, both hit in production: (1) a row patched directly
+// via a manual SQL fix can carry a raw Postgres timestamp like
+// "2026-09-19 10:12:04.443835+00" instead of the app's own ts() string,
+// and (2) even after normalizing that, the browser's en-IN short-month
+// format renders September specifically as "Sept" (4 letters) while every
+// other month is 3 letters ("Jan", "Aug", "Oct"...) — so a value written
+// with a plain 3-letter month (as Postgres's own to_char('Mon') does)
+// silently fails to match "19 Sept" for that one month. Rather than keep
+// chasing locale-formatting quirks, this builds a locale-independent
+// "DDM" key (zero-padded day + zero-padded month number) from either
+// form of dispatchedAt, so date matching no longer depends on how any
+// runtime chooses to spell a month's name.
+const MONTH_NUM={jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,sept:9,oct:10,nov:11,dec:12};
+function dispatchDateKey(dispatchedAt){
+  if(!dispatchedAt) return null;
+  if(/^\d{4}-\d{2}-\d{2}/.test(dispatchedAt)){
+    // now()::text renders the UTC offset as a bare 2-digit suffix ("+00")
+    // rather than "+00:00" — invalid per what the JS Date parser accepts,
+    // so it silently returns Invalid Date without this fixup.
+    const iso=dispatchedAt.replace(' ','T').replace(/([+-]\d{2})$/,'$1:00');
+    const parsed=new Date(iso);
+    if(isNaN(parsed.getTime())) return null;
+    return String(parsed.getDate()).padStart(2,'0')+String(parsed.getMonth()+1).padStart(2,'0');
+  }
+  // The app's own "DD Mon..." string from ts() — read the day and month
+  // name directly out of the text instead of re-formatting through
+  // toLocaleString, and map the month name to its number so "Sep" and
+  // "Sept" (or any other spelling of the same month) produce the same key.
+  const m=dispatchedAt.match(/^(\d{1,2})\s+([A-Za-z]+)/);
+  if(!m) return null;
+  const monthNum=MONTH_NUM[m[2].toLowerCase().slice(0,4)]||MONTH_NUM[m[2].toLowerCase().slice(0,3)];
+  if(!monthNum) return null;
+  return m[1].padStart(2,'0')+String(monthNum).padStart(2,'0');
+}
+function dateKeyFor(dateObj){
+  return String(dateObj.getDate()).padStart(2,'0')+String(dateObj.getMonth()+1).padStart(2,'0');
+}
 // ── Shree Maruti Dispatch Sheet ─────────────────────────────────────────
 // Builds the courier's own "Account Booking Bulk Format" — one row per
 // AWB, exact header order/text matching Account_Booking_Bulk_Format_New.xls
@@ -4093,11 +4133,14 @@ function downloadShreeMarutiDispatchSheet(){
   if(!dateVal){ toast('Pick a date first','w'); return; }
   const d=new Date(dateVal+'T00:00:00');
   if(isNaN(d.getTime())){ toast('Invalid date','w'); return; }
-  // dispatchedAt is stored as a formatted string with no year (see ts()) —
-  // "19 Sep" — so that's the only reliable prefix to match a chosen date
-  // against.
+  // dispatchedAt is normally stored as a formatted string with no year
+  // See dispatchDateKey()/dateKeyFor() above — matching is done via a
+  // locale-independent day+month key rather than a formatted string, so
+  // it isn't thrown off by which format a row's dispatchedAt happens to
+  // be in.
   const datePrefix=d.toLocaleString('en-IN',{day:'2-digit',month:'short'});
-  const rows=history.filter(h=>h.type==='dispatched' && h.courierPartner && /shree\s*maruti/i.test(h.courierPartner) && h.dispatchedAt && h.dispatchedAt.startsWith(datePrefix));
+  const targetKey=dateKeyFor(d);
+  const rows=history.filter(h=>h.type==='dispatched' && h.courierPartner && /shree\s*maruti/i.test(h.courierPartner) && h.dispatchedAt && dispatchDateKey(h.dispatchedAt)===targetKey);
   if(!rows.length){ toast(`No Shree Maruti dispatches found for ${datePrefix}`,'w'); return; }
   loadXLSXLib(()=>{
     const header=['Awb No.','Parent Awb No.','Name','Address1','Address2','Pin','Tel','Weight','Width (cm)','Height (cm)','Length (cm)','Value','Product Category','Service Type','Parcel By','Content','Remark','E-Way Bills'];
@@ -4572,7 +4615,20 @@ async function handleAwbStickerScan(barcode){
     return;
   }
   if(!rateLimit('awb-scan-'+packed.id,2000)){ toast('Please wait before scanning again','w'); return; }
-  const dispatchWeight=packed.chargeableWeight||packed.actualWeight||0;
+  const courier=_awbScanCourier||'Shree Maruti';
+  // This fast-scan path has no shipping-method selector, so infer air vs
+  // surface from the courier text itself — matching how the warehouse has
+  // actually been recording it (e.g. "DTDC AIR" vs "DTDC SUF"). Anything
+  // not explicitly marked air is treated as surface, same default as the
+  // manual form's "Standard Road". Recalculate volumetric/chargeable
+  // weight off the box dims from packing with the correct divisor before
+  // falling back to whatever was already on the packed record.
+  const isAirCourier=/\bair\b/i.test(courier);
+  const scanShippingMethod=isAirCourier?'Air':'Standard Road';
+  const volDivisor=volWeightDivisorFor(scanShippingMethod);
+  const recalcVol=(packed.boxL&&packed.boxW&&packed.boxH)?parseFloat(((packed.boxL*packed.boxW*packed.boxH)/volDivisor).toFixed(2)):(packed.volWeight||null);
+  const recalcChargeable=recalcVol!=null?Math.max(packed.actualWeight||0,recalcVol):(packed.chargeableWeight||packed.actualWeight||0);
+  const dispatchWeight=recalcChargeable||packed.chargeableWeight||packed.actualWeight||0;
   if(!dispatchWeight||!validateWeight(dispatchWeight)){
     // No usable weight on file — completing the dispatch record without
     // one would defeat validateWeight's own purpose. Hand the AWB straight
@@ -4583,12 +4639,11 @@ async function handleAwbStickerScan(barcode){
     setTimeout(()=>{ const awbEl=document.getElementById('disp-awb'); if(awbEl) awbEl.value=awb; },250);
     return;
   }
-  const courier=_awbScanCourier||'Shree Maruti';
   const did=newId('DSP');
   const updated=Object.assign({},packed,{
     type:'dispatched',dispatchedAt:ts(),awb,recipientName:ord.customerName||'',address:ord.address||'',
-    pincode:ord.pincode||'',phone:ord.phone||'',shippingMethod:'Standard Road',courierPartner:courier,
-    dispatchWeight,podPhoto:null
+    pincode:ord.pincode||'',phone:ord.phone||'',shippingMethod:scanShippingMethod,courierPartner:courier,
+    dispatchWeight,podPhoto:null,volWeight:recalcVol,chargeableWeight:recalcChargeable
   });
   let histRes=await saveHistRecord(updated);
   if(!histRes.success) histRes=await saveHistRecord(updated);
@@ -4608,7 +4663,7 @@ async function handleAwbStickerScan(barcode){
   }
   Object.assign(packed,updated);
   history.push(dispatchRecord);
-  logOrderEvent(pending.orderId,'dispatch_confirmed',currentProfile?.full_name,{awb,courier,shippingMethod:'Standard Road',dispatchWeight,recipientName:ord.customerName,address:ord.address,pincode:ord.pincode,phone:ord.phone,via:'awb-sticker-scan'});
+  logOrderEvent(pending.orderId,'dispatch_confirmed',currentProfile?.full_name,{awb,courier,shippingMethod:scanShippingMethod,dispatchWeight,volWeight:recalcVol,chargeableWeight:recalcChargeable,recipientName:ord.customerName,address:ord.address,pincode:ord.pincode,phone:ord.phone,via:'awb-sticker-scan'});
   ord.status='dispatched';
   const statusOk=await saveOrderRow(ord);
   if(!statusOk){
@@ -4913,6 +4968,34 @@ function loadDispatchOrder(){
     weightNote.innerHTML=`<i class="ti ti-alert-triangle"></i> No packing weight on file for this order — please enter the weight manually.`;
   }
   clearDispPhoto();
+  updateDispVolWeight();
+}
+// Volumetric weight is billed on a different divisor depending on whether
+// the parcel travels by air or surface (road): ÷5000 for air, ÷27000 for
+// surface — the standard courier-industry divisors. Packing time doesn't
+// know which mode will be used yet (that's chosen here, at dispatch), so
+// this recalculates live off the box dims already captured at packing
+// whenever the shipping method or weight changes, so the packer/dispatcher
+// can see the real chargeable weight before confirming.
+function volWeightDivisorFor(shippingMethod){
+  return shippingMethod==='Air'?5000:27000; // Standard Road & Express Road both go by surface
+}
+function updateDispVolWeight(){
+  const sel=document.getElementById('disp-order-select');
+  const pkdId=sel?sel.value:'';
+  const packed=pkdId?history.find(h=>h.id===pkdId):null;
+  const resEl=document.getElementById('disp-vol-result');
+  if(!resEl) return;
+  if(!packed||!packed.boxL||!packed.boxW||!packed.boxH){ resEl.style.display='none'; return; }
+  const shippingEl=document.getElementById('disp-shipping');
+  const shipping=shippingEl?shippingEl.value:'Standard Road';
+  const divisor=volWeightDivisorFor(shipping);
+  const vol=parseFloat(((packed.boxL*packed.boxW*packed.boxH)/divisor).toFixed(2));
+  const weightInput=document.getElementById('disp-weight');
+  const dispatchWeight=parseFloat(weightInput&&weightInput.value)||packed.actualWeight||0;
+  const chargeable=Math.max(dispatchWeight,vol);
+  resEl.style.display='block';
+  resEl.innerHTML=`<i class="ti ti-calculator"></i> Volumetric (${shipping==='Air'?'Air, ÷5000':'Surface, ÷27000'}): <b>${vol} kg</b> · Chargeable: <b>${chargeable.toFixed(2)} kg</b> — recalculated for the selected shipping mode from the box dims captured at packing`;
 }
 function markDispWeightOverridden(){
   if(!_dispWeightAutofilled) return;
@@ -4945,13 +5028,22 @@ async function confirmCourierDispatch(){
   if(!packed){ toast('Packed order record not found — refresh and try again','w'); return; }
   const items=packed.items||[];
   const did=newId('DSP');
+  // Volumetric/chargeable weight was only a provisional estimate at
+  // packing time (shipping mode wasn't chosen yet) — now that it is,
+  // recalculate both using the correct divisor (Air ÷5000, Surface
+  // ÷27000) from the box dims captured at packing, and store the
+  // corrected figures instead of the packing-time estimate.
+  const volDivisor=volWeightDivisorFor(shipping);
+  const recalcVol=(packed.boxL&&packed.boxW&&packed.boxH)?parseFloat(((packed.boxL*packed.boxW*packed.boxH)/volDivisor).toFixed(2)):(packed.volWeight||null);
+  const recalcChargeable=recalcVol!=null?Math.max(dispatchWeight,recalcVol):Math.max(dispatchWeight,packed.chargeableWeight||0);
   // Build the updated record and save it BEFORE mutating the live object
   // or touching the order's status — same reasoning as the pick/pack
   // fixes: a silent failure here must leave nothing changed, not a
   // half-applied dispatch.
   const updated=Object.assign({},packed,{
     type:'dispatched',dispatchedAt:ts(),awb,recipientName:name,address:addr,pincode:pin,
-    phone,shippingMethod:shipping,courierPartner:courier,dispatchWeight,podPhoto:dispPodPhotoData||null
+    phone,shippingMethod:shipping,courierPartner:courier,dispatchWeight,podPhoto:dispPodPhotoData||null,
+    volWeight:recalcVol,chargeableWeight:recalcChargeable
   });
   let histRes=await saveHistRecord(updated);
   if(!histRes.success) histRes=await saveHistRecord(updated);
@@ -4977,7 +5069,7 @@ async function confirmCourierDispatch(){
   // fields) plus a free-text detail string on the dispatch log row. This
   // gives AWB/courier/dispatch weight/recipient a durable, structured
   // second home. Best-effort, never blocks confirming the dispatch.
-  logOrderEvent(packed.orderId,'dispatch_confirmed',currentProfile?.full_name,{awb,courier,shippingMethod:shipping,dispatchWeight,recipientName:name,address:addr,pincode:pin,phone});
+  logOrderEvent(packed.orderId,'dispatch_confirmed',currentProfile?.full_name,{awb,courier,shippingMethod:shipping,dispatchWeight,volWeight:recalcVol,chargeableWeight:recalcChargeable,recipientName:name,address:addr,pincode:pin,phone});
   // If the dispatch weight was auto-filled from packing and then changed
   // by more than a rounding-level amount before confirming, flag it —
   // could be a genuine re-weigh at the courier desk, or a typo/tampered
@@ -10058,26 +10150,36 @@ async function renderDataIntegrityCheck(){
   // Self-check the order_events safety net itself — for every packed/
   // dispatched order whose weight/dims or dispatch details actually got
   // captured, confirm the matching backup event also made it into
-  // order_events. Low severity because any order packed/dispatched
-  // before this redundancy existed will always show up here (expected,
-  // nothing to fix) — this is for catching a genuinely failed
-  // logOrderEvent call on a RECENT order, not for old data.
+  // order_events. Any order packed/dispatched before this redundancy
+  // existed will never have a matching event — that's expected, not a
+  // bug, so we self-calibrate off the earliest pack_weight_captured/
+  // dispatch_confirmed event actually on record (when the feature went
+  // live) and only check orders packed at or after that point, using
+  // each history row's own packEndTime. This is for catching a genuinely
+  // failed logOrderEvent call on a RECENT order, not for flagging old data.
   try{
     const packedOrDispatched=history.filter(h=>(h.type==='packed'||h.type==='dispatched') && h.orderId);
     const relevantOrderIds=[...new Set(packedOrDispatched.map(h=>h.orderId))];
     if(relevantOrderIds.length && supa){
-      const {data:evRows,error:evErr}=await supa.from('order_events').select('order_id,event_type').in('order_id',relevantOrderIds).in('event_type',['pack_weight_captured','dispatch_confirmed']);
+      const [{data:evRows,error:evErr},{data:cutoffRows,error:cutoffErr}]=await Promise.all([
+        supa.from('order_events').select('order_id,event_type').in('order_id',relevantOrderIds).in('event_type',['pack_weight_captured','dispatch_confirmed']),
+        supa.from('order_events').select('created_at').in('event_type',['pack_weight_captured','dispatch_confirmed']).order('created_at',{ascending:true}).limit(1)
+      ]);
       if(evErr) throw evErr;
+      if(cutoffErr) throw cutoffErr;
+      const featureLiveAt=(cutoffRows&&cutoffRows[0])?new Date(cutoffRows[0].created_at).getTime():Infinity;
       const hasPackEvent=new Set((evRows||[]).filter(r=>r.event_type==='pack_weight_captured').map(r=>r.order_id));
       const hasDispatchEvent=new Set((evRows||[]).filter(r=>r.event_type==='dispatch_confirmed').map(r=>r.order_id));
       packedOrDispatched.forEach(h=>{
+        const packedAfterFeatureLive=h.packEndTime && h.packEndTime>=featureLiveAt;
+        if(!packedAfterFeatureLive) return; // predates the redundancy feature — expected gap, not an issue
         if(h.actualWeight && !hasPackEvent.has(h.orderId)){
           issues.push({severity:'low',orderId:h.orderId,issue:'Pack weight has no audit-trail backup',
-            detail:'This order\'s box dims/weight exist on its history row but there\'s no matching pack_weight_captured event in order_events — either it was packed before that redundancy was added, or the backup write silently failed. Safe to ignore for older orders; worth a look if this is a recent pack.'});
+            detail:'This order was packed after the audit-trail redundancy went live, but its box dims/weight has no matching pack_weight_captured event in order_events — the backup write likely failed silently. Worth a look.'});
         }
         if(h.type==='dispatched' && h.awb && !hasDispatchEvent.has(h.orderId)){
           issues.push({severity:'low',orderId:h.orderId,issue:'Dispatch confirmation has no audit-trail backup',
-            detail:'This order\'s AWB/courier/dispatch weight exist on its history row but there\'s no matching dispatch_confirmed event in order_events — either it was dispatched before that redundancy was added, or the backup write silently failed. Safe to ignore for older orders; worth a look if this is a recent dispatch.'});
+            detail:'This order was packed after the audit-trail redundancy went live, but its AWB/courier/dispatch weight has no matching dispatch_confirmed event in order_events — the backup write likely failed silently. Worth a look.'});
         }
       });
     }
@@ -10218,9 +10320,19 @@ function initBarcodeScanner(){
     if(!_barcodeActive){
       return;
     }
+    // Exempt deliberate search/text boxes from the capture below. The
+    // capture-everything behavior exists so a handheld scanner's rapid-fire
+    // keystrokes always reach this handler no matter what has focus (see
+    // comment above) — but that also silently ate every keystroke a person
+    // typed into these boxes while scan mode was left armed (e.g. searching
+    // the dispatched-orders log right after scanning an AWB), since a
+    // human typing here is not a scan and should just work normally.
+    const _typingExemptIds=['dispatch-log-search','disp-store-search'];
+    if(document.activeElement && _typingExemptIds.includes(document.activeElement.id)){
+      return;
+    }
     const activeElDesc=document.activeElement ? document.activeElement.tagName+(document.activeElement.id?'#'+document.activeElement.id:'') : 'none';
     console.log('[scanner] key event:', JSON.stringify(e.key), '| target:', _barcodeTarget, '| buffer before:', JSON.stringify(_barcodeBuffer), '| active element:', activeElDesc);
-    _scannerDebugEcho('key: '+JSON.stringify(e.key)+' | buffer: '+JSON.stringify(_barcodeBuffer+ (e.key.length===1?e.key:''))+' | focus: '+activeElDesc);
     // USB/BT scanners send chars very fast then Enter
     if(e.key==='Enter'){
       e.preventDefault(); e.stopPropagation();
@@ -10228,7 +10340,6 @@ function initBarcodeScanner(){
         processBarcodeInput(_barcodeBuffer.trim());
       } else if(_barcodeBuffer.length>0){
         console.log('[scanner] buffer too short to process ('+_barcodeBuffer.length+' chars):', JSON.stringify(_barcodeBuffer));
-        _scannerDebugEcho('Enter received but buffer too short ('+_barcodeBuffer.length+' chars): '+JSON.stringify(_barcodeBuffer));
       }
       _barcodeBuffer='';
       clearTimeout(_barcodeTimer);
@@ -10245,19 +10356,10 @@ function initBarcodeScanner(){
         processBarcodeInput(_barcodeBuffer.trim());
       } else if(_barcodeBuffer.length>0){
         console.log('[scanner] idle-flush: buffer too short to process ('+_barcodeBuffer.length+' chars):', JSON.stringify(_barcodeBuffer));
-        _scannerDebugEcho('Idle-flush: buffer too short ('+_barcodeBuffer.length+' chars): '+JSON.stringify(_barcodeBuffer));
       }
       _barcodeBuffer='';
     },100);
   }, true);
-}
-// Writes a line to the on-screen scanner-debug overlay (see the fixed
-// #scanner-debug-overlay div near the top of <body>) — the visible,
-// no-DevTools-needed counterpart to the console.log calls above, for
-// diagnosing scanner input issues directly on a tablet in the warehouse.
-function _scannerDebugEcho(line){
-  const el=document.getElementById('scanner-debug-log');
-  if(el) el.textContent=line;
 }
 
 function enableBarcodeScanner(target){
@@ -10265,11 +10367,6 @@ function enableBarcodeScanner(target){
   _barcodeTarget=target;
   const indicators=document.querySelectorAll('.barcode-indicator');
   indicators.forEach(el=>el.style.display='flex');
-  const dbg=document.getElementById('scanner-debug-overlay');
-  if(dbg){
-    dbg.style.display='block';
-    document.getElementById('scanner-debug-log').textContent='Armed for "'+target+'" — waiting for a keystroke...';
-  }
   const msgs={
     'packing-lookup':'Barcode scanner active — scan a tote bag to open its packing task',
     'mobile-pack-lookup':'Barcode scanner active — scan a tote bag to open its packing task',
@@ -10286,8 +10383,6 @@ function disableBarcodeScanner(){
   _barcodeTarget=null;
   const indicators=document.querySelectorAll('.barcode-indicator');
   indicators.forEach(el=>el.style.display='none');
-  const dbg=document.getElementById('scanner-debug-overlay');
-  if(dbg) dbg.style.display='none';
   clearConfirmedShelf();
 }
 
