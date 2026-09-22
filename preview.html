@@ -5520,7 +5520,7 @@ function calcVolWeight(){
   document.getElementById('pm-show-actual').textContent=actual.toFixed(2);
   document.getElementById('pm-show-vol').textContent=vol.toFixed(2);
   document.getElementById('pm-show-chargeable').textContent=chargeable.toFixed(2);
-  document.getElementById('pm-vol-formula').textContent=`Provisional estimate (Air rate, ÷5000): (${L}×${W}×${H}) ÷ 5000 = ${vol} kg · Chargeable = max(actual, volumetric). Recalculated at dispatch once Air/Surface is chosen — Surface uses ÷27000 instead.`;
+  document.getElementById('pm-vol-formula').textContent=`Provisional estimate (Air rate, ÷5000): (${L}×${W}×${H}) ÷ 5000 = ${vol} kg · Chargeable = max(actual, volumetric). Recalculated at dispatch once Air/Surface is chosen — Surface uses ×7÷27000 instead.`;
   res.style.display='block';
 }
 async function confirmPackWithDetails(){
@@ -6173,8 +6173,7 @@ async function handleAwbStickerScan(barcode){
   // falling back to whatever was already on the packed record.
   const isAirCourier=/\bair\b/i.test(courier);
   const scanShippingMethod=isAirCourier?'Air':'Standard Road';
-  const volDivisor=volWeightDivisorFor(scanShippingMethod);
-  const recalcVol=(packed.boxL&&packed.boxW&&packed.boxH)?parseFloat(((packed.boxL*packed.boxW*packed.boxH)/volDivisor).toFixed(2)):(packed.volWeight||null);
+  const recalcVol=(packed.boxL&&packed.boxW&&packed.boxH)?parseFloat(calcVolumetricWeight(packed.boxL,packed.boxW,packed.boxH,scanShippingMethod).toFixed(2)):(packed.volWeight||null);
   const recalcChargeable=recalcVol!=null?Math.max(packed.actualWeight||0,recalcVol):(packed.chargeableWeight||packed.actualWeight||0);
   const dispatchWeight=recalcChargeable||packed.chargeableWeight||packed.actualWeight||0;
   if(!dispatchWeight||!validateWeight(dispatchWeight)){
@@ -6322,15 +6321,18 @@ function loadDispatchOrder(){
   document.getElementById('disp-weight').value='';
   updateDispVolWeight();
 }
-// Volumetric weight is billed on a different divisor depending on whether
-// the parcel travels by air or surface (road): ÷5000 for air, ÷27000 for
-// surface — the standard courier-industry divisors. Packing time doesn't
-// know which mode will be used yet (that's chosen here, at dispatch), so
-// this recalculates live off the box dims already captured at packing
-// whenever the shipping method or weight changes, so the packer/dispatcher
-// can see the real chargeable weight before confirming.
-function volWeightDivisorFor(shippingMethod){
-  return shippingMethod==='Air'?5000:27000; // Standard Road & Express Road both go by surface
+// Volumetric weight uses a different formula depending on whether the
+// parcel travels by air or surface (road): Air = (L×W×H)÷5000. Surface =
+// (L×W×H)×7÷27000 (not a plain ÷27000 — the ×7 matters and was missed in
+// an earlier pass, so this is the single source of truth for both modes
+// now; nothing else should compute volumetric weight inline). Packing
+// time doesn't know which mode will be used yet (that's chosen here, at
+// dispatch), so this recalculates live off the box dims already captured
+// at packing whenever the shipping method or weight changes, so the
+// packer/dispatcher can see the real chargeable weight before confirming.
+function calcVolumetricWeight(L,W,H,shippingMethod){
+  const vol=L*W*H;
+  return shippingMethod==='Air' ? (vol/5000) : (vol*7/27000); // Standard Road & Express Road both go by surface
 }
 function updateDispVolWeight(){
   const sel=document.getElementById('disp-order-select');
@@ -6341,13 +6343,12 @@ function updateDispVolWeight(){
   if(!packed||!packed.boxL||!packed.boxW||!packed.boxH){ resEl.style.display='none'; return; }
   const shippingEl=document.getElementById('disp-shipping');
   const shipping=shippingEl?shippingEl.value:'Standard Road';
-  const divisor=volWeightDivisorFor(shipping);
-  const vol=parseFloat(((packed.boxL*packed.boxW*packed.boxH)/divisor).toFixed(2));
+  const vol=parseFloat(calcVolumetricWeight(packed.boxL,packed.boxW,packed.boxH,shipping).toFixed(2));
   const weightInput=document.getElementById('disp-weight');
   const dispatchWeight=parseFloat(weightInput&&weightInput.value)||packed.actualWeight||0;
   const chargeable=Math.max(dispatchWeight,vol);
   resEl.style.display='block';
-  resEl.innerHTML=`<i class="ti ti-calculator"></i> Volumetric (${shipping==='Air'?'Air, ÷5000':'Surface, ÷27000'}): <b>${vol} kg</b> · Chargeable: <b>${chargeable.toFixed(2)} kg</b> — recalculated for the selected shipping mode from the box dims captured at packing`;
+  resEl.innerHTML=`<i class="ti ti-calculator"></i> Volumetric (${shipping==='Air'?'Air, ÷5000':'Surface, ×7÷27000'}): <b>${vol} kg</b> · Chargeable: <b>${chargeable.toFixed(2)} kg</b> — recalculated for the selected shipping mode from the box dims captured at packing`;
 }
 async function confirmCourierDispatch(){
   const pkdId=document.getElementById('disp-order-select').value;
@@ -6372,11 +6373,10 @@ async function confirmCourierDispatch(){
   const did=newId('DSP');
   // Volumetric/chargeable weight was only a provisional estimate at
   // packing time (shipping mode wasn't chosen yet) — now that it is,
-  // recalculate both using the correct divisor (Air ÷5000, Surface
-  // ÷27000) from the box dims captured at packing, and store the
+  // recalculate both using the correct formula (Air ÷5000, Surface
+  // ×7÷27000) from the box dims captured at packing, and store the
   // corrected figures instead of the packing-time estimate.
-  const volDivisor=volWeightDivisorFor(shipping);
-  const recalcVol=(packed.boxL&&packed.boxW&&packed.boxH)?parseFloat(((packed.boxL*packed.boxW*packed.boxH)/volDivisor).toFixed(2)):(packed.volWeight||null);
+  const recalcVol=(packed.boxL&&packed.boxW&&packed.boxH)?parseFloat(calcVolumetricWeight(packed.boxL,packed.boxW,packed.boxH,shipping).toFixed(2)):(packed.volWeight||null);
   const recalcChargeable=recalcVol!=null?Math.max(dispatchWeight,recalcVol):Math.max(dispatchWeight,packed.chargeableWeight||0);
   // Build the updated record and save it BEFORE mutating the live object
   // or touching the order's status — same reasoning as the pick/pack
@@ -11532,7 +11532,7 @@ function initBarcodeScanner(){
     // Exempt deliberate search/text boxes from the capture below (kept in
     // sync with index.html/app.js even though preview.html doesn't yet
     // have these specific inputs — see index.html for the full comment).
-    const _typingExemptIds=['dispatch-log-search','disp-store-search'];
+    const _typingExemptIds=['dispatch-log-search','disp-store-search','dispatch-packed-search'];
     if(document.activeElement && _typingExemptIds.includes(document.activeElement.id)){
       return;
     }

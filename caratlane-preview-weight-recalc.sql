@@ -2,12 +2,14 @@
 -- them in the Supabase SQL Editor) before running
 -- caratlane-fix-historical-weights.sql.
 --
--- Context: until today, volumetric weight was always computed as
+-- Context: until recently, volumetric weight was always computed as
 -- (L×W×H)÷5000 regardless of whether the parcel actually shipped by Air
--- or Surface — the correct divisor for Surface (Standard/Express Road) is
--- ÷27000, a much bigger number that gives a much LOWER volumetric weight.
+-- or Surface. The correct formulas are:
+--   Air                       = (L×W×H) ÷ 5000
+--   Surface (Standard/Express Road) = (L×W×H) × 7 ÷ 27000
+-- (NOT a plain ÷27000 — the ×7 matters.)
 -- Every dispatched order's stored vol_weight/chargeable_weight was
--- computed with the wrong (Air) divisor whenever it actually went by
+-- computed with the wrong (Air) formula whenever it actually went by
 -- Surface — this preview shows exactly which orders that affects.
 --
 -- Air/Surface detection: shipping_method = 'Air' OR courier_partner
@@ -29,8 +31,14 @@ with recalced as (
     dispatch_weight, actual_weight,
     vol_weight as old_vol_weight,
     chargeable_weight as old_chargeable_weight,
-    case when shipping_method='Air' or courier_partner ~* '\yair\y' then 'Air (÷5000)' else 'Surface (÷27000)' end as detected_mode,
-    round((box_l*box_w*box_h) / (case when shipping_method='Air' or courier_partner ~* '\yair\y' then 5000.0 else 27000.0 end), 2) as new_vol_weight
+    case when shipping_method='Air' or courier_partner ~* '\yair\y' then 'Air (÷5000)' else 'Surface (×7÷27000)' end as detected_mode,
+    round(
+      case when shipping_method='Air' or courier_partner ~* '\yair\y'
+        then (box_l*box_w*box_h) / 5000.0
+        else (box_l*box_w*box_h) * 7 / 27000.0
+      end,
+      2
+    ) as new_vol_weight
   from public.history
   where type='dispatched' and box_l is not null and box_w is not null and box_h is not null
 )
@@ -51,8 +59,21 @@ where old_vol_weight is distinct from new_vol_weight
 order by order_id;
 
 -- Quick summary count/total of what would change:
+-- with recalced as (
+--   select
+--     box_l, box_w, box_h, dispatch_weight, actual_weight,
+--     chargeable_weight as old_chargeable_weight,
+--     round(
+--       case when shipping_method='Air' or courier_partner ~* '\yair\y'
+--         then (box_l*box_w*box_h) / 5000.0
+--         else (box_l*box_w*box_h) * 7 / 27000.0
+--       end,
+--       2
+--     ) as new_vol_weight
+--   from public.history
+--   where type='dispatched' and box_l is not null and box_w is not null and box_h is not null
+-- )
 -- select count(*) as orders_affected,
 --        round(sum(greatest(coalesce(dispatch_weight, actual_weight, 0), new_vol_weight) - coalesce(old_chargeable_weight,0)),2) as total_chargeable_kg_delta
 -- from recalced
--- where old_vol_weight is distinct from new_vol_weight
---    or old_chargeable_weight is distinct from greatest(coalesce(dispatch_weight, actual_weight, 0), new_vol_weight);
+-- where round(greatest(coalesce(dispatch_weight, actual_weight, 0), new_vol_weight),2) is distinct from old_chargeable_weight;
