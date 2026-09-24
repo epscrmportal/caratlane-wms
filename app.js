@@ -99,6 +99,7 @@ let SKUS=[
 // ═══ CARATLANE STORE MASTER (name, address, pincode, phone) — used for
 // searchable store/address autofill in Create Order & Dispatch ═══
 let STORES=[
+  {code:"CL-ST-TEMP-L3-Bikaner-Brahma Kumari Circle",name:"CL-ST-TEMP-L3-Bikaner-Brahma Kumari Circle",address:"CaratLane store, T/E-1A, Ground Floor, Sadul Ganj, Opp. Shubham Garden, Brahma Kumari Circle, Bikaner - 334003",pincode:"334003",phone:"9530217500",addressLine:"CaratLane store, T/E-1A, Ground Floor, Sadul Ganj, Opp. Shubham Garden, Brahma Kumari Circle, Bikaner - 334003 | PIN: 334003 | Ph: 9530217500"},
   {code:"CLHYDJBH",name:"CL-ST-HYD-Jubilee Hills",address:"Unit No. 2, Plot No. 8-2-293/82/A/1124, Road No.36, Jubilee Hills, Hyderabad",pincode:"",phone:"7397730888",addressLine:"Unit No. 2, Plot No. 8-2-293/82/A/1124, Road No.36, Jubilee Hills, Hyderabad | Ph: 7397730888"},
   {code:"CLBLRPMM",name:"CL-ST-BNG-Phoenix Mall",address:"Unit No. G-47, G-48, Lower Ground Floor, Phoenix Markety City, Bengaluru East, Mahadevpura, Near Krishnarajapuram Flyover, Bengaluru - 560048",pincode:"560048",phone:"8105214444",addressLine:"Unit No. G-47, G-48, Lower Ground Floor, Phoenix Markety City, Bengaluru East, Mahadevpura, Near Krishnarajapuram Flyover, Bengaluru - 560048 | PIN: 560048 | Ph: 8105214444"},
   {code:"CFHYDSFM",name:"CL-ST-HYD-Forum Mall",address:"CaratLane Store, Unit No 15, Upper Ground Floor, Forum Sujana Mall, Kukatpally, Hyderabad, Telangana - 500072",pincode:"500072",phone:"7032079222",addressLine:"CaratLane Store, Unit No 15, Upper Ground Floor, Forum Sujana Mall, Kukatpally, Hyderabad, Telangana - 500072 | PIN: 500072 | Ph: 7032079222"},
@@ -4070,6 +4071,11 @@ function renderDispatchPage(){
     const now=new Date();
     smDateEl.value=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
   }
+  const gatiDateEl=document.getElementById('gati-sheet-date');
+  if(gatiDateEl && !gatiDateEl.value){
+    const now=new Date();
+    gatiDateEl.value=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+  }
 }
 // dispatchedAt is compared against a chosen calendar date in a few places
 // (the Shree Maruti sheet, below). That used to be done by string-prefix
@@ -4140,7 +4146,7 @@ function downloadShreeMarutiDispatchSheet(){
   // be in.
   const datePrefix=d.toLocaleString('en-IN',{day:'2-digit',month:'short'});
   const targetKey=dateKeyFor(d);
-  const rows=history.filter(h=>h.type==='dispatched' && h.courierPartner && /shree\s*maruti/i.test(h.courierPartner) && h.dispatchedAt && dispatchDateKey(h.dispatchedAt)===targetKey);
+  const rows=history.filter(h=>h.type==='dispatched' && h.awb && detectCourierFromAwb(h.awb,h.courierPartner)==='Shree Maruti' && h.dispatchedAt && dispatchDateKey(h.dispatchedAt)===targetKey);
   if(!rows.length){ toast(`No Shree Maruti dispatches found for ${datePrefix}`,'w'); return; }
   loadXLSXLib(()=>{
     const header=['Awb No.','Parent Awb No.','Name','Address1','Address2','Pin','Tel','Weight','Width (cm)','Height (cm)','Length (cm)','Value','Product Category','Service Type','Parcel By','Content','Remark','E-Way Bills'];
@@ -4191,6 +4197,73 @@ function downloadShreeMarutiDispatchSheet(){
     setTimeout(()=>URL.revokeObjectURL(url),2000);
     logAudit('SHREE_MARUTI_SHEET_DOWNLOADED',null,null,null,{date:dateVal,orderCount:rows.length});
     toast(`✓ Downloaded Shree Maruti Dispatch Sheet — ${rows.length} order(s) for ${datePrefix}`,'s');
+  });
+}
+// ── Gati Dispatch Sheet ─────────────────────────────────────────────────
+// Same shape as the Shree Maruti sheet above (same column layout) but
+// filtered to orders dispatched via a Gati courier instead. Gati AWB
+// numbers don't follow any fixed prefix/series (unlike some other
+// couriers), so — same as Shree Maruti — this identifies "Gati" purely
+// from the courier_partner text, not from the AWB number itself.
+function downloadGatiDispatchSheet(){
+  const dateEl=document.getElementById('gati-sheet-date');
+  const dateVal=dateEl&&dateEl.value;
+  if(!dateVal){ toast('Pick a date first','w'); return; }
+  const d=new Date(dateVal+'T00:00:00');
+  if(isNaN(d.getTime())){ toast('Invalid date','w'); return; }
+  const datePrefix=d.toLocaleString('en-IN',{day:'2-digit',month:'short'});
+  const targetKey=dateKeyFor(d);
+  const rows=history.filter(h=>h.type==='dispatched' && h.awb && detectCourierFromAwb(h.awb,h.courierPartner)==='Gati' && h.dispatchedAt && dispatchDateKey(h.dispatchedAt)===targetKey);
+  if(!rows.length){ toast(`No Gati dispatches found for ${datePrefix}`,'w'); return; }
+  loadXLSXLib(()=>{
+    const header=['Awb No.','Parent Awb No.','Name','Address1','Address2','Pin','Tel','Weight','Width (cm)','Height (cm)','Length (cm)','Value','Product Category','Service Type','Parcel By','Content','Remark','E-Way Bills'];
+    const aoa=[header];
+    rows.slice().sort((a,b)=>(a.orderId||'').localeCompare(b.orderId||'')).forEach(h=>{
+      const ord=orders.find(x=>x.id===h.orderId);
+      const items=h.items||[];
+      let value=0;
+      items.forEach(it=>{
+        const sku=SKUS.find(s=>s.sku===it.sku);
+        const price=sku&&sku.price!=null?sku.price:null;
+        if(price!=null) value+=price*(it.qty||0);
+      });
+      const cp=(h.courierPartner||'').toUpperCase();
+      const parcelBy=cp.includes('SUF')?'SURFACE':cp.includes('AIR')?'AIR':'SURFACE';
+      aoa.push([
+        h.awb||'',
+        '',
+        h.recipientName||(ord&&ord.customerName)||'',
+        h.address||(ord&&ord.address)||'',
+        '',
+        h.pincode||(ord&&ord.pincode)||'',
+        h.phone||(ord&&ord.phone)||'',
+        h.dispatchWeight||h.chargeableWeight||h.actualWeight||'',
+        h.boxW||'',
+        h.boxH||'',
+        h.boxL||'',
+        value||'',
+        'NON DOX',
+        'STANDARD',
+        parcelBy,
+        'NON DOX',
+        h.orderId||'',
+        ''
+      ]);
+    });
+    const ws=XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols']=[{wch:16},{wch:14},{wch:32},{wch:36},{wch:20},{wch:8},{wch:12},{wch:8},{wch:10},{wch:10},{wch:10},{wch:8},{wch:12},{wch:10},{wch:10},{wch:10},{wch:12},{wch:14}];
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,'Sheet 1');
+    const buf=XLSX.write(wb,{type:'array',bookType:'xlsx'});
+    const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const url=URL.createObjectURL(blob);
+    const link=document.createElement('a');
+    link.href=url;
+    link.download=`Gati Dispatch Sheet - ${dateVal}.xlsx`;
+    document.body.appendChild(link); link.click(); link.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),2000);
+    logAudit('GATI_SHEET_DOWNLOADED',null,null,null,{date:dateVal,orderCount:rows.length});
+    toast(`✓ Downloaded Gati Dispatch Sheet — ${rows.length} order(s) for ${datePrefix}`,'s');
   });
 }
 function printPackingSlip(historyId){
@@ -4615,7 +4688,7 @@ async function handleAwbStickerScan(barcode){
     return;
   }
   if(!rateLimit('awb-scan-'+packed.id,2000)){ toast('Please wait before scanning again','w'); return; }
-  const courier=_awbScanCourier||'Shree Maruti';
+  const courier=detectCourierFromAwb(awb,_awbScanCourier);
   // This fast-scan path has no shipping-method selector, so infer air vs
   // surface from the courier text itself — matching how the warehouse has
   // actually been recording it (e.g. "DTDC AIR" vs "DTDC SUF"). Anything
@@ -4776,7 +4849,13 @@ let _dispWeightOriginal=null; // the packing-weight figure the dispatch form was
 // of those last two logs a warning and leaves the order exactly as-is
 // (left_warehouse, NOT dispatched) rather than silently losing it.
 let _awbPendingOrder=null; // {orderId, packedId, armedAt}
-let _awbScanCourier='Shree Maruti'; // courier used for dispatches completed via AWB-sticker scan; editable on the Dispatch page
+let _awbScanCourier='Shree Maruti'; // courier used for dispatches completed via AWB-sticker scan; editable on the Dispatch page — only used as a FALLBACK now, see detectCourierFromAwb()
+function detectCourierFromAwb(awb,fallbackCourier){
+  const a=(awb||'').trim();
+  if(/^\d{14}$/.test(a)) return 'Shree Maruti';
+  if(/^\d{6,13}$/.test(a)) return 'Gati';
+  return fallbackCourier||_awbScanCourier||'Shree Maruti';
+}
 const AWB_SCAN_ARM_TIMEOUT_MS=300000; // 5 min — generous enough that hunting for the right sticker in a big batch doesn't routinely trip it; the "Arm for AWB scan" button and re-scanning the Proforma Invoice both recover from it anyway
 function compressImageFile(file, maxDim, quality){
   return new Promise((resolve,reject)=>{
@@ -10619,6 +10698,18 @@ function processBarcodeInput(barcode){
       return;
     }
   }
+  // "Scan AWB Barcode" button on the Dispatch page (target 'dispatch') just
+  // fills the AWB field with whatever was scanned — a courier's AWB number
+  // is never one of our own SKU codes, so this has to be handled before the
+  // SKU lookup below, not after it. It used to sit after that lookup, which
+  // meant every AWB scan here fell into the "no SKU matched" branch and
+  // errored with "Unknown barcode" before ever reaching this handler.
+  if(_barcodeTarget==='dispatch'){
+    const awbInput=document.getElementById('disp-awb');
+    if(awbInput){ awbInput.value=barcode; }
+    toast('AWB scanned: '+barcode,'s');
+    return;
+  }
   // Find matching SKU
   const sku=SKUS.find(s=>s.sku===barcode||s.sku.toUpperCase()===barcode.toUpperCase()||(s.shortCode!=null&&String(s.shortCode).padStart(4,'0')===barcode));
   console.log('Barcode "'+barcode+'" resolved to:', sku?sku.sku+' (code '+sku.shortCode+')':'NOT FOUND — no SKU or short code matches this barcode');
@@ -10675,11 +10766,6 @@ function processBarcodeInput(barcode){
       document.getElementById('pk-qty')?.focus();
       toast('Scanned: '+sku.sub+' — '+sku.variant+' — start a pick first to auto-add','w');
     }
-  } else if(_barcodeTarget==='dispatch'){
-    // Match AWB or order ID
-    const awbInput=document.getElementById('disp-awb');
-    if(awbInput){ awbInput.value=barcode; }
-    toast('AWB scanned: '+barcode,'s');
   } else if(_barcodeTarget==='mobile-pick'){
     // HT20 Pro handheld scan during a mobile picking session
     mobilePickAddScan(sku);

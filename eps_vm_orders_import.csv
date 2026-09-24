@@ -1,5 +1,8 @@
 order_id,customer_name,address,pincode,phone,priority,method,sku,qty,notes
-11947-VMPRMR009123,CL-TAH-CHN-USMAN ROAD,,,,Standard,Single,VM-RS,3,Location code: CL-TAH-CHN-USMAN ROAD | Kissflow ID: 11947-VMPRMR009123 | Unique ID(s): PM926-1556 | Requested: 07 Sep 2026
-11963-VMPRMR009139,CL-ST-DEL-Omaxe CC,,,,Standard,Single,VM-RS,1,Location code: CFDELOCM | Kissflow ID: 11963-VMPRMR009139 | Unique ID(s): PM926-1585 | Requested: 07 Sep 2026
-12005-VMPRMR009181,Grandthum - Noida,,,,Standard,Single,VM-RS,1,"Location code: CFNOIGTM | Kissflow ID: 12005-VMPRMR009181 | Unique ID(s): PM926-2148, PM926-2149 | Requested: 10 Sep 2026"
-,,,,,,,VM-BS,1,
+PM926-4008,CL-ST-MUM-Andheri West,"Showroom no 003-A, Fortune Terraces, opp Citi Mall, New link road, Andheri west, Mumbai 400053",400053,7339330666,Standard,Single,VM-RS,1,
+PM926-4285,Brahma Kumari Circle - Bikaner,,,,Standard,Single,VM-RS,1,Store not in catalog - needs manual address/phone
+PM926-4286,Brahma Kumari Circle - Bikaner,,,,Standard,Single,VM-BS,1,Store not in catalog - needs manual address/phone
+PM926-4307,CL-ST-L3-JAIPUR-MALVIYANAGAR,"Showroom – 2A, Ground Floor, GT Landmark, Near Gaurav Tower, Malviya Nagar, Jaipur. 302017",302017,9500101242,Standard,Single,VM-CB,1,
+PM926-4310,CL-ST-L3-JAIPUR-MALVIYANAGAR,"Showroom – 2A, Ground Floor, GT Landmark, Near Gaurav Tower, Malviya Nagar, Jaipur. 302017",302017,9500101242,Standard,Single,VM-RR,1,
+PM926-4313,CL-ST-L3-JAIPUR-MALVIYANAGAR,"Showroom – 2A, Ground Floor, GT Landmark, Near Gaurav Tower, Malviya Nagar, Jaipur. 302017",302017,9500101242,Standard,Single,VM-RS,1,
+PM926-4314,CL-ST-L3-JAIPUR-MALVIYANAGAR,"Showroom – 2A, Ground Floor, GT Landmark, Near Gaurav Tower, Malviya Nagar, Jaipur. 302017",302017,9500101242,Standard,Single,VM-BS,1,

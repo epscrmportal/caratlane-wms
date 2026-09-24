@@ -1,0 +1,3 @@
+order_id,customer_name,address,pincode,phone,priority,method,sku,qty,notes
+PM926-3983,CL-ST-CHN-Velachery,"No.42, Pandian Street, Sankaran Avenue, Velachery 100 Feet Road,Velachery, Chennai - 600 042",600042,8754461115,Standard,Single,VM-IC-9,7,Store code CFCHNVEL / Kissflow ID 12091-VMPRMR009267
+PM926-3999,CL-ST-JBR-NaudraBridge,"407, Rajeev Gandhi Chowk, Naudra Bridge, Jabalpur, Madhya Pradesh 482002",482002,7909400720,Standard,Single,VM-IC-9,4,Store code CFJBPNBR / Kissflow ID 12101-VMPRMR009277

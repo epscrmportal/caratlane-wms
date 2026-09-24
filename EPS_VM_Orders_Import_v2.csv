@@ -1,0 +1,8 @@
+order_id,customer_name,address,pincode,phone,priority,method,sku,qty,notes
+12105-VMPRMR009281,CL-ST-MUM-Andheri West,"Showroom no 003-A, Fortune Terraces, opp Citi Mall, New link road, Andheri west, Mumbai 400053",400053,7339330666,Standard,Single,VM-RS,1,
+12116-VMPRMR009292,Brahma Kumari Circle - Bikaner,,,,Standard,Single,VM-RS,1,Store not in catalog - needs manual address/phone
+,,,,,,,VM-BS,1,
+12121-VMPRMR009297,CL-ST-L3-JAIPUR-MALVIYANAGAR,"Showroom – 2A, Ground Floor, GT Landmark, Near Gaurav Tower, Malviya Nagar, Jaipur. 302017",302017,9500101242,Standard,Single,VM-CB,1,
+,,,,,,,VM-RR,1,
+,,,,,,,VM-RS,1,
+,,,,,,,VM-BS,1,
