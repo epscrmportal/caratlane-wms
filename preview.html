@@ -3871,7 +3871,7 @@ async function saveExpectedShipmentForm(){
     s.items=[...expItemsList];
     const ok=await saveExpectedShipmentRow(s);
     if(!ok) return;
-    recomputeShipmentTally(s);
+    await recomputeShipmentTally(s);
     logAudit('UPDATE_EXPECTED_SHIPMENT','expected_shipments',id,{items:oldItemCount},{items:s.items.length});
     cancelEditExpectedShipment();
     renderExpShipmentsBoard();
@@ -3978,14 +3978,14 @@ function getReceivedSoFarByAsn(asnId){
 // Shared by GRN creation AND by editing a shipment's item list — editing
 // must NOT accidentally mark a shipment 'partial'/'received' just because
 // the math ran; if nothing has been received yet, it stays 'expected'.
-function recomputeShipmentTally(s){
+async function recomputeShipmentTally(s){
   const hasAnyGrn=history.some(h=>h.type==='grn' && !h.voided && (h.asn||'').toLowerCase()===s.id.toLowerCase());
   if(!hasAnyGrn){
     s.status='expected';
     s.receivedSummary=null;
     s.receivedAt=null;
-    saveExpectedShipmentRow(s);
-    return {status:s.status, summary:null, anyShortage:false, anyOverage:false};
+    const saved=await saveExpectedShipmentRow(s);
+    return {status:s.status, summary:null, anyShortage:false, anyOverage:false, saved};
   }
   const receivedBySku=getReceivedSoFarByAsn(s.id);
   // s.items frequently has MULTIPLE lines for the same SKU — one per
@@ -4027,8 +4027,8 @@ function recomputeShipmentTally(s){
   if(s.closed) s.status='closed';
   s.receivedAt=new Date().toISOString();
   s.receivedSummary=summary;
-  saveExpectedShipmentRow(s);
-  return {status:s.status, summary, anyShortage, anyOverage};
+  const saved=await saveExpectedShipmentRow(s);
+  return {status:s.status, summary, anyShortage, anyOverage, saved};
 }
 // Lets an admin acknowledge a genuine, confirmed discrepancy (short or
 // over vs the ASN) and close the shipment out, so it stops sitting in
@@ -4064,21 +4064,21 @@ async function reopenShipmentOverride(id){
   if(!s || !s.closed) return;
   if(!confirm(`Reopen ${id}? It will go back to showing as outstanding based on its actual tally.`)) return;
   s.closed=false; s.closedBy=null; s.closedAt=null; s.closeReason=null;
-  recomputeShipmentTally(s);
+  await recomputeShipmentTally(s);
   logAudit('REOPEN_SHIPMENT_OVERRIDE','expected_shipments',id,{status:'closed'},{status:s.status});
   renderExpShipmentsBoard();
   populateExpectedSelect();
   toast(`${id} reopened`,'s');
 }
-function reconcileAgainstExpected(asn, receivedItems){
+async function reconcileAgainstExpected(asn, receivedItems){
   const s=expectedShipments.find(x=>x.id.toLowerCase()===(asn||'').toLowerCase());
   if(!s) return null;
   // Pulls the cumulative total from history (which already includes the
   // GRN just created, since createGRN() pushes to history before calling
   // this) rather than only the items passed in from this one batch.
-  return recomputeShipmentTally(s);
+  return await recomputeShipmentTally(s);
 }
-function refreshShipmentTally(id){
+async function refreshShipmentTally(id){
   // The tally shown on this board (s.receivedSummary) is only recomputed
   // when a GRN is created/voided against this ASN, or when the shipment
   // is edited and saved — it is NOT live. That means a logic fix to
@@ -4088,9 +4088,13 @@ function refreshShipmentTally(id){
   // needing to raise/void a GRN or touch the item list.
   const s=expectedShipments.find(x=>x.id===id);
   if(!s){ toast('Shipment not found','w'); return; }
-  recomputeShipmentTally(s);
+  const result=await recomputeShipmentTally(s);
   renderExpShipmentsBoard();
-  toast(`${id} tally refreshed`,'s');
+  if(result.saved){
+    toast(`${id} tally refreshed`,'s');
+  } else {
+    toast(`${id} tally recomputed locally but FAILED to save to the server — it will show the old tally again after a reload. Retry once your connection is back.`,'w');
+  }
 }
 function renderExpShipmentsBoard(){
   const el=document.getElementById('exp-shipments-board');
@@ -4326,7 +4330,7 @@ async function createGRN(){
   const invResult=await saveInv();
   const histResult=await saveHist();
   const grnRecord=history[history.length-1];
-  const recon=asn?reconcileAgainstExpected(asn, counted):null;
+  const recon=asn?await reconcileAgainstExpected(asn, counted):null;
   if(uncounted.length){
     toast(`${uncounted.length} unconfirmed line(s) were left out of GRN ${gid} — they stay outstanding on the ASN for the next batch`,'w');
   }
@@ -4336,11 +4340,13 @@ async function createGRN(){
   ['ib-asn','ib-carrier','ib-vehicle','ib-cartons','ib-notes'].forEach(id_=>document.getElementById(id_).value='');
   renderExpShipmentsBoard();
   populateExpectedSelect();
-  if(!invResult.success || !histResult.success){
+  const tallySaveFailed=recon && recon.saved===false;
+  if(!invResult.success || !histResult.success || tallySaveFailed){
     grnRecord.syncFailed=true;
     try{localStorage.setItem('cl_wms_hist2', JSON.stringify(history));}catch(e){}
     renderIbLog();
-    alert(`WARNING — GRN ${gid} was NOT saved to the server (${invResult.error||histResult.error||'unknown error'}).\n\nIt is saved locally on this device only — it will NOT appear on other devices or in shared inventory until synced. Do NOT re-create this GRN. Once your connection is restored, open the GRN Log and click "Retry Sync" on ${gid}.`);
+    const reason=invResult.error||histResult.error||(tallySaveFailed?'ASN tally failed to save':'unknown error');
+    alert(`WARNING — GRN ${gid} was NOT fully saved to the server (${reason}).\n\nIt is saved locally on this device only — it will NOT appear on other devices, in shared inventory, or in the ASN tally until synced. Do NOT re-create this GRN. Once your connection is restored, open the GRN Log and click "Retry Sync" on ${gid}.`);
     return;
   }
   renderIbLog();
@@ -4364,12 +4370,22 @@ async function retryGRNSync(gid){
   toast(`Retrying sync for ${gid}...`,'w');
   const invResult=await saveInv();
   const histResult=await saveHistRecord(grn);
-  if(invResult.success && histResult.success){
+  // The GRN's own row is only half of it — the ASN's tally (in
+  // expected_shipments) was recomputed from this GRN too and may have
+  // failed to save independently. Retry that as well so a retry actually
+  // clears every trace of the original failure, not just the GRN row.
+  let tallyResult={saved:true};
+  if(grn.asn){
+    const s=expectedShipments.find(x=>x.id.toLowerCase()===grn.asn.toLowerCase());
+    if(s) tallyResult=await recomputeShipmentTally(s);
+  }
+  if(invResult.success && histResult.success && tallyResult.saved){
     delete grn.syncFailed;
     try{localStorage.setItem('cl_wms_hist2', JSON.stringify(history));}catch(e){}
     toast(`${gid} synced successfully`,'s');
+    renderExpShipmentsBoard();
   } else {
-    toast(`Retry failed: ${invResult.error||histResult.error||'unknown error'} — will keep retrying manually until this succeeds`,'w');
+    toast(`Retry failed: ${invResult.error||histResult.error||(!tallyResult.saved?'ASN tally save failed':'unknown error')} — will keep retrying manually until this succeeds`,'w');
   }
   renderIbLog();
 }
@@ -4379,7 +4395,7 @@ function renderIbLog(){
   const canVoid=currentProfile?.role==='admin';
   el.innerHTML=logs.length?logs.map(h=>`<div class="hist-entry"${h.voided?' style="opacity:0.6"':(h.syncFailed?' style="border-color:var(--dt)"':'')}><div class="hist-head"><span class="hist-id">${h.id}</span>${h.voided?'<span class="pill p-out" style="margin-left:6px">VOIDED</span>':''}${h.syncFailed?'<span class="pill p-out" style="margin-left:6px;background:var(--dt);color:#fff">NOT SYNCED</span>':''}<span class="hist-ts">${h.ts}</span><button onclick="printGRN('${h.id}')" style="background:none;border:none;cursor:pointer;color:var(--t2);font-size:11px;padding:4px 8px;border-radius:3px;transition:all 0.2s" onmouseover="this.style.background='var(--s2)';this.style.color='var(--t)'" onmouseout="this.style.background='transparent';this.style.color='var(--t2)'"><i class="ti ti-printer"></i>Print</button>${h.syncFailed?`<button onclick="retryGRNSync('${h.id}')" style="background:var(--dt);border:none;cursor:pointer;color:#fff;font-size:11px;padding:4px 8px;border-radius:3px;font-weight:600"><i class="ti ti-refresh"></i>Retry Sync</button>`:''}${(!h.voided&&canVoid)?`<button onclick="voidGRN('${h.id}')" style="background:none;border:none;cursor:pointer;color:var(--dt);font-size:11px;padding:4px 8px;border-radius:3px;transition:all 0.2s" onmouseover="this.style.background='var(--s2)'" onmouseout="this.style.background='transparent'"><i class="ti ti-rotate-2"></i>Void</button>`:''}</span></div><div class="hist-body">${esc(h.detail)}${h.syncFailed?`<div style="color:var(--dt);font-size:10px;margin-top:2px;font-weight:600"><i class="ti ti-alert-triangle"></i> Saved on this device only — not yet synced to the server. Click "Retry Sync" once your connection is restored.</div>`:''}${h.grnNotes?`<div style="color:var(--t2);font-size:10px;margin-top:2px"><i class="ti ti-note"></i> ${esc(h.grnNotes)}</div>`:''}${h.voided?`<div style="color:var(--dt);font-size:10px;margin-top:2px">Voided by ${esc(h.voidedBy||'—')} on ${esc(h.voidedAt||'')}${h.voidReason?' — '+esc(h.voidReason):''}</div>`:''}</div></div>`).join(''):'<div class="empty">No GRNs created yet</div>';
 }
-function voidGRN(grnId){
+async function voidGRN(grnId){
   if(currentProfile?.role!=='admin'){ toast('Only an admin can void a GRN','w'); return; }
   const grn=history.find(h=>h.id===grnId && h.type==='grn');
   if(!grn){ toast('GRN not found','w'); return; }
@@ -4406,17 +4422,21 @@ function voidGRN(grnId){
   // would silently save nothing for this record. saveHistRecord(grn)
   // upserts this specific record by id instead. Also refresh the local
   // cache directly since saveHist() (which does that) isn't being called.
-  saveHistRecord(grn);
+  const histSaveResult=await saveHistRecord(grn);
   localStorage.setItem('cl_wms_hist2', JSON.stringify(history));
   logAudit('VOID_GRN','history',grnId,{voided:false},{voided:true,reason});
   // If this GRN was tied to an expected shipment, recompute its tally now
   // that this batch's received quantities no longer count.
+  let tallySaveResult={saved:true};
   if(grn.asn){
     const s=expectedShipments.find(x=>x.id.toLowerCase()===grn.asn.toLowerCase());
-    if(s) recomputeShipmentTally(s);
+    if(s) tallySaveResult=await recomputeShipmentTally(s);
   }
   renderIbLog();
   renderInv();
+  if(!histSaveResult.success || !tallySaveResult.saved){
+    alert(`WARNING — the void for ${grnId} only saved locally on this device (${histSaveResult.error||'tally save failed'}). It will NOT be reflected on other devices until this syncs. Retry once your connection is restored.`);
+  }
   updateNotificationBadge();
   renderExpShipmentsBoard();
   populateExpectedSelect();
