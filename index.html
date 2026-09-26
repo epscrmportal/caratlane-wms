@@ -716,7 +716,7 @@ tr:hover td{background:var(--s2)}
       <div class="exception-row"><div class="exc-title">SKU mismatch</div><div class="exc-action">Segregate · do not scan as received SKU → raise mismatch report, await CL instructions</div></div>
       <div class="exception-row"><div class="exc-title">Quantity excess</div><div class="exc-action">Segregate excess · do not process in WMS → await CaratLane confirmation before accepting</div></div>
       <div class="sep"></div>
-      <div class="stitle">GRN log (last 10)</div>
+      <div class="stitle">GRN log</div>
       <div id="ib-log" class="ib-log scroll-section"></div>
     </div>
   </div>
@@ -2785,7 +2785,7 @@ async function initInv(){
 async function saveInv(){
   setSyncStatus('syncing');
   localStorage.setItem('cl_wms_inv2', JSON.stringify(inv)); // always save locally first
-  if(typeof supabase === 'undefined' || !supa){ setSyncStatus('offline'); return; }
+  if(typeof supabase === 'undefined' || !supa){ setSyncStatus('offline'); return {success:false,error:'offline'}; }
   try {
     const now=new Date().toISOString();
     const rows = Object.entries(inv).map(([sku,v]) => ({sku, qty:v.qty||0, rack:v.rack, shelf:v.shelf, locations:Array.isArray(v.locations)?v.locations:null, updated_at:now}));
@@ -2807,10 +2807,12 @@ async function saveInv(){
       created_at:new Date().toISOString()
     };
     await supa.from('inventory_snapshots').upsert(snapRow,{onConflict:'id'}).then(()=>{}).catch(()=>{});
+    return {success:true};
   } catch(e) {
     console.error('saveInv error:', JSON.stringify(e), e?.message, e?.code);
     setSyncStatus('error');
     try{localStorage.setItem('cl_wms_inv2', JSON.stringify(inv));}catch(e2){}
+    return {success:false,error:e?.message||e};
   }
 }
 // Rollback inventory to a previous snapshot
@@ -2941,21 +2943,23 @@ async function saveHistRecord(h){
 async function saveHist(){
   setSyncStatus('syncing');
   localStorage.setItem('cl_wms_hist2', JSON.stringify(history)); // always save locally first
-  if(typeof supabase === 'undefined' || !supa){ setSyncStatus('offline'); return; }
+  if(typeof supabase === 'undefined' || !supa){ setSyncStatus('offline'); return {success:false,error:'offline'}; }
   try {
     // Save last history entry to DB (upsert)
     const h = history[history.length-1];
-    if(!h) { setSyncStatus('ok'); return; }
+    if(!h) { setSyncStatus('ok'); return {success:true}; }
     const row = historyRecordToRow(h);
     // If type=dispatched, update existing record instead of insert
     const {error} = await supa.from('history').upsert(row, {onConflict:'id'});
     if(error) throw error;
     setSyncStatus('ok');
     localStorage.setItem('cl_wms_hist2', JSON.stringify(history)); // local backup
+    return {success:true};
   } catch(e) {
     console.error('saveHist error:', JSON.stringify(e), e?.message, e?.code);
     setSyncStatus('error');
     try{localStorage.setItem('cl_wms_hist2', JSON.stringify(history));}catch(e2){}
+    return {success:false,error:e?.message||e};
   }
 }
 // Per-row upsert/delete — NEVER blanket delete-all-reinsert-all, since that would
@@ -4790,7 +4794,7 @@ function updateIbItemQty(i,val){
   renderIbItemsList();
 }
 function removeIbItem(i){ibItems.splice(i,1);renderIbItemsList();}
-function createGRN(){
+async function createGRN(){
   if(!ibItems.length){toast('Add at least one item to the shipment','w');return;}
   // Only lines the receiver has actually physically confirmed (counted)
   // go into the GRN — a pre-filled expected-shipment line that was never
@@ -4834,17 +4838,35 @@ function createGRN(){
   const hold=counted.filter(i=>i.qc==='HOLD').reduce((a,i)=>a+i.qty,0);
   const rej=counted.filter(i=>i.qc==='REJECT').reduce((a,i)=>a+i.qty,0);
   history.push({id:gid,type:'grn',ts:ts(),detail:`ASN: ${asn||'N/A'} · ${cartons} carton(s) · ${new Set(counted.map(i=>i.sku)).size} SKUs · PASS:${pass} HOLD:${hold} REJ:${rej}`,items:[...counted],asn,carrier,vehicle,cartons,grnNotes:grnNotes||null});
-  saveInv();saveHist();
+  // Both saves MUST be awaited and checked before this GRN is declared a
+  // success or the form is cleared. Previously these were fire-and-forget
+  // calls, so a Supabase write failure (network blip, RLS rule, etc.) was
+  // completely invisible — the toast said "GRN created" and the form reset
+  // regardless, leaving a GRN that only ever existed in this browser's
+  // localStorage. The record stays in `history`/`inv` (and localStorage)
+  // either way; on failure we flag it so the GRN Log surfaces a Retry Sync
+  // action instead of silently losing it.
+  const invResult=await saveInv();
+  const histResult=await saveHist();
+  const grnRecord=history[history.length-1];
   const recon=asn?reconcileAgainstExpected(asn, counted):null;
   if(uncounted.length){
     toast(`${uncounted.length} unconfirmed line(s) were left out of GRN ${gid} — they stay outstanding on the ASN for the next batch`,'w');
   }
-  ibItems=[];ibExpectedRemaining=null;renderIbItemsList();renderIbExpectedReference();renderIbLog();updateNotificationBadge();
+  ibItems=[];ibExpectedRemaining=null;renderIbItemsList();renderIbExpectedReference();updateNotificationBadge();
   document.getElementById('ib-issue').value='';
   document.getElementById('ib-load-expected').value='';
   ['ib-asn','ib-carrier','ib-vehicle','ib-cartons','ib-notes'].forEach(id_=>document.getElementById(id_).value='');
   renderExpShipmentsBoard();
   populateExpectedSelect();
+  if(!invResult.success || !histResult.success){
+    grnRecord.syncFailed=true;
+    try{localStorage.setItem('cl_wms_hist2', JSON.stringify(history));}catch(e){}
+    renderIbLog();
+    alert(`WARNING — GRN ${gid} was NOT saved to the server (${invResult.error||histResult.error||'unknown error'}).\n\nIt is saved locally on this device only — it will NOT appear on other devices or in shared inventory until synced. Do NOT re-create this GRN. Once your connection is restored, open the GRN Log and click "Retry Sync" on ${gid}.`);
+    return;
+  }
+  renderIbLog();
   if(recon){
     const shorts=recon.summary.filter(r=>r.diff<0).map(r=>`${r.sku} short ${Math.abs(r.diff)}`);
     const overs=recon.summary.filter(r=>r.diff>0).map(r=>`${r.sku} over ${r.diff}`);
@@ -4859,11 +4881,26 @@ function createGRN(){
     toast(`GRN ${gid} created · ${pass} units added to inventory (FIFO)`, 's');
   }
 }
+async function retryGRNSync(gid){
+  const grn=history.find(h=>h.id===gid && h.type==='grn');
+  if(!grn){ toast('GRN not found locally','w'); return; }
+  toast(`Retrying sync for ${gid}...`,'w');
+  const invResult=await saveInv();
+  const histResult=await saveHistRecord(grn);
+  if(invResult.success && histResult.success){
+    delete grn.syncFailed;
+    try{localStorage.setItem('cl_wms_hist2', JSON.stringify(history));}catch(e){}
+    toast(`${gid} synced successfully`,'s');
+  } else {
+    toast(`Retry failed: ${invResult.error||histResult.error||'unknown error'} — will keep retrying manually until this succeeds`,'w');
+  }
+  renderIbLog();
+}
 function renderIbLog(){
   const el=document.getElementById('ib-log');
-  const logs=history.filter(h=>h.type==='grn').slice(-10).reverse();
+  const logs=history.filter(h=>h.type==='grn').reverse();
   const canVoid=currentProfile?.role==='admin';
-  el.innerHTML=logs.length?logs.map(h=>`<div class="hist-entry"${h.voided?' style="opacity:0.6"':''}><div class="hist-head"><span class="hist-id">${h.id}</span>${h.voided?'<span class="pill p-out" style="margin-left:6px">VOIDED</span>':''}<span class="hist-ts">${h.ts}</span><button onclick="printGRN('${h.id}')" style="background:none;border:none;cursor:pointer;color:var(--t2);font-size:11px;padding:4px 8px;border-radius:3px;transition:all 0.2s" onmouseover="this.style.background='var(--s2)';this.style.color='var(--t)'" onmouseout="this.style.background='transparent';this.style.color='var(--t2)'"><i class="ti ti-printer"></i>Print</button>${(!h.voided&&canVoid)?`<button onclick="voidGRN('${h.id}')" style="background:none;border:none;cursor:pointer;color:var(--dt);font-size:11px;padding:4px 8px;border-radius:3px;transition:all 0.2s" onmouseover="this.style.background='var(--s2)'" onmouseout="this.style.background='transparent'"><i class="ti ti-rotate-2"></i>Void</button>`:''}</span></div><div class="hist-body">${esc(h.detail)}${h.grnNotes?`<div style="color:var(--t2);font-size:10px;margin-top:2px"><i class="ti ti-note"></i> ${esc(h.grnNotes)}</div>`:''}${h.voided?`<div style="color:var(--dt);font-size:10px;margin-top:2px">Voided by ${esc(h.voidedBy||'—')} on ${esc(h.voidedAt||'')}${h.voidReason?' — '+esc(h.voidReason):''}</div>`:''}</div></div>`).join(''):'<div class="empty">No GRNs created yet</div>';
+  el.innerHTML=logs.length?logs.map(h=>`<div class="hist-entry"${h.voided?' style="opacity:0.6"':(h.syncFailed?' style="border-color:var(--dt)"':'')}><div class="hist-head"><span class="hist-id">${h.id}</span>${h.voided?'<span class="pill p-out" style="margin-left:6px">VOIDED</span>':''}${h.syncFailed?'<span class="pill p-out" style="margin-left:6px;background:var(--dt);color:#fff">NOT SYNCED</span>':''}<span class="hist-ts">${h.ts}</span><button onclick="printGRN('${h.id}')" style="background:none;border:none;cursor:pointer;color:var(--t2);font-size:11px;padding:4px 8px;border-radius:3px;transition:all 0.2s" onmouseover="this.style.background='var(--s2)';this.style.color='var(--t)'" onmouseout="this.style.background='transparent';this.style.color='var(--t2)'"><i class="ti ti-printer"></i>Print</button>${h.syncFailed?`<button onclick="retryGRNSync('${h.id}')" style="background:var(--dt);border:none;cursor:pointer;color:#fff;font-size:11px;padding:4px 8px;border-radius:3px;font-weight:600"><i class="ti ti-refresh"></i>Retry Sync</button>`:''}${(!h.voided&&canVoid)?`<button onclick="voidGRN('${h.id}')" style="background:none;border:none;cursor:pointer;color:var(--dt);font-size:11px;padding:4px 8px;border-radius:3px;transition:all 0.2s" onmouseover="this.style.background='var(--s2)'" onmouseout="this.style.background='transparent'"><i class="ti ti-rotate-2"></i>Void</button>`:''}</span></div><div class="hist-body">${esc(h.detail)}${h.syncFailed?`<div style="color:var(--dt);font-size:10px;margin-top:2px;font-weight:600"><i class="ti ti-alert-triangle"></i> Saved on this device only — not yet synced to the server. Click "Retry Sync" once your connection is restored.</div>`:''}${h.grnNotes?`<div style="color:var(--t2);font-size:10px;margin-top:2px"><i class="ti ti-note"></i> ${esc(h.grnNotes)}</div>`:''}${h.voided?`<div style="color:var(--dt);font-size:10px;margin-top:2px">Voided by ${esc(h.voidedBy||'—')} on ${esc(h.voidedAt||'')}${h.voidReason?' — '+esc(h.voidReason):''}</div>`:''}</div></div>`).join(''):'<div class="empty">No GRNs created yet</div>';
 }
 function voidGRN(grnId){
   if(currentProfile?.role!=='admin'){ toast('Only an admin can void a GRN','w'); return; }
