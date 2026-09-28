@@ -803,7 +803,12 @@ async function saveHistRecord(h){
 }
 async function saveHist(){
   setSyncStatus('syncing');
-  localStorage.setItem('cl_wms_hist2', JSON.stringify(history)); // always save locally first
+  // Guarded: history can grow past the browser's localStorage quota (this
+  // local copy is only ever a fallback cache — Supabase is the real source
+  // of truth whenever online, see loadHist()). A QuotaExceededError here
+  // must NEVER abort the function, or the real cloud save below would
+  // silently never run — which is exactly what happened to GRN AWV00031.
+  try{localStorage.setItem('cl_wms_hist2', JSON.stringify(history));}catch(e){ console.warn('local history cache write skipped (quota):', e?.message||e); }
   if(typeof supabase === 'undefined' || !supa){ setSyncStatus('offline'); return {success:false,error:'offline'}; }
   try {
     // Save last history entry to DB (upsert)
@@ -2811,7 +2816,7 @@ async function voidGRN(grnId){
   // upserts this specific record by id instead. Also refresh the local
   // cache directly since saveHist() (which does that) isn't being called.
   const histSaveResult=await saveHistRecord(grn);
-  localStorage.setItem('cl_wms_hist2', JSON.stringify(history));
+  try{localStorage.setItem('cl_wms_hist2', JSON.stringify(history));}catch(e){ console.warn('local history cache write skipped (quota):', e?.message||e); }
   logAudit('VOID_GRN','history',grnId,{voided:false},{voided:true,reason});
   // If this GRN was tied to an expected shipment, recompute its tally now
   // that this batch's received quantities no longer count.
