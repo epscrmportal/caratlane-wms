@@ -99,6 +99,7 @@ let SKUS=[
 // ═══ CARATLANE STORE MASTER (name, address, pincode, phone) — used for
 // searchable store/address autofill in Create Order & Dispatch ═══
 let STORES=[
+  {code:"CL-ST-TEMP-Sri Ganganagar-Gaushala Road",name:"CL-ST-TEMP-Sri Ganganagar-Gaushala Road",address:"CaratLane store, House No. 50-51, Gaushala Road, N-Block, Sri Ganganagar, Rajasthan 335001",pincode:"335001",phone:"8696520007",addressLine:"CaratLane store, House No. 50-51, Gaushala Road, N-Block, Sri Ganganagar, Rajasthan 335001 | PIN: 335001 | Ph: 8696520007"},
   {code:"CL-ST-TEMP-L3-Bikaner-Brahma Kumari Circle",name:"CL-ST-TEMP-L3-Bikaner-Brahma Kumari Circle",address:"CaratLane store, T/E-1A, Ground Floor, Sadul Ganj, Opp. Shubham Garden, Brahma Kumari Circle, Bikaner - 334003",pincode:"334003",phone:"9530217500",addressLine:"CaratLane store, T/E-1A, Ground Floor, Sadul Ganj, Opp. Shubham Garden, Brahma Kumari Circle, Bikaner - 334003 | PIN: 334003 | Ph: 9530217500"},
   {code:"CLHYDJBH",name:"CL-ST-HYD-Jubilee Hills",address:"Unit No. 2, Plot No. 8-2-293/82/A/1124, Road No.36, Jubilee Hills, Hyderabad",pincode:"",phone:"7397730888",addressLine:"Unit No. 2, Plot No. 8-2-293/82/A/1124, Road No.36, Jubilee Hills, Hyderabad | Ph: 7397730888"},
   {code:"CLBLRPMM",name:"CL-ST-BNG-Phoenix Mall",address:"Unit No. G-47, G-48, Lower Ground Floor, Phoenix Markety City, Bengaluru East, Mahadevpura, Near Krishnarajapuram Flyover, Bengaluru - 560048",pincode:"560048",phone:"8105214444",addressLine:"Unit No. G-47, G-48, Lower Ground Floor, Phoenix Markety City, Bengaluru East, Mahadevpura, Near Krishnarajapuram Flyover, Bengaluru - 560048 | PIN: 560048 | Ph: 8105214444"},
@@ -678,7 +679,7 @@ async function saveInv(){
 }
 // Rollback inventory to a previous snapshot
 async function rollbackInventory(snapId){
-  if(!confirm('Are you sure you want to rollback inventory to snapshot '+snapId+'? This cannot be undone.')) return;
+  if(!(await uxConfirm('Inventory will be rolled back to snapshot '+snapId+'. This cannot be undone.',{title:'Roll back inventory?',confirmText:'Roll back',danger:true}))) return;
   try {
     const {data,error}=await supa.from('inventory_snapshots').select('*').eq('id',snapId).single();
     if(error||!data) throw new Error('Snapshot not found');
@@ -2430,7 +2431,7 @@ async function closeShipmentOverride(id){
   if(!s){ toast('Shipment not found','w'); return; }
   if(s.status==='received'){ toast('This shipment already matched in full — nothing to override','w'); return; }
   if(s.status==='closed'){ toast('Already closed','w'); return; }
-  const reason=prompt(`Close ${id} despite the discrepancy?\n\nThis stops it appearing as outstanding. Enter the reason (e.g. "Confirmed 3-unit shortage, claim raised with CaratLane DC ref #...").`);
+  const reason=await uxPrompt('This stops it appearing as outstanding. Enter the reason (e.g. "Confirmed 3-unit shortage, claim raised with CaratLane DC ref #...").',{title:`Close ${id} despite the discrepancy?`,confirmText:'Close shipment',required:true,multiline:true,placeholder:'Reason for closing'});
   if(!reason || !reason.trim()){ toast('A reason is required to close with a discrepancy','w'); return; }
   const priorStatus=s.status;
   s.closed=true;
@@ -2451,7 +2452,7 @@ async function reopenShipmentOverride(id){
   if(currentProfile?.role!=='admin'){ toast('Only an admin can reopen a closed shipment','w'); return; }
   const s=expectedShipments.find(x=>x.id===id);
   if(!s || !s.closed) return;
-  if(!confirm(`Reopen ${id}? It will go back to showing as outstanding based on its actual tally.`)) return;
+  if(!(await uxConfirm('It will go back to showing as outstanding based on its actual tally.',{title:`Reopen ${id}?`,confirmText:'Reopen'}))) return;
   s.closed=false; s.closedBy=null; s.closedAt=null; s.closeReason=null;
   await recomputeShipmentTally(s);
   logAudit('REOPEN_SHIPMENT_OVERRIDE','expected_shipments',id,{status:'closed'},{status:s.status});
@@ -2586,7 +2587,7 @@ function printTallySheet(asnId){
   printWindow.focus();
   setTimeout(()=>printWindow.print(),300);
 }
-function addIbItem(){
+async function addIbItem(){
   const sku=document.getElementById('ib-sku').value;
   const qc=document.getElementById('ib-qc').value;
   const issue=document.getElementById('ib-issue').value;
@@ -2614,7 +2615,7 @@ function addIbItem(){
   if(expId){
     const expShip=expectedShipments.find(x=>x.id===expId);
     if(expShip && !expShip.items.some(it=>it.sku===sku)){
-      if(!confirm(`${sku} is not part of expected shipment ${expId}. Add it anyway?`)) return;
+      if(!(await uxConfirm(`${sku} is not part of expected shipment ${expId}.`,{title:'Not on this shipment',confirmText:'Add anyway',danger:true}))) return;
     }
   }
   // If this SKU is already in the list at the same bin with the same QC
@@ -2640,7 +2641,7 @@ function addIbItem(){
     return;
   }
   const alreadyCounted=ibItems.filter(it=>it.sku===sku && it.qc===qc && it.bin===bin && it.counted);
-  if(alreadyCounted.length && !confirm(`${sku} at ${bin} already has ${alreadyCounted.length} counted carton(s) on this GRN (qty so far: ${alreadyCounted.reduce((a,i)=>a+i.qty,0)}). Add this as another carton (+${qty})?`)) return;
+  if(alreadyCounted.length && !(await uxConfirm(`${sku} at ${bin} already has ${alreadyCounted.length} counted carton(s) on this GRN (qty so far: ${alreadyCounted.reduce((a,i)=>a+i.qty,0)}).`,{title:`Add another carton (+${qty})?`,confirmText:'Add carton'}))) return;
   ibItems.push({sku,name:s.sub,variant:s.variant,qc,issue,qty,bin,binOverridden:!!binOverride,counted:true});
   renderIbItemsList();
   document.getElementById('ib-bin-override').value='';
@@ -2651,11 +2652,11 @@ function renderIbItemsList(){
   const uncounted=ibItems.filter(it=>!it.counted).length;
   el.innerHTML=ibItems.length?`${uncounted?`<div style="background:var(--hold-bg,#3a2e10);color:var(--hold,#e0a020);border:0.5px solid var(--hold,#e0a020);border-radius:6px;padding:6px 10px;font-size:11px;margin-bottom:6px"><i class="ti ti-alert-triangle"></i> ${uncounted} line(s) below still show the pre-filled EXPECTED quantity and haven't been physically confirmed — edit the Qty to what you actually counted. Unconfirmed lines will NOT be included when you create the GRN (they stay outstanding).</div>`:''}<div class="tw"><table><thead><tr><th>SKU</th><th>Item</th><th>BIN</th><th>QC</th><th>Issue</th><th>Qty</th><th>Status</th><th></th></tr></thead><tbody>${ibItems.map((item,i)=>`<tr><td class="mono">${item.sku}</td><td style="font-size:11px">${item.name}</td><td style="font-weight:600;color:var(--gold)">${item.bin}${item.binOverridden?' ⚠':'(auto)'}</td><td><span class="pill ${item.qc==='PASS'?'p-pass':item.qc==='HOLD'?'p-hold':'p-out'}">${item.qc}</span></td><td style="font-size:10px;color:var(--t2)">${item.issue||'—'}</td><td><input type="number" min="0" max="9999" value="${item.qty}" style="width:60px;padding:3px 5px;font-size:11px" onchange="updateIbItemQty(${i},this.value)"></td><td>${item.counted?'<span class="pill p-pass"><i class="ti ti-check"></i> Counted</span>':'<span class="pill p-hold">Not yet counted</span>'}</td><td><button class="btn-sm btn-danger" onclick="removeIbItem(${i})"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table></div>`:'';
 }
-function updateIbItemQty(i,val){
+async function updateIbItemQty(i,val){
   const qty=parseInt(val)||0;
   if(!ibItems[i]) return;
   if(qty<=0){
-    if(confirm(`Remove ${ibItems[i].sku} at ${ibItems[i].bin} from this GRN (qty 0 = not received)?`)){ ibItems.splice(i,1); renderIbItemsList(); }
+    if(await uxConfirm(`Quantity 0 means not received.`,{title:`Remove ${ibItems[i].sku} at ${ibItems[i].bin} from this GRN?`,confirmText:'Remove',danger:true})){ ibItems.splice(i,1); renderIbItemsList(); }
     else renderIbItemsList();
     return;
   }
@@ -2735,7 +2736,7 @@ async function createGRN(){
     try{localStorage.setItem('cl_wms_hist2', JSON.stringify(history));}catch(e){}
     renderIbLog();
     const reason=invResult.error||histResult.error||(tallySaveFailed?'ASN tally failed to save':'unknown error');
-    alert(`WARNING — GRN ${gid} was NOT fully saved to the server (${reason}).\n\nIt is saved locally on this device only — it will NOT appear on other devices, in shared inventory, or in the ASN tally until synced. Do NOT re-create this GRN. Once your connection is restored, open the GRN Log and click "Retry Sync" on ${gid}.`);
+    uxPersistentAlert(`WARNING — GRN ${gid} was NOT fully saved to the server (${reason}).\n\nIt is saved locally on this device only — it will NOT appear on other devices, in shared inventory, or in the ASN tally until synced. Do NOT re-create this GRN. Once your connection is restored, open the GRN Log and click "Retry Sync" on ${gid}.`);
     return;
   }
   renderIbLog();
@@ -2789,8 +2790,9 @@ async function voidGRN(grnId){
   const grn=history.find(h=>h.id===grnId && h.type==='grn');
   if(!grn){ toast('GRN not found','w'); return; }
   if(grn.voided){ toast('This GRN has already been voided','w'); return; }
-  if(!confirm(`Void ${grnId}? This reverses the ${grn.items?.filter(i=>i.qc==='PASS').reduce((a,i)=>a+i.qty,0)||0} unit(s) it added to inventory. This cannot be undone — create a fresh GRN afterward with the correct figures.`)) return;
-  const reason=prompt('Reason for voiding this GRN (optional, shown in the log):','')||'';
+  const _voidDlg=await uxDialog({title:`Void ${grnId}?`,danger:true,confirmText:'Void GRN',message:`This reverses the ${grn.items?.filter(i=>i.qc==='PASS').reduce((a,i)=>a+i.qty,0)||0} unit(s) it added to inventory. This cannot be undone — create a fresh GRN afterward with the correct figures.`,input:{placeholder:'Reason for voiding (optional, shown in the log)'}});
+  if(!_voidDlg.ok) return;
+  const reason=_voidDlg.value||'';
   // Reverse exactly what this GRN added — only PASS-qc items ever touched
   // inventory (see createGRN). Each item's `bin` records exactly which
   // shelf THAT batch went to, so reverse it from that specific location
@@ -2828,7 +2830,7 @@ async function voidGRN(grnId){
   renderIbLog();
   renderInv();
   if(!histSaveResult.success || !tallySaveResult.saved){
-    alert(`WARNING — the void for ${grnId} only saved locally on this device (${histSaveResult.error||'tally save failed'}). It will NOT be reflected on other devices until this syncs. Retry once your connection is restored.`);
+    uxPersistentAlert(`WARNING — the void for ${grnId} only saved locally on this device (${histSaveResult.error||'tally save failed'}). It will NOT be reflected on other devices until this syncs. Retry once your connection is restored.`);
   }
   updateNotificationBadge();
   renderExpShipmentsBoard();
@@ -3194,6 +3196,22 @@ function printDispatch(dispatchId){
 
 // ORDERS (intake & assignment — created by admin/supervisor, then assigned to a picker)
 let orders=[];
+// Shoes come in gendered SKUs (UNI-SH-M-x / UNI-SH-F-x) that each have a
+// Unisex twin at the same size (UNI-SH-U-x). If the gendered size is
+// completely out of stock when an item is added to an order — manual
+// order form or CSV import — automatically fall back to the Unisex SKU
+// of that size instead of leaving the line unfulfillable. Mirrors what
+// was done by hand for order 12145 (Sep 2026). Only swaps on a true
+// zero — a gendered SKU with any stock at all is left alone.
+function resolveOrderItemSku(skuCode){
+  const m=/^UNI-SH-(M|F)-(\d+)$/.exec(skuCode||'');
+  if(!m) return skuCode;
+  const avail=(inv[skuCode]||{qty:0}).qty;
+  if(avail>0) return skuCode;
+  const uniSku='UNI-SH-U-'+m[2];
+  if(SKUS.some(s=>s.sku===uniSku) && ((inv[uniSku]||{qty:0}).qty>0)) return uniSku;
+  return skuCode;
+}
 let ordItemsList=[];
 let pickerNames=[];
 
@@ -3271,11 +3289,13 @@ function cancelEditOrder(){
   if(cancelBtn) cancelBtn.style.display='none';
 }
 function addOrderItem(){
-  const sku=document.getElementById('ord-sku').value;
+  const skuInput=document.getElementById('ord-sku').value;
   const qty=parseInt(document.getElementById('ord-qty').value)||1;
+  const sku=resolveOrderItemSku(skuInput);
   const s=SKUS.find(x=>x.sku===sku);
   if(!s) return;
   if(!validateQty(qty)){toast('Invalid quantity','w');return;}
+  if(sku!==skuInput) toast(`${skuInput} is out of stock — substituted ${sku} (Unisex, same size)`,'w');
   const existing=ordItemsList.find(it=>it.sku===sku);
   if(existing){ existing.qty+=qty; } else {
     ordItemsList.push({sku,name:s.sub,variant:s.variant,qty,bin:`${liveLoc(s.sku).rack}-${liveLoc(s.sku).shelf}`});
@@ -3413,12 +3433,18 @@ function processOrdersCSV(text){
     if(!oid) oid=lastId; else lastId=oid;
     if(!oid){ errors.push(`Row ${r+1}: missing order_id`); continue; }
     if(!validateOrderId(oid)){ errors.push(`Row ${r+1}: invalid order_id "${oid}"`); continue; }
-    const skuCode=(idxSku>-1?(row[idxSku]||''):'').trim();
+    const skuRaw=(idxSku>-1?(row[idxSku]||''):'').trim();
     const qtyRaw=idxQty>-1?(row[idxQty]||''):'';
     const qty=parseInt(qtyRaw)||0;
+    // Resolve out-of-stock gendered shoe SKUs to their Unisex twin
+    // before the "unknown SKU" check — only once we know skuRaw itself
+    // is a real catalog SKU, so a genuinely bad/typo'd code still
+    // reports against what the user actually typed.
+    const skuCode=SKUS.some(s=>s.sku===skuRaw)?resolveOrderItemSku(skuRaw):skuRaw;
     const skuObj=SKUS.find(s=>s.sku===skuCode);
-    if(!skuObj){ errors.push(`Row ${r+1}: unknown SKU "${skuCode}"`); continue; }
+    if(!skuObj){ errors.push(`Row ${r+1}: unknown SKU "${skuRaw}"`); continue; }
     if(!validateQty(qty)){ errors.push(`Row ${r+1}: invalid qty "${qtyRaw}"`); continue; }
+    if(skuCode!==skuRaw){ errors.push(`Row ${r+1}: ${skuRaw} was out of stock — substituted ${skuCode} (Unisex, same size)`); }
     if(!grouped[oid]){
       if(orders.some(x=>x.id===oid)){ errors.push(`Order ${oid}: an order with this ID already exists — skipped`); grouped[oid]={skip:true,items:[]}; }
       else {
@@ -3532,7 +3558,7 @@ function renderOrdersBoard(){
 async function cancelOrder(orderId){
   const o=orders.find(x=>x.id===orderId);
   if(!o) return;
-  if(!confirm(`Cancel order ${orderId}? This can't be undone.`)) return;
+  if(!(await uxConfirm("This can't be undone.",{title:`Cancel order ${orderId}?`,confirmText:'Cancel order',cancelText:'Keep order',danger:true}))) return;
   o.status='cancelled';
   const ok=await saveOrderRow(o);
   if(!ok) return;
@@ -3623,7 +3649,7 @@ function startDesktopPick(orderId){
   renderPkItemsList();
 }
 async function cancelActivePick(){
-  if(pkItemsList.length && !confirm('Discard this pick? Everything reserved will be released back to stock.')) return;
+  if(pkItemsList.length && !(await uxConfirm('Everything reserved will be released back to stock.',{title:'Discard this pick?',confirmText:'Discard pick',cancelText:'Keep picking',danger:true}))) return;
   if(pkSessionId) await releasePickSession(pkSessionId);
   pkItemsList=[]; pkSessionId=null; activeOrder=null;
   pkPickStartTime=null; pkPickStartTs=null;
@@ -3789,6 +3815,7 @@ async function releaseToPacking(){
     return;
   }
   if(!rateLimit('release-packing',2000)){toast('Please wait before submitting again','w');return;}
+  { const _dup=history.find(h=>h.type==='pick'&&h.orderId===activeOrder.id&&!h.voided); if(_dup && !(await uxConfirm(`${activeOrder.id} already has a completed pick${_dup.picker?' by '+_dup.picker:''} (${_dup.ts}). Releasing it again creates a duplicate pick record.`,{title:'Already picked',confirmText:'Release again',cancelText:'Go back',danger:true}))) return; }
   const oid=activeOrder.id;
   const pri=activeOrder.priority;
   const method=activeOrder.method;
@@ -4051,6 +4078,7 @@ async function confirmPackWithDetails(){
   const packMaterials=Array.from(document.querySelectorAll('.pm-material-cb:checked')).map(cb=>cb.value);
   if(!packMaterials.length){toast('Select at least one packaging material used','w');return;}
   if(!rateLimit('pack',2000)){toast('Please wait before submitting again','w');return;}
+  { const _dup=history.find(h=>h.type==='packed'&&h.orderId===t.orderId&&!h.voided); if(_dup && !(await uxConfirm(`${t.orderId} was already packed${_dup.packer?' by '+_dup.packer:''} (${_dup.ts}). Packing it again creates a duplicate packed record.`,{title:'Already packed',confirmText:'Pack again',cancelText:'Go back',danger:true}))) return; }
   const vol=parseFloat(((L*W*H)/5000).toFixed(2));
   const chargeable=Math.max(actual,vol);
   const endTime=Date.now();
@@ -5837,8 +5865,8 @@ function initMobileTab(){
   if(quickPick) quickPick.style.display=perms.canPick?'flex':'none';
   if(quickPack) quickPack.style.display=perms.canPack?'flex':'none';
   let defaultView='home';
-  if(perms.canPick && !perms.canPack) defaultView='pick';
-  else if(perms.canPack && !perms.canPick) defaultView='pack';
+  if(currentProfile?.role==='picker' || (perms.canPick && !perms.canPack)) defaultView='pick';
+  else if(currentProfile?.role==='packer' || (perms.canPack && !perms.canPick)) defaultView='pack';
   switchMobileView(defaultView);
 }
 
@@ -5904,6 +5932,7 @@ function startMobilePick(orderId){
 
 function mobileScanFeedback(ok){
   try{ if(navigator.vibrate) navigator.vibrate(ok?40:[30,60,30]); }catch(e){}
+  try{ document.querySelectorAll('.scan-target').forEach(el=>{ if(!el.offsetParent) return; el.classList.remove('flash-ok','flash-err'); void el.offsetWidth; el.classList.add(ok?'flash-ok':'flash-err'); clearTimeout(el._ft); el._ft=setTimeout(()=>el.classList.remove('flash-ok','flash-err'),900); }); }catch(e){}
   try{
     const ctx=new (window.AudioContext||window.webkitAudioContext)();
     const o=ctx.createOscillator(), g=ctx.createGain();
@@ -6034,19 +6063,35 @@ async function adjustMobilePickQty(sku,delta){
 function renderMpPickChecklist(){
   const el=document.getElementById('mp-pick-checklist');
   if(!el||!mobilePickSession) return;
-  el.innerHTML=`<div style="display:grid;gap:6px">${mobilePickSession.order.items.map(exp=>{
+  const rows=mobilePickSession.order.items.map(exp=>{
     const pq=mobilePickSession.items.filter(p=>p.sku===exp.sku).reduce((a,p)=>a+p.qty,0);
-    const done=pq>=exp.qty;
     const locs=getSkuLocations(exp.sku);
-    const locText=locs.length?locs.map(l=>fmtLoc(`${l.rack}-${l.shelf}`)).join(' or '):fmtLoc(exp.bin);
-    return `<div style="display:flex;justify-content:space-between;align-items:center;background:var(--s2);padding:8px 10px;border-radius:6px;${done?'opacity:0.6':''}">
+    return {exp,pq,done:pq>=exp.qty,locs,locText:locs.length?locs.map(l=>fmtLoc(`${l.rack}-${l.shelf}`)).join(' or '):fmtLoc(exp.bin)};
+  });
+  el.innerHTML=`<div style="display:grid;gap:6px">${rows.map(r=>{
+    return `<div style="display:flex;justify-content:space-between;align-items:center;background:var(--s2);padding:10px 12px;border-radius:8px;${r.done?'opacity:0.6':''}">
       <div>
-        <div style="font-size:11px;font-weight:700">${exp.sku} — ${esc(exp.name)}</div>
-        <div style="font-size:11px;font-weight:700;color:var(--gold);margin-top:2px"><i class="ti ti-map-pin"></i> ${locText}</div>
+        <div style="font-size:12px;font-weight:700">${r.exp.sku} — ${esc(r.exp.name)}</div>
+        <div style="font-size:12px;font-weight:700;color:var(--gold-d);margin-top:2px"><i class="ti ti-map-pin"></i> ${r.locText}</div>
       </div>
-      <div style="font-size:11px;font-weight:700;${done?'color:var(--st)':''}">${pq}/${exp.qty}${done?' <i class="ti ti-check"></i>':''}</div>
+      <div style="font-size:14px;font-weight:800;${r.done?'color:var(--st)':''}">${r.pq}/${r.exp.qty}${r.done?' <i class="ti ti-check"></i>':''}</div>
     </div>`;
   }).join('')}</div>`;
+  const totalQty=rows.reduce((a,r)=>a+r.exp.qty,0);
+  const doneQty=rows.reduce((a,r)=>a+Math.min(r.pq,r.exp.qty),0);
+  const pct=totalQty?Math.round(doneQty/totalQty*100):0;
+  const prog=document.getElementById('mp-progress');
+  if(prog) prog.innerHTML=`<div class="mp-progress-label"><span>${doneQty} of ${totalQty} items picked</span><span>${pct}%</span></div><div class="mp-progress"><div style="width:${pct}%"></div></div>`;
+  const hero=document.getElementById('mp-next-item');
+  if(hero){
+    const nx=rows.find(r=>!r.done);
+    if(nx){
+      const l=nx.locs.length?`${nx.locs[0].rack}-${nx.locs[0].shelf}`:String(nx.exp.bin||'—');
+      hero.innerHTML=`<div class="mp-next"><div class="mp-next-bin"><small>GO TO</small><b>${l}</b></div><div class="mp-next-info"><div class="mp-next-sku">${esc(nx.exp.sku)}</div><div class="mp-next-name">${esc(nx.exp.name)}${nx.exp.variant?' — '+esc(nx.exp.variant):''}</div><div class="mp-next-qty">Pick ${nx.exp.qty-nx.pq} more <span>(${nx.pq}/${nx.exp.qty})</span></div></div></div>`;
+    } else {
+      hero.innerHTML=`<div class="mp-next done"><i class="ti ti-circle-check"></i><div>All items picked — tap <b>Complete pick</b></div></div>`;
+    }
+  }
 }
 function renderMobilePickSession(){
   const el=document.getElementById('mp-pick-list');
@@ -6070,7 +6115,7 @@ function renderMobilePickSession(){
 
 async function cancelMobilePick(){
   if(!mobilePickSession) return;
-  if(mobilePickSession.items.length && !confirm('Discard this pick? Everything reserved will be released back to stock.')) return;
+  if(mobilePickSession.items.length && !(await uxConfirm('Everything reserved will be released back to stock.',{title:'Discard this pick?',confirmText:'Discard pick',cancelText:'Keep picking',danger:true}))) return;
   await releasePickSession(mobilePickSession.sessionId);
   mobilePickSession=null;
   disableBarcodeScanner();
@@ -6091,6 +6136,7 @@ async function completeMobilePick(){
     return;
   }
   if(!rateLimit('mobile-pick',2000)){ toast('Please wait before submitting again','w'); return; }
+  { const _dup=history.find(h=>h.type==='pick'&&h.orderId===mobilePickSession.orderId&&!h.voided); if(_dup && !(await uxConfirm(`${mobilePickSession.orderId} already has a completed pick${_dup.picker?' by '+_dup.picker:''} (${_dup.ts}). Completing it again creates a duplicate pick record.`,{title:'Already picked',confirmText:'Pick again',cancelText:'Go back',danger:true}))) return; }
   const result=await commitPickSession(mobilePickSession.sessionId);
   if(!result.success){ toast('Could not complete pick — connection issue, try again','w'); return; }
   const tid=newId('PCK');
@@ -6348,6 +6394,7 @@ async function completeMobilePack(){
   const packMaterials=Array.from(document.querySelectorAll('.mp-material-cb:checked')).map(cb=>cb.value);
   if(!packMaterials.length){toast('Select at least one packaging material used','w');return;}
   if(!rateLimit('mobile-pack',2000)){toast('Please wait before submitting again','w');return;}
+  { const _dup=history.find(h=>h.type==='packed'&&h.orderId===t.orderId&&!h.voided); if(_dup && !(await uxConfirm(`${t.orderId} was already packed${_dup.packer?' by '+_dup.packer:''} (${_dup.ts}). Packing it again creates a duplicate packed record.`,{title:'Already packed',confirmText:'Pack again',cancelText:'Go back',danger:true}))) return; }
   const vol=parseFloat(((L*W*H)/5000).toFixed(2));
   const chargeable=Math.max(actual,vol);
   const endTime=Date.now();
@@ -7429,7 +7476,7 @@ function renderInv(){
     const binCell=_binEditingSku===s.sku
       ?`<div style="display:flex;flex-direction:column;gap:3px">${(_binEditRows||[]).map((row,i)=>`<div style="display:flex;gap:4px;align-items:center"><select id="bin-edit-rack-${s.sku}-${i}" style="font-size:11px;padding:2px 4px;width:52px">${RACK_LETTERS.map(r=>`<option value="${r}" ${r===row.rack?'selected':''}>${r}</option>`).join('')}</select><select id="bin-edit-shelf-${s.sku}-${i}" style="font-size:11px;padding:2px 4px;width:44px">${Array.from({length:SHELVES_PER_RACK},(_,n)=>n+1).map(n=>`<option value="${n}" ${String(n)===String(row.shelf)?'selected':''}>${n}</option>`).join('')}</select><input type="number" id="bin-edit-qty-${s.sku}-${i}" value="${row.qty}" min="0" style="font-size:11px;padding:2px 4px;width:52px" title="Qty on this shelf">${(_binEditRows.length>1)?`<button class="btn-sm btn-danger" style="padding:2px 5px" onclick="removeBinEditRow('${s.sku}',${i})" title="Remove this location"><i class="ti ti-x" style="font-size:10px"></i></button>`:''}</div>`).join('')}
       <div style="display:flex;gap:4px;margin-top:2px"><button class="btn-sm" style="padding:2px 6px" onclick="addBinEditRow('${s.sku}')" title="Split onto another shelf"><i class="ti ti-plus" style="font-size:11px"></i> Shelf</button><button class="btn-sm" style="padding:2px 6px" onclick="saveEditBin('${s.sku}')" title="Save"><i class="ti ti-check"></i></button><button class="btn-sm btn-danger" style="padding:2px 6px" onclick="cancelEditBin()" title="Cancel"><i class="ti ti-x"></i></button></div></div>`
-      :`<span style="font-size:11px;font-weight:500">${skuLocs.length?skuLocs.map(l=>`${l.rack}-${l.shelf} (${l.qty})`).join(', '):`${i2.rack}-${i2.shelf}`}</span>${canEditBin?` <button class="btn-sm" style="padding:1px 5px;margin-left:4px" onclick="startEditBin('${s.sku}')" title="Edit bin location(s)"><i class="ti ti-edit" style="font-size:11px"></i></button>`:''}`;
+      :`<span style="font-size:11px;font-weight:500">${skuLocs.length?skuLocs.map(l=>`${l.rack}-${l.shelf} (${l.qty})`).join(', '):'<span style="color:var(--t3);font-style:italic">Unassigned</span>'}</span>${canEditBin?` <button class="btn-sm" style="padding:1px 5px;margin-left:4px" onclick="startEditBin('${s.sku}')" title="Edit bin location(s)"><i class="ti ti-edit" style="font-size:11px"></i></button>`:''}`;
     const priceCell=_priceEditingSku===s.sku
       ?`<div style="display:flex;gap:4px;align-items:center"><input type="number" id="price-edit-${s.sku}" value="${s.price!=null?s.price:''}" min="0" step="0.01" style="font-size:11px;padding:2px 4px;width:70px"><button class="btn-sm" style="padding:2px 6px" onclick="saveEditPrice('${s.sku}')" title="Save"><i class="ti ti-check"></i></button><button class="btn-sm btn-danger" style="padding:2px 6px" onclick="cancelEditPrice()" title="Cancel"><i class="ti ti-x"></i></button></div>`
       :`<span style="font-size:11px;font-weight:500">${s.price!=null?'₹'+s.price:'—'}</span>${canEditBin?` <button class="btn-sm" style="padding:1px 5px;margin-left:4px" onclick="startEditPrice('${s.sku}')" title="Edit unit price"><i class="ti ti-edit" style="font-size:11px"></i></button>`:''}`;
@@ -7547,7 +7594,13 @@ async function saveEditPrice(sku){
 function quickDisp(sku,name,variant,avail){addToCart(sku,name,variant,avail);nav('dispatch');}
 function exportCSV(){
   const rows=[['SKU','Category','Item','Variant','Rack','Shelf','Qty','Status']];
-  SKUS.forEach(s=>{const i2=inv[s.sku]||{qty:0,rack:s.rack,shelf:s.shelf};rows.push([s.sku,s.cat,s.sub,s.variant,i2.rack,i2.shelf,i2.qty,getSt(i2.qty)]);});
+  SKUS.forEach(s=>{
+    const i2=inv[s.sku]||{qty:0};
+    const locs=getSkuLocations(s.sku);
+    const rack=locs.length?locs[0].rack:'Unassigned';
+    const shelf=locs.length?locs[0].shelf:'';
+    rows.push([s.sku,s.cat,s.sub,s.variant,rack,shelf,i2.qty,getSt(i2.qty)]);
+  });
   const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n'));a.download='CaratLane_Inventory_'+new Date().toISOString().slice(0,10)+'.csv';a.click();
   toast('CSV exported successfully','s');
 }
@@ -7902,7 +7955,7 @@ async function confirmAssignBin(){
   if(!sku){ toast('Pick a product first','w'); return; }
   const {rack,shelf}=_assignBinTarget;
   const qty=(inv[sku]||{qty:0}).qty;
-  if(qty>0 && !confirm(`${sku} currently has ${qty} unit(s) stocked elsewhere. Set ${rack}${shelf} as its home bin anyway?`)) return;
+  if(qty>0 && !(await uxConfirm(`${sku} currently has ${qty} unit(s) stocked elsewhere.`,{title:`Set ${rack}${shelf} as its home bin anyway?`,confirmText:'Set home bin'}))) return;
   if(!inv[sku]) inv[sku]={qty:0,locations:[]};
   // This only sets the default/home location — it deliberately does NOT
   // touch qty or the locations array, since the bin has no stock. If the
@@ -9962,8 +10015,9 @@ async function onAuthSuccess(){
   // Boot WMS
   await bootWMS();
   // Land the user on a tab they actually have access to
-  if(currentProfile.role==='picker') nav('picking');
-  else if(currentProfile.role==='packer') nav('packing');
+  const _handheld=window.matchMedia('(max-width:900px),(pointer:coarse)').matches;
+  if(currentProfile.role==='picker') nav(_handheld?'mobile':'picking');
+  else if(currentProfile.role==='packer') nav(_handheld?'mobile':'packing');
   await logAudit('LOGIN','session',currentUser.id,null,{email:currentProfile.email,role:currentProfile.role});
 }
 
@@ -9984,6 +10038,7 @@ function applyTabVisibility(){
   // means "no restriction," which is only correct for roles that
   // explicitly opt into it (admin, viewer), never as a fallback.
   const allowed=ROLE_TABS.hasOwnProperty(role)?ROLE_TABS[role]:['dashboard'];
+  document.body.classList.toggle('role-floor',role==='picker'||role==='packer');
   document.querySelectorAll('.ntab').forEach(t=>{
     const tab=t.dataset.tab;
     if(tab==='users') return; // handled separately by canManageUsers
@@ -11034,3 +11089,245 @@ if(_trackToken){
 } else {
   initAuth();
 }
+
+/* ═══ UX LAYER (added 2026-09-30) ═══
+   Dialogs, persistent save-failure banner, in-flight submit guards,
+   stacked mobile tables, keyboard/ARIA pass, collapsible nav groups,
+   dashboard attention strip. Presentation-only — no data logic. */
+(function(){
+  'use strict';
+  const $=(s,r)=>(r||document).querySelector(s);
+  const $$=(s,r)=>Array.from((r||document).querySelectorAll(s));
+  const store={
+    get(k){try{return localStorage.getItem(k);}catch(e){return null;}},
+    set(k,v){try{localStorage.setItem(k,v);}catch(e){}}
+  };
+
+  // ── Modal dialog: replaces confirm()/prompt(). Resolves {ok,value}. ──
+  function uxDialog(o){
+    o=o||{};
+    return new Promise(function(resolve){
+      const prev=document.activeElement;
+      const ov=document.createElement('div'); ov.className='ux-overlay';
+      const box=document.createElement('div'); box.className='ux-dialog'+(o.danger?' danger':'');
+      box.setAttribute('role','dialog'); box.setAttribute('aria-modal','true');
+      const tid='ux-dlg-'+Math.random().toString(36).slice(2,8);
+      box.setAttribute('aria-labelledby',tid);
+      const head=document.createElement('div'); head.className='ux-dlg-head';
+      const ic=document.createElement('div'); ic.className='ux-dlg-icon';
+      ic.innerHTML='<i class="ti '+(o.danger?'ti-alert-triangle':'ti-help-circle')+'"></i>';
+      const tt=document.createElement('div'); tt.className='ux-dlg-title'; tt.id=tid;
+      tt.textContent=o.title||(o.danger?'Please confirm':'Confirm');
+      head.appendChild(ic); head.appendChild(tt);
+      const msg=document.createElement('div'); msg.className='ux-dlg-msg'; msg.textContent=o.message||'';
+      box.appendChild(head); box.appendChild(msg);
+      let inp=null;
+      if(o.input){
+        inp=document.createElement(o.input.multiline?'textarea':'input');
+        if(!o.input.multiline) inp.type='text'; else inp.rows=3;
+        inp.className='ux-dlg-input';
+        inp.placeholder=o.input.placeholder||'';
+        inp.value=o.input.value||'';
+        inp.setAttribute('aria-label',o.input.placeholder||o.title||'Input');
+        box.appendChild(inp);
+      }
+      const row=document.createElement('div'); row.className='ux-dlg-actions';
+      const bc=document.createElement('button'); bc.type='button'; bc.textContent=o.cancelText||'Cancel';
+      const bo=document.createElement('button'); bo.type='button';
+      bo.className=o.danger?'btn-danger-solid':'btn-primary'; bo.textContent=o.confirmText||'Confirm';
+      row.appendChild(bc); row.appendChild(bo); box.appendChild(row); ov.appendChild(box);
+      document.body.appendChild(ov);
+      const sync=function(){ bo.disabled=!!(o.input&&o.input.required)&&!((inp.value||'').trim()); };
+      if(inp){ inp.addEventListener('input',sync); sync(); }
+      function done(ok){
+        document.removeEventListener('keydown',onKey,true);
+        ov.remove();
+        try{ if(prev&&prev.focus) prev.focus(); }catch(e){}
+        resolve({ok:ok,value:inp?inp.value:undefined});
+      }
+      function onKey(e){
+        if(e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); done(false); }
+        else if(e.key==='Enter' && e.target!==bc && !(e.target&&e.target.tagName==='TEXTAREA')){
+          if(!bo.disabled){ e.preventDefault(); e.stopPropagation(); done(true); }
+        } else if(e.key==='Tab'){
+          const f=$$('button,input,textarea',box).filter(function(x){return !x.disabled;});
+          if(!f.length) return;
+          const i=f.indexOf(document.activeElement);
+          if(e.shiftKey && i<=0){ e.preventDefault(); f[f.length-1].focus(); }
+          else if(!e.shiftKey && i===f.length-1){ e.preventDefault(); f[0].focus(); }
+        }
+      }
+      document.addEventListener('keydown',onKey,true);
+      bc.onclick=function(){done(false);}; bo.onclick=function(){done(true);};
+      ov.addEventListener('mousedown',function(e){ if(e.target===ov) done(false); });
+      // Destructive dialogs focus Cancel so a stray Enter/scan can't confirm them.
+      setTimeout(function(){ (inp||(o.danger?bc:bo)).focus(); },30);
+    });
+  }
+  function uxConfirm(message,o){ return uxDialog(Object.assign({message:message},o||{})).then(function(r){return r.ok;}); }
+  function uxPrompt(message,o){
+    return uxDialog(Object.assign({message:message,input:{placeholder:(o&&o.placeholder)||'',multiline:!!(o&&o.multiline),required:!!(o&&o.required)}},o||{}))
+      .then(function(r){return r.ok?r.value:null;});
+  }
+
+  // ── Persistent banner for failed saves: stays until dismissed ──
+  function uxPersistentAlert(message,o){
+    o=o||{};
+    let host=$('#ux-banners');
+    if(!host){ host=document.createElement('div'); host.id='ux-banners'; host.setAttribute('role','alert'); document.body.appendChild(host); }
+    const b=document.createElement('div'); b.className='ux-banner';
+    b.innerHTML='<i class="ti ti-alert-octagon"></i><div class="ux-banner-body"><div class="ux-banner-title"></div><div class="ux-banner-msg"></div><div class="ux-banner-actions"></div></div>';
+    $('.ux-banner-title',b).textContent=o.title||'Not saved';
+    $('.ux-banner-msg',b).textContent=message;
+    const act=$('.ux-banner-actions',b);
+    if(o.actionLabel&&typeof o.action==='function'){
+      const a=document.createElement('button'); a.type='button'; a.textContent=o.actionLabel;
+      a.onclick=function(){ try{o.action();}catch(e){} };
+      act.appendChild(a);
+    }
+    const d=document.createElement('button'); d.type='button'; d.textContent='Dismiss';
+    d.onclick=function(){ b.remove(); };
+    act.appendChild(d);
+    host.appendChild(b);
+    try{ if(navigator.vibrate) navigator.vibrate([200,100,200]); }catch(e){}
+  }
+  window.uxDialog=uxDialog; window.uxConfirm=uxConfirm; window.uxPrompt=uxPrompt; window.uxPersistentAlert=uxPersistentAlert;
+
+  // ── In-flight guard: a second tap while a save is still running is ignored
+  //    (the existing 2-second rateLimit() is shorter than a slow save). ──
+  function guardOnce(name){
+    const fn=window[name];
+    if(typeof fn!=='function'||fn.__uxGuarded) return;
+    let busy=false;
+    const w=async function(){
+      if(busy){ if(typeof toast==='function') toast('Still saving — please wait','w'); return; }
+      busy=true; document.body.classList.add('ux-busy');
+      try{ return await fn.apply(this,arguments); }
+      finally{ busy=false; document.body.classList.remove('ux-busy'); }
+    };
+    w.__uxGuarded=true;
+    window[name]=w;
+  }
+
+  // ── Stacked tables on phones ──
+  function stackTables(){
+    if(window.innerWidth>600) return;
+    $$('.tw table').forEach(function(t){
+      const ths=$$('thead th',t);
+      if(ths.length<2||ths.length>12) return;
+      t.classList.add('m-stack');
+      const labels=ths.map(function(h){return h.textContent.trim();});
+      $$('tbody tr',t).forEach(function(tr){
+        if(tr.dataset.stk) return;
+        const tds=Array.from(tr.children);
+        if(tds.length===labels.length && !tds.some(function(c){return c.colSpan>1;})){
+          tds.forEach(function(c,i){ c.setAttribute('data-label',labels[i]||''); });
+        }
+        tr.dataset.stk='1';
+      });
+    });
+  }
+
+  // ── Keyboard + screen-reader pass ──
+  const ICONS={'x':'Close','menu-2':'Open menu','plus':'Add','minus':'Decrease','trash':'Delete','printer':'Print','download':'Download','refresh':'Refresh','pencil':'Edit','edit':'Edit','search':'Search','eye':'View','copy':'Copy','check':'Confirm','arrow-left':'Back','arrow-right':'Next','chevron-down':'Expand','chevron-up':'Collapse','bell':'Alerts','camera':'Take photo','barcode':'Scan','qrcode':'QR code','dots-vertical':'More options','photo':'View photo','external-link':'Open','link':'Link','mail':'Email','file-download':'Download','upload':'Upload'};
+  function a11y(){
+    $$('button:not([aria-label])').forEach(function(b){
+      const txt=(b.textContent||'').replace(/\s+/g,'');
+      if(txt&&!/^[−\-+×x✕✖]$/.test(txt)) return;
+      let l=b.getAttribute('title');
+      if(!l){
+        if(txt==='−'||txt==='-') l='Decrease'; else if(txt==='+') l='Increase'; else if(txt) l='Close';
+        else{
+          const i=b.querySelector('i[class*="ti-"]');
+          const m=i&&(i.className.match(/ti-([a-z0-9-]+)/g)||[]).map(function(c){return c.slice(3);}).find(function(c){return ICONS[c];});
+          l=m?ICONS[m]:'Action';
+        }
+      }
+      b.setAttribute('aria-label',l);
+    });
+    $$('input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([aria-label]),select:not([aria-label]),textarea:not([aria-label])').forEach(function(el){
+      if(el.labels&&el.labels.length) return;
+      const l=el.getAttribute('placeholder')||el.getAttribute('title');
+      if(l) el.setAttribute('aria-label',l);
+    });
+    $$('div[onclick],span[onclick],.ntab,.sop-head,.user-dropdown-item,#alerts-trigger').forEach(function(el){
+      if(el.getAttribute('role')||el.tagName==='BUTTON'||el.tagName==='A') return;
+      el.setAttribute('role','button');
+      if(el.tabIndex<0) el.tabIndex=0;
+    });
+  }
+  document.addEventListener('keydown',function(e){
+    if(e.key!=='Enter'&&e.key!==' ') return;
+    const t=e.target;
+    if(!t||t.getAttribute('role')!=='button'||/^(BUTTON|INPUT|SELECT|TEXTAREA|A)$/.test(t.tagName)) return;
+    e.preventDefault(); t.click();
+  });
+
+  // ── Sidebar: collapsible groups, empty groups hidden ──
+  function initNavGroups(){
+    $$('.nav-group').forEach(function(g){
+      const l=$('.nav-group-label',g);
+      if(!l||l.dataset.ux) return;
+      l.dataset.ux='1';
+      const key='ux_navgrp_'+l.textContent.trim();
+      const saved=store.get(key);
+      const collapsed=saved===null?/reference/i.test(l.textContent):saved==='1';
+      g.classList.toggle('collapsed',collapsed);
+      l.setAttribute('role','button'); l.tabIndex=0;
+      l.setAttribute('aria-expanded',String(!collapsed));
+      l.addEventListener('click',function(){
+        const c=!g.classList.contains('collapsed');
+        g.classList.toggle('collapsed',c);
+        l.setAttribute('aria-expanded',String(!c));
+        store.set(key,c?'1':'0');
+      });
+    });
+  }
+  function refreshNavGroups(){
+    $$('.nav-group').forEach(function(g){
+      const tabs=$$('.ntab',g);
+      if(!tabs.length) return;
+      const any=tabs.some(function(t){return t.style.display!=='none';});
+      const want=any?'':'none';
+      if(g.style.display!==want) g.style.display=want;
+    });
+  }
+
+  // ── Dashboard: one "Needs attention" strip instead of four stacked banners ──
+  const BANNERS=['same-day-dispatch-banner','backup-reminder-banner','order-aging-banner','inventory-value-banner'];
+  function attn(){
+    const w=$('#attn-wrap'); if(!w) return;
+    let n=0;
+    BANNERS.forEach(function(id){
+      const e=document.getElementById(id);
+      if(e&&e.textContent.trim()&&e.style.display!=='none') n++;
+    });
+    const c=$('#attn-count'); if(c&&c.textContent!==String(n)) c.textContent=n;
+    const want=n?'':'none';
+    if(w.style.display!==want) w.style.display=want;
+  }
+  function initAttn(){
+    const w=$('#attn-wrap'); if(!w||w.dataset.ux) return;
+    w.dataset.ux='1';
+    const s=store.get('ux_attn_open');
+    if(s==='0') w.removeAttribute('open');
+    w.addEventListener('toggle',function(){ store.set('ux_attn_open',w.open?'1':'0'); });
+  }
+
+  // ── One debounced pass, re-run whenever the DOM changes ──
+  let pending=null;
+  function run(){
+    pending=null;
+    try{ stackTables(); a11y(); refreshNavGroups(); attn(); }catch(e){}
+  }
+  function schedule(){ if(pending) return; pending=setTimeout(run,120); }
+  function init(){
+    const t=$('#toast'); if(t){ t.setAttribute('role','status'); t.setAttribute('aria-live','polite'); }
+    initNavGroups(); initAttn();
+    ['completeMobilePick','completeMobilePack','releaseToPacking','confirmPackWithDetails','createGRN','createOrder','confirmCourierDispatch'].forEach(guardOnce);
+    run();
+    new MutationObserver(schedule).observe(document.body,{childList:true,subtree:true});
+    window.addEventListener('resize',schedule);
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init); else init();
+})();
