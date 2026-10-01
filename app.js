@@ -2663,11 +2663,23 @@ function renderExpShipmentsBoard(){
   el.innerHTML=`<div class="tw"><table><thead><tr><th>ASN</th><th>Vendor</th><th>Expected</th><th>Status</th><th>Tally</th><th>Action</th></tr></thead><tbody>${expectedShipments.map(s=>{
     let tally='<span style="color:var(--t3);font-size:10px">Not yet received</span>';
     if(s.receivedSummary){
-      tally=s.receivedSummary.map(r=>{
-        const color=r.diff===0?'var(--st)':r.diff<0?'var(--dt)':'var(--wt)';
-        const label=r.diff===0?'match':r.diff<0?`short ${Math.abs(r.diff)}`:`over ${r.diff}`;
-        return `<div style="font-size:10px;color:${color}">${esc(r.sku)}: ${r.received}/${r.expected} (${label})</div>`;
-      }).join('');
+      // Compact tally: one summary line + progress bar, only the SKUs that
+      // DON'T match shown as chips, and the full per-SKU list folded away
+      // under "All N SKUs". Listing every SKU line-by-line in this narrow
+      // column made each row hundreds of pixels tall.
+      const rs=s.receivedSummary;
+      const totExp=rs.reduce((a,r)=>a+(r.expected||0),0), totRec=rs.reduce((a,r)=>a+(r.received||0),0);
+      const nMatch=rs.filter(r=>r.diff===0).length, shorts=rs.filter(r=>r.diff<0), overs=rs.filter(r=>r.diff>0);
+      const pct=totExp?Math.min(100,Math.round(totRec/totExp*100)):0;
+      const chip=(r)=>{const sh=r.diff<0;return `<span title="${esc(r.sku)}: received ${r.received} of ${r.expected}" style="display:inline-block;margin:2px 4px 0 0;padding:1px 7px;border-radius:999px;font-size:11px;font-weight:600;white-space:nowrap;background:${sh?'var(--dbg)':'var(--wbg)'};color:${sh?'var(--dt)':'var(--wt)'}">${esc(r.sku.replace(/^UNI-/,''))} ${sh?'−'+Math.abs(r.diff):'+'+r.diff}</span>`;};
+      tally=`<div style="font-size:12px;font-weight:600;white-space:nowrap">${totRec} / ${totExp} units
+          <span style="font-weight:400;color:var(--t2)"> · <span style="color:var(--st)">${nMatch} match</span>${shorts.length?` · <span style="color:var(--dt)">${shorts.length} short</span>`:''}${overs.length?` · <span style="color:var(--wt)">${overs.length} over</span>`:''}</span></div>
+        <div style="height:5px;background:var(--s3);border-radius:3px;margin:5px 0 4px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${shorts.length?'var(--wt)':'var(--st)'}"></div></div>
+        ${shorts.length||overs.length?`<div>${shorts.map(chip).join('')}${overs.map(chip).join('')}</div>`:''}
+        <details style="margin-top:4px"><summary style="cursor:pointer;font-size:11px;color:var(--it)">All ${rs.length} SKUs</summary>
+          <table style="min-width:0;width:auto;margin-top:4px;font-size:11px"><thead><tr><th style="padding:3px 8px">SKU</th><th style="padding:3px 8px;text-align:right">Exp</th><th style="padding:3px 8px;text-align:right">Rcvd</th><th style="padding:3px 8px;text-align:right">Diff</th></tr></thead><tbody>
+          ${rs.map(r=>`<tr><td style="padding:3px 8px;white-space:nowrap">${esc(r.sku)}</td><td style="padding:3px 8px;text-align:right">${r.expected}</td><td style="padding:3px 8px;text-align:right">${r.received}</td><td style="padding:3px 8px;text-align:right;font-weight:600;color:${r.diff===0?'var(--st)':r.diff<0?'var(--dt)':'var(--wt)'}">${r.diff===0?'✓':(r.diff>0?'+':'')+r.diff}</td></tr>`).join('')}
+          </tbody></table></details>`;
     }
     if(s.closed){
       tally+=`<div style="font-size:10px;color:var(--t2);margin-top:4px;padding-top:4px;border-top:0.5px dashed var(--b)"><i class="ti ti-lock"></i> Closed by ${esc(s.closedBy||'admin')} · ${esc(s.closeReason||'')}</div>`;
@@ -2680,7 +2692,7 @@ function renderExpShipmentsBoard(){
       ?` <button class="btn-sm" onclick="closeShipmentOverride('${esc(s.id)}')" title="Acknowledge the discrepancy and close this shipment" style="color:var(--dt)"><i class="ti ti-lock"></i>Override & Close</button>`:'';
     const reopenBtn=isAdmin&&s.closed
       ?` <button class="btn-sm" onclick="reopenShipmentOverride('${esc(s.id)}')" title="Reopen — undo the override"><i class="ti ti-lock-open"></i>Reopen</button>`:'';
-    return `<tr><td class="mono">${esc(s.id)}</td><td style="font-size:11px">${esc(s.vendor||'—')}</td><td>${uniqueSkus} SKU(s)</td><td><span class="pill ${statusPill[s.status]||'p-info'}">${s.status}</span></td><td>${tally}</td><td style="white-space:nowrap"><button class="btn-sm" onclick="printTallySheet('${esc(s.id)}')"><i class="ti ti-printer"></i>Print</button> <button class="btn-sm" onclick="refreshShipmentTally('${esc(s.id)}')" title="Recalculate the tally from current GRN data"><i class="ti ti-refresh"></i>Refresh</button> <button class="btn-sm" onclick="startEditExpectedShipment('${esc(s.id)}')"><i class="ti ti-edit"></i>View/Edit</button>${overrideBtn}${reopenBtn}</td></tr>`;
+    return `<tr><td class="mono">${esc(s.id)}</td><td style="font-size:11px">${esc(s.vendor||'—')}</td><td>${uniqueSkus} SKU(s)</td><td><span class="pill ${statusPill[s.status]||'p-info'}">${s.status}</span></td><td style="min-width:300px;max-width:460px">${tally}</td><td style="white-space:nowrap"><button class="btn-sm" onclick="printTallySheet('${esc(s.id)}')"><i class="ti ti-printer"></i>Print</button> <button class="btn-sm" onclick="refreshShipmentTally('${esc(s.id)}')" title="Recalculate the tally from current GRN data"><i class="ti ti-refresh"></i>Refresh</button> <button class="btn-sm" onclick="startEditExpectedShipment('${esc(s.id)}')"><i class="ti ti-edit"></i>View/Edit</button>${overrideBtn}${reopenBtn}</td></tr>`;
   }).join('')}</tbody></table></div>`;
 }
 function pdfDownloadSnippet(filename,orientation){
@@ -3432,7 +3444,7 @@ function editOrder(orderId){
   ordItemsList=o.items.map(it=>({...it}));
   renderOrdItemsList();
   const panel=document.getElementById('order-create-panel');
-  if(panel){ panel.style.display='block'; panel.scrollIntoView({behavior:'smooth',block:'start'}); }
+  if(panel){ panel.style.display='block'; setOrderFormOpen(true); panel.scrollIntoView({behavior:'smooth',block:'start'}); }
   const btn=document.getElementById('ord-submit-btn');
   if(btn) btn.innerHTML='<i class="ti ti-check"></i>Save changes';
   const cancelBtn=document.getElementById('ord-cancel-edit-btn');
@@ -3739,9 +3751,23 @@ function _ordqPagerHtml(page,pages,from,to,total){
   const numsHtml=nums.map(p=>p==='…'?'<span style="padding:4px 4px;color:var(--t3)">…</span>':btn(p,p,{on:p===page})).join('');
   return `<div class="ordq-pager"><div>Showing <b>${from}–${to}</b> of <b>${total}</b> order(s)</div>${pages>1?`<div class="pg">${btn(page-1,'<i class="ti ti-chevron-left"></i>',{disabled:page<=1,title:'Previous page'})}${numsHtml}${btn(page+1,'<i class="ti ti-chevron-right"></i>',{disabled:page>=pages,title:'Next page'})}</div>`:''}</div>`;
 }
+// Create-order form can be tucked away so the queue gets the full width
+// (most orders now come in by CSV import). Remembered per browser.
+function _ordFormOpen(){ try{ return localStorage.getItem('cl_ord_form_open')==='1'; }catch(e){ return false; } }
+function setOrderFormOpen(open){
+  try{ localStorage.setItem('cl_ord_form_open',open?'1':'0'); }catch(e){}
+  const p=document.getElementById('order-create-panel');
+  if(p) p.classList.toggle('form-collapsed',!open);
+  const b=document.getElementById('ordq-form-toggle');
+  if(b) b.innerHTML=open?'<i class="ti ti-layout-sidebar-left-collapse"></i>Hide order form':'<i class="ti ti-plus"></i>New order / Import CSV';
+}
 function renderOrdersBoard(){
   const el=document.getElementById('orders-board');
   if(!el) return;
+  const _p=document.getElementById('order-create-panel');
+  const _tb=document.getElementById('ordq-form-toggle');
+  if(_tb) _tb.style.display=(_p&&_p.style.display==='block')?'':'none';
+  if(_p&&!_p.dataset.formInit){ _p.dataset.formInit='1'; setOrderFormOpen(_ordFormOpen()); }
   const searchEl=document.getElementById('ordq-search');
   const searchQ=(searchEl?searchEl.value:'').toLowerCase().trim();
   const prioEl=document.getElementById('ordq-priority');
@@ -3792,17 +3818,26 @@ function renderOrdersBoard(){
   const canManage=getPerms().canManageOrders;
   const statusPill={unassigned:'p-hold',assigned:'p-info',picked:'p-out',packed:'p-low',left_warehouse:'p-info',dispatched:'p-ok',cancelled:'p-hold'};
   const statusLabel={packed:'Awaiting Dispatch',left_warehouse:'Left Warehouse',dispatched:'Dispatched'};
-  el.innerHTML=`${pagerHtml}<div class="tw"><table><thead><tr><th>Order ID</th><th>Created</th><th>Customer</th><th>Priority</th><th>Items</th><th>Status</th><th>Assigned To</th>${canManage?'<th>Invoice</th><th>Action</th>':''}</tr></thead><tbody>${pageOrders.map(o=>{
+  el.innerHTML=`${pagerHtml}<div class="tw"><table class="ordq-table"><thead><tr><th>Order</th><th>Items</th><th>Status</th>${canManage?'<th style="text-align:right">Action</th>':''}</tr></thead><tbody>${pageOrders.map(o=>{
     let action='';
     if(canManage && o.status==='unassigned'){
       const opts=pickerNames.length?pickerNames.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join(''):'<option value="">No pickers registered</option>';
-      action=`<div style="display:flex;gap:4px"><select id="assign-sel-${esc(o.id)}" style="font-size:10px;padding:3px">${opts}</select><button class="btn-sm" style="background:var(--gold);color:#fff;border:none;border-radius:4px;padding:4px 8px;cursor:pointer;font-size:10px" onclick="assignOrder('${esc(o.id)}')">Assign</button><button class="btn-sm" onclick="editOrder('${esc(o.id)}')" title="Edit this order"><i class="ti ti-edit"></i></button><button class="btn-sm btn-danger" onclick="cancelOrder('${esc(o.id)}')" title="Cancel this order"><i class="ti ti-x"></i></button></div>`;
+      action=`<div class="ordq-act"><select id="assign-sel-${esc(o.id)}" style="font-size:12px;padding:4px 6px;width:auto;max-width:150px">${opts}</select><button class="btn-sm" style="background:var(--gold);color:#fff;border:none;border-radius:4px;padding:4px 8px;cursor:pointer;font-size:10px" onclick="assignOrder('${esc(o.id)}')">Assign</button><button class="btn-sm" onclick="editOrder('${esc(o.id)}')" title="Edit this order"><i class="ti ti-edit"></i></button><button class="btn-sm btn-danger" onclick="cancelOrder('${esc(o.id)}')" title="Cancel this order"><i class="ti ti-x"></i></button></div>`;
     } else if(canManage && o.status==='assigned'){
       action=`<button class="btn-sm btn-danger" onclick="unassignOrder('${esc(o.id)}')">Unassign</button>`;
     }
-    const invoiceCell=canManage?`<td><button class="btn-sm" onclick="printProformaInvoice('${esc(o.id)}')" title="Print Proforma Invoice"><i class="ti ti-file-invoice"></i></button></td>`:'';
+    const invoiceBtn=canManage?`<button class="btn-sm" onclick="printProformaInvoice('${esc(o.id)}')" title="Print Proforma Invoice"><i class="ti ti-file-invoice"></i></button>`:'';
     const units=(o.items||[]).reduce((a,i)=>a+(Number(i.qty)||0),0);
-    return `<tr${o.status==='cancelled'?' style="opacity:0.5"':''}><td class="mono">${esc(o.id)}</td><td class="ordq-date">${fmtCreated(o)}</td><td style="font-size:11px">${esc(o.customerName||'—')}</td><td><span class="pill ${o.priority==='Express'?'p-out':o.priority==='Standard'?'p-info':'p-hold'}">${esc(o.priority||'—')}</span></td><td style="font-size:11px;white-space:nowrap">${(o.items||[]).length} SKU · ${units} unit${units===1?'':'s'}</td><td><span class="pill ${statusPill[o.status]||'p-info'}">${esc(statusLabel[o.status]||o.status)}</span></td><td style="font-size:11px">${o.assignedPicker?esc(o.assignedPicker):'—'}${o.status==='picked'&&o.pickedTaskId?` <span style="color:var(--t3)">(${esc(o.pickedTaskId)})</span>`:''}</td>${canManage?`${invoiceCell}<td>${action}</td>`:''}</tr>`;
+    // Compact row: ID + priority + store/created stacked in one cell, status
+    // + picker in another, all actions (invoice, assign, edit, cancel) in
+    // one right-aligned cell. The old 9-column layout needed horizontal
+    // scrolling whenever the order queue wasn't full width.
+    const prioPill=`<span class="pill ${o.priority==='Express'?'p-out':o.priority==='Standard'?'p-info':'p-hold'}">${esc(o.priority||'—')}</span>`;
+    return `<tr${o.status==='cancelled'?' style="opacity:0.5"':''}>
+      <td><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="mono" style="font-size:12px;font-weight:700;color:var(--t)">${esc(o.id)}</span>${prioPill}</div><div class="ordq-sub">${esc(o.customerName||'—')} · ${fmtCreated(o)}</div></td>
+      <td style="white-space:nowrap">${(o.items||[]).length} SKU · ${units} unit${units===1?'':'s'}</td>
+      <td><span class="pill ${statusPill[o.status]||'p-info'}">${esc(statusLabel[o.status]||o.status)}</span><div class="ordq-sub">${o.assignedPicker?esc(o.assignedPicker):''}${o.status==='picked'&&o.pickedTaskId?` (${esc(o.pickedTaskId)})`:''}</div></td>
+      ${canManage?`<td style="text-align:right"><div class="ordq-act" style="justify-content:flex-end">${invoiceBtn}${action}</div></td>`:''}</tr>`;
   }).join('')}</tbody></table></div>${pages>1?pagerHtml:''}`;
   renderOrderAgingAlert();
 }
