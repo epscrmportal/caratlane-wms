@@ -7036,6 +7036,7 @@ function downloadAllReports(){
 
 // FINANCE & CAPACITY
 function renderFinance(){
+  renderInventoryValuation();
   renderWarehouseUtil();
   renderBinEfficiency();
   renderSpaceUtil();
@@ -7171,6 +7172,56 @@ function totalInventoryValue(){
 }
 function skusMissingPriceWithStock(){
   return SKUS.filter(s=>s.price==null&&((inv[s.sku]||{qty:0}).qty||0)>0).length;
+}
+// Finance page: total value of stock currently held (qty × catalog unit
+// price), with a breakdown by item type. Same calculation as the ₹50 lakh
+// dashboard alert (totalInventoryValue), just always visible here.
+function renderInventoryValuation(){
+  const el=document.getElementById('inventory-valuation');
+  if(!el) return;
+  const groups={};
+  let totalVal=0,totalUnits=0,pricedSkus=0,stockedSkus=0;
+  const missing=[];
+  SKUS.forEach(s=>{
+    const q=(inv[s.sku]||{qty:0}).qty||0;
+    if(q<=0) return;
+    stockedSkus++;
+    const key=s.sub||s.cat||'Other';
+    if(!groups[key]) groups[key]={units:0,value:0,skus:0,unpriced:0};
+    groups[key].units+=q; groups[key].skus++;
+    totalUnits+=q;
+    if(s.price!=null){ const v=q*s.price; groups[key].value+=v; totalVal+=v; pricedSkus++; }
+    else { groups[key].unpriced++; missing.push(s.sku); }
+  });
+  const fmt=n=>'₹'+Math.round(n).toLocaleString('en-IN');
+  const rows=Object.entries(groups).sort((a,b)=>b[1].value-a[1].value);
+  el.innerHTML=`
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:10px">
+    <div style="padding:12px;background:var(--s2);border-radius:8px;text-align:center;border:1px solid var(--gold)">
+      <div style="font-size:24px;font-weight:700;color:var(--gold)">${fmt(totalVal)}</div>
+      <div style="font-size:10px;color:var(--t2);margin-top:2px">Total inventory value</div>
+      <div style="font-size:10px;color:var(--t3)">${totalVal>=100000?'≈ ₹'+(totalVal/100000).toFixed(2)+' lakh':''}</div>
+    </div>
+    <div style="padding:12px;background:var(--s2);border-radius:8px;text-align:center">
+      <div style="font-size:24px;font-weight:700;color:var(--t)">${totalUnits.toLocaleString('en-IN')}</div>
+      <div style="font-size:10px;color:var(--t2);margin-top:2px">Units in stock</div>
+      <div style="font-size:10px;color:var(--t3)">${stockedSkus} SKU(s) with stock</div>
+    </div>
+    <div style="padding:12px;background:var(--s2);border-radius:8px;text-align:center">
+      <div style="font-size:24px;font-weight:700;color:var(--it)">${totalUnits?fmt(totalVal/totalUnits):'—'}</div>
+      <div style="font-size:10px;color:var(--t2);margin-top:2px">Average value per unit</div>
+    </div>
+    <div style="padding:12px;background:var(--s2);border-radius:8px;text-align:center;border:1px solid ${missing.length?'var(--wt)':'var(--b)'}">
+      <div style="font-size:24px;font-weight:700;color:${missing.length?'var(--wt)':'var(--st)'}">${missing.length}</div>
+      <div style="font-size:10px;color:var(--t2);margin-top:2px">In-stock SKUs with no price</div>
+      <div style="font-size:10px;color:var(--t3)">${missing.length?'not included in the value':'all priced'}</div>
+    </div>
+  </div>
+  ${rows.length?`<div class="tw"><table><thead><tr><th>Item type</th><th style="text-align:right">SKUs</th><th style="text-align:right">Units</th><th style="text-align:right">Value</th><th style="text-align:right">Share</th></tr></thead><tbody>
+    ${rows.map(([k,g])=>`<tr><td style="font-size:11px">${esc(k)}${g.unpriced?` <span style="color:var(--wt);font-size:10px">(${g.unpriced} unpriced)</span>`:''}</td><td style="text-align:right;font-size:11px">${g.skus}</td><td style="text-align:right;font-size:11px">${g.units.toLocaleString('en-IN')}</td><td style="text-align:right;font-size:11px;font-weight:600">${fmt(g.value)}</td><td style="text-align:right;font-size:11px">${totalVal?Math.round(g.value/totalVal*100):0}%</td></tr>`).join('')}
+    <tr style="font-weight:700;background:var(--s2)"><td>Total</td><td style="text-align:right">${stockedSkus}</td><td style="text-align:right">${totalUnits.toLocaleString('en-IN')}</td><td style="text-align:right">${fmt(totalVal)}</td><td style="text-align:right">100%</td></tr>
+  </tbody></table></div>`:'<div class="empty">No stock on hand</div>'}
+  ${missing.length?`<div style="margin-top:6px;font-size:10px;color:var(--wt)"><i class="ti ti-alert-triangle"></i> No unit price set for: ${missing.map(esc).join(', ')} — add a price on the Inventory page to include them.</div>`:''}`;
 }
 // Dashboard warning — admin only, per explicit request (not supervisor,
 // unlike most other alert banners in this app). Purely synchronous/local
@@ -7367,13 +7418,17 @@ function renderCapacityAlerts(){
   if(unplaced.length)alerts.push({type:'warn',msg:`⚠️ ${unplaced.length} item(s) tagged with an invalid shelf number — need reassignment (see Rack View)`});
   el.innerHTML=alerts.length?alerts.map(a=>`<div class="warn-box" style="background:${a.type==='high'?'var(--dbg)':'var(--wbg)'};color:${a.type==='high'?'var(--dt)':'var(--wt)'}"><i class="ti ti-alert-triangle"></i>${a.msg}</div>`).join(''):'<div class="empty">All capacity metrics normal ✓</div>';
 }
+// Reconciliation/backfill entries record real receipts (their units are
+// billed for putaway) but are paperwork, not a delivery — so they are not
+// counted or billed as a GRN.
+function _isReconEntry(h){ return /^RECON-/.test(String(h&&h.id||'')) || (h&&h.asn)==='RECONCILIATION-BACKFILL'; }
 function computeMonthlyBill(monthStr){
   const mh=getMonthHistory(monthStr);
   // Voided GRNs (and voided reconciliation entries) are not billable.
   const grns=mh.filter(h=>h.type==='grn'&&!h.voided);
   const totalBoxes=grns.reduce((a,g)=>a+(g.cartons||0),0);
   const totalUnits=grns.reduce((a,g)=>a+(g.items||[]).reduce((b,i)=>b+(i.qty||0),0),0);
-  const grnCount=grns.length;
+  const grnCount=grns.filter(g=>!_isReconEntry(g)).length;
   const dispatches=mh.filter(h=>h.type==='dispatched');
   const orderCount=dispatches.length;
 
@@ -8773,6 +8828,7 @@ function downloadMonthlyMasterCSV(){
     // NOT counted as received — voiding already reverses their stock.
     const grnsAll=mHist.filter(h=>h.type==='grn');
     const grns=grnsAll.filter(h=>!h.voided);
+    const grnDocCount=grns.filter(g=>!_isReconEntry(g)).length;
     const monthDisps=mHist.filter(h=>h.type==='dispatched');
     const packDispatch=history.filter(h=>h.type==='packed'||h.type==='dispatched');
     const picks=history.filter(h=>h.type==='pick');
@@ -8794,6 +8850,7 @@ function downloadMonthlyMasterCSV(){
     const prevOrders=getMonthOrders(prevMonthStr);
     const prevHist=getMonthHistory(prevMonthStr);
     const prevGrns=prevHist.filter(h=>h.type==='grn'&&!h.voided);
+    const prevGrnDocCount=prevGrns.filter(g=>!_isReconEntry(g)).length;
     const prevDisps=prevHist.filter(h=>h.type==='dispatched');
     const prevUnitsIn=prevGrns.reduce((a,g)=>{const items=g.items||[];return a+items.filter(i=>i.qc==='PASS').reduce((b,i)=>b+(i.qty||0),0);},0);
     const prevUnitsOut=prevDisps.reduce((a,d)=>{const items=d.items||[];return a+items.reduce((b,i)=>b+(i.qty||0),0);},0);
@@ -8850,7 +8907,7 @@ function downloadMonthlyMasterCSV(){
       ['KEY METRICS',monthLabel,prevMonthLabel,'Change'],
       ['Orders Created',mOrders.length,prevOrders.length,pctChange(mOrders.length,prevOrders.length)],
       ['Of Which Dispatched',dispatchedCount,'',''],
-      ['GRNs Received',grns.length,prevGrns.length,pctChange(grns.length,prevGrns.length)],
+      ['GRNs Received',grnDocCount,prevGrnDocCount,pctChange(grnDocCount,prevGrnDocCount)],
       ['Units Received — PASS',totalUnitsIn,prevUnitsIn,pctChange(totalUnitsIn,prevUnitsIn)],
       ['Units Received — HOLD',totalUnitsHold,'',''],
       ['Units Received — REJECT',totalUnitsReject,'',''],
@@ -8891,7 +8948,7 @@ function downloadMonthlyMasterCSV(){
     const mom=[
       ['Metric',monthLabel,prevMonthLabel,'Change'],
       ['Orders Created',mOrders.length,prevOrders.length,pctChange(mOrders.length,prevOrders.length)],
-      ['GRNs Received',grns.length,prevGrns.length,pctChange(grns.length,prevGrns.length)],
+      ['GRNs Received',grnDocCount,prevGrnDocCount,pctChange(grnDocCount,prevGrnDocCount)],
       ['Units Received (PASS)',totalUnitsIn,prevUnitsIn,pctChange(totalUnitsIn,prevUnitsIn)],
       ['Shipments Dispatched',monthDisps.length,prevDisps.length,pctChange(monthDisps.length,prevDisps.length)],
       ['Units Dispatched',totalUnitsOut,prevUnitsOut,pctChange(totalUnitsOut,prevUnitsOut)],
@@ -8924,7 +8981,7 @@ function downloadMonthlyMasterCSV(){
         grnRows.push([g.id,g.ts,g.asn||'N/A',g.carrier||'N/A',g.vehicle||'N/A',g.cartons||0,i.sku,i.name||'',i.variant||'',i.qty||0,i.qc||'',i.bin||'',g.voided?'YES':'']);
       });
     });
-    const wsGrn=XLSX.utils.aoa_to_sheet([grnHeader,...grnRows,[],['TOTAL GRNs',grns.length],['TOTAL SKU LINES',grnRows.length],['TOTAL UNITS — PASS',totalUnitsIn],['TOTAL UNITS — HOLD',totalUnitsHold],['TOTAL UNITS — REJECT',totalUnitsReject]]);
+    const wsGrn=XLSX.utils.aoa_to_sheet([grnHeader,...grnRows,[],['TOTAL GRNs',grnDocCount],['TOTAL SKU LINES',grnRows.length],['TOTAL UNITS — PASS',totalUnitsIn],['TOTAL UNITS — HOLD',totalUnitsHold],['TOTAL UNITS — REJECT',totalUnitsReject]]);
     wsGrn['!cols']=grnHeader.map(()=>({wch:16}));
     XLSX.utils.book_append_sheet(wb,wsGrn,'Inbound GRN');
 
@@ -9198,7 +9255,7 @@ function downloadMonthlyMasterCSV(){
     // colored if and only if its printed value actually starts with + or -.
     const changeOps=[
       {dashRow:7,momRow:2,val:pctChange(mOrders.length,prevOrders.length)},
-      {dashRow:9,momRow:3,val:pctChange(grns.length,prevGrns.length)},
+      {dashRow:9,momRow:3,val:pctChange(grnDocCount,prevGrnDocCount)},
       {dashRow:10,momRow:4,val:pctChange(totalUnitsIn,prevUnitsIn)},
       {dashRow:13,momRow:5,val:pctChange(monthDisps.length,prevDisps.length)},
       {dashRow:14,momRow:6,val:pctChange(totalUnitsOut,prevUnitsOut)},
@@ -9220,8 +9277,8 @@ function downloadMonthlyMasterCSV(){
             catRef:`'MoM Comparison'!$A$2:$A$7`,
             catCache:['Orders Created','GRNs Received','Units Received (PASS)','Shipments Dispatched','Units Dispatched','Warehouse Bill (₹)'],
             series:[
-              {nameRef:`'MoM Comparison'!$B$1`,nameCache:monthLabel,valRef:`'MoM Comparison'!$B$2:$B$7`,valCache:[mOrders.length,grns.length,totalUnitsIn,monthDisps.length,totalUnitsOut,bill.total]},
-              {nameRef:`'MoM Comparison'!$C$1`,nameCache:prevMonthLabel,valRef:`'MoM Comparison'!$C$2:$C$7`,valCache:[prevOrders.length,prevGrns.length,prevUnitsIn,prevDisps.length,prevUnitsOut,prevBill.total]},
+              {nameRef:`'MoM Comparison'!$B$1`,nameCache:monthLabel,valRef:`'MoM Comparison'!$B$2:$B$7`,valCache:[mOrders.length,grnDocCount,totalUnitsIn,monthDisps.length,totalUnitsOut,bill.total]},
+              {nameRef:`'MoM Comparison'!$C$1`,nameCache:prevMonthLabel,valRef:`'MoM Comparison'!$C$2:$C$7`,valCache:[prevOrders.length,prevGrnDocCount,prevUnitsIn,prevDisps.length,prevUnitsOut,prevBill.total]},
             ],
             anchor:{from:{col:7,row:0},to:{col:14,row:16}} },
         ];
