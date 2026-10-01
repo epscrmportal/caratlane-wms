@@ -745,6 +745,34 @@ async function getInventorySnapshotAsOf(isoDateTime){
     return (data&&data[0])?data[0]:null;
   } catch(e){ console.warn('getInventorySnapshotAsOf failed:',e.message||e); return null; }
 }
+const HIST_LIST_COLUMNS='id,type,ts,detail,order_id,awb,recipient_name,address,pincode,phone,shipping_method,courier_partner,dispatched_at,pack_start_ts,pack_start_time,pack_end_ts,pack_end_time,pack_duration,pack_duration_secs,pick_start_ts,pick_duration_secs,box_l,box_w,box_h,actual_weight,vol_weight,chargeable_weight,dispatch_weight,pack_materials,pack_notes,packed_id,category,grn,items,packer,asn,carrier,vehicle,cartons,grn_notes,voided,voided_by,voided_at,void_reason,created_at';
+// Photo fields from a DB row: present only if that column was in the row
+// (realtime payloads carry them; the list query deliberately doesn't).
+function _histPhotoFields(r){
+  const o={};
+  if('photo' in r) o.photo=r.photo||null;
+  if('pod_photo' in r) o.podPhoto=r.pod_photo||null;
+  if('weight_photo' in r) o.weightPhoto=r.weight_photo||null;
+  return o;
+}
+// Fetch photos on demand for the given history record ids (ones not yet
+// loaded). Returns true if anything new was merged in.
+async function loadHistPhotos(ids){
+  const need=ids.filter(id=>{ const h=history.find(x=>x.id===id); return h && (h.podPhoto===undefined || h.weightPhoto===undefined || h.photo===undefined); });
+  if(!need.length || typeof supabase==='undefined' || !supa) return false;
+  try{
+    const {data,error}=await supa.from('history').select('id,photo,pod_photo,weight_photo').in('id',need);
+    if(error) throw error;
+    (data||[]).forEach(r=>{ const h=history.find(x=>x.id===r.id); if(h) Object.assign(h,_histPhotoFields(r)); });
+    return true;
+  }catch(e){ console.warn('loadHistPhotos failed:',e.message||e); return false; }
+}
+async function showDispatchPhotos(id){
+  await loadHistPhotos([id]);
+  const h=history.find(x=>x.id===id);
+  if(h && !h.podPhoto && !h.weightPhoto) toast('No photos saved for this dispatch','w');
+  renderDispatchCompletedLog();
+}
 async function loadHist(){
   setSyncStatus('syncing');
   if(typeof supabase === 'undefined' || !supa){
@@ -753,7 +781,12 @@ async function loadHist(){
     return;
   }
   try {
-    const {data,error} = await supa.from('history').select('*').order('created_at',{ascending:true});
+    // Photo columns (photo / pod_photo / weight_photo) hold base64 images
+    // and were by far the biggest part of this download — every login or
+    // refresh on every device pulled every photo ever taken, which pushed
+    // the Supabase project over its monthly egress quota. They're now left
+    // out here and fetched only when actually shown (loadHistPhotos).
+    const {data,error} = await supa.from('history').select(HIST_LIST_COLUMNS).order('created_at',{ascending:true});
     if(error){ console.error('loadHist error:', error.message, error.code); throw new Error(error.message); }
     if(data) {
       history = data.map(r => ({
@@ -770,8 +803,8 @@ async function loadHist(){
         dispatchWeight:r.dispatch_weight,
         packMaterials:r.pack_materials||[],
         packNotes:r.pack_notes, packedId:r.packed_id, category:r.category, grn:r.grn,
-        items:r.items||[], photo:r.photo||null, packer:r.packer||null,
-        podPhoto:r.pod_photo||null, weightPhoto:r.weight_photo||null,
+        items:r.items||[], packer:r.packer||null,
+        ..._histPhotoFields(r),
         asn:r.asn||null, carrier:r.carrier||null, vehicle:r.vehicle||null, cartons:(r.cartons!=null?r.cartons:null),
         grnNotes:r.grn_notes||null,
         voided:r.voided||false, voidedBy:r.voided_by||null, voidedAt:r.voided_at||null, voidReason:r.void_reason||null
@@ -807,8 +840,13 @@ function historyRecordToRow(h){
     dispatch_weight:h.dispatchWeight||null,
     pack_materials:h.packMaterials||null,
     pack_notes:h.packNotes||null, packed_id:h.packedId||null, category:h.category||null,
-    grn:h.grn||null, items:h.items||[], photo:h.photo||null, packer:h.packer||null,
-    pod_photo:h.podPhoto||null, weight_photo:h.weightPhoto||null,
+    grn:h.grn||null, items:h.items||[], packer:h.packer||null,
+    // Photo columns are only sent when this browser actually has them
+    // loaded — otherwise re-saving a record (e.g. dispatch updating the
+    // packed row) would overwrite its stored photos with null.
+    ...(h.photo!==undefined?{photo:h.photo||null}:{}),
+    ...(h.podPhoto!==undefined?{pod_photo:h.podPhoto||null}:{}),
+    ...(h.weightPhoto!==undefined?{weight_photo:h.weightPhoto||null}:{}),
     asn:h.asn||null, carrier:h.carrier||null, vehicle:h.vehicle||null, cartons:(h.cartons!=null?h.cartons:null),
     grn_notes:h.grnNotes||null,
     voided:h.voided||false, voided_by:h.voidedBy||null, voided_at:h.voidedAt||null, void_reason:h.voidReason||null
@@ -968,8 +1006,8 @@ function setupRealtimeSync(){
             dispatchWeight:r.dispatch_weight,
             packMaterials:r.pack_materials||[],
             packNotes:r.pack_notes, packedId:r.packed_id, category:r.category, grn:r.grn,
-            items:r.items||[], photo:r.photo||null, packer:r.packer||null,
-            podPhoto:r.pod_photo||null, weightPhoto:r.weight_photo||null,
+            items:r.items||[], packer:r.packer||null,
+            ..._histPhotoFields(r),
             asn:r.asn||null, carrier:r.carrier||null, vehicle:r.vehicle||null, cartons:(r.cartons!=null?r.cartons:null),
             grnNotes:r.grn_notes||null,
             voided:r.voided||false, voidedBy:r.voided_by||null, voidedAt:r.voided_at||null, voidReason:r.void_reason||null
@@ -5411,6 +5449,14 @@ function renderDispatchCompletedLog(){
   // to cap at the most recent 8, hiding the rest entirely). Search above
   // narrows it down by order ID or AWB when the list gets long.
   const dispatched=q?allDispatched.filter(d=>(d.orderId||'').toLowerCase().includes(q)||(d.awb||'').toLowerCase().includes(q)||(d.id||'').toLowerCase().includes(q)):allDispatched;
+  // Photos are no longer part of the main history download — fetch them
+  // for just the 20 most recent entries shown here, then re-render once.
+  // Older entries get a "Show photos" button instead.
+  const recentIds=dispatched.slice(-20).map(d=>d.id);
+  const recentSet=new Set(recentIds);
+  if(recentIds.some(id=>{ const h=history.find(x=>x.id===id); return h && h.podPhoto===undefined; })){
+    loadHistPhotos(recentIds).then(changed=>{ if(changed) renderDispatchCompletedLog(); });
+  }
   el.innerHTML=dispatched.length?dispatched.slice().reverse().map(d=>{
     const hasDims=d.boxL&&d.boxW&&d.boxH;
     const dimsStr=hasDims?`${d.boxL}×${d.boxW}×${d.boxH} cm`:'—';
@@ -5441,6 +5487,7 @@ function renderDispatchCompletedLog(){
           <div style="background:var(--sbg);border-radius:4px;padding:5px 8px;font-size:10px"><div style="color:var(--st)">Duration</div><div style="font-weight:700;color:var(--st)">${packDur}</div></div>
         </div>
         <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;align-items:flex-end">
+          ${(d.podPhoto===undefined&&!recentSet.has(d.id))?`<button class="btn-sm" onclick="showDispatchPhotos('${d.id}')" title="Load the POD / weighing photos for this dispatch"><i class="ti ti-photo"></i>Show photos</button>`:''}
           ${d.podPhoto?`<div><div style="font-size:9px;color:var(--t3);margin-bottom:3px">POD</div><img src="${d.podPhoto}" onclick="openImageLightbox('${d.podPhoto}','POD photo — ${esc(d.orderId||'')}')" style="width:60px;height:45px;object-fit:cover;border-radius:4px;border:0.5px solid var(--b);cursor:pointer" title="Click to view full size"></div>`:''}
           ${d.weightPhoto?`<div><div style="font-size:9px;color:var(--t3);margin-bottom:3px">Weight (at packing)</div><img src="${d.weightPhoto}" onclick="openImageLightbox('${d.weightPhoto}','Weighing scale photo — ${esc(d.orderId||'')}')" style="width:60px;height:45px;object-fit:cover;border-radius:4px;border:0.5px solid var(--b);cursor:pointer" title="Click to view full size"></div>`:''}
           <div>
