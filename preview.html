@@ -2983,7 +2983,7 @@ async function initInv(){
       throw new Error(error.message || 'Supabase query failed');
     }
     if(data && data.length > 0){
-      data.forEach(r => { inv[r.sku] = {qty:r.qty||0, rack:r.rack, shelf:r.shelf}; if(Array.isArray(r.locations) && r.locations.length) inv[r.sku].locations=r.locations; });
+      data.forEach(r => { inv[r.sku] = {qty:r.qty||0, rack:r.rack, shelf:r.shelf}; if(Array.isArray(r.locations) && r.locations.length) inv[r.sku].locations=r.locations; _markInvSynced(r.sku); });
       setSyncStatus('ok');
       console.log('✓ Inventory loaded from cloud:', data.length, 'SKUs');
     } else {
@@ -3003,6 +3003,19 @@ async function initInv(){
     }
   }
 }
+// What each SKU looked like the last time this browser read it from (or
+// wrote it to) the server. saveInv() uses it to send ONLY the SKUs this
+// browser actually changed, and to merge quantity changes as deltas.
+//
+// Previously saveInv() upserted EVERY SKU from this browser's memory. A tab
+// that had been open a while (or lost its realtime connection) would, on
+// its next GRN/pick, write its stale numbers back over every SKU — undoing
+// changes made elsewhere. That is exactly what reverted the order-12145
+// shoe stock correction on 1 Oct (GRN-223706, created in a tab loaded
+// before the correction, put UNI-SH-M-7/F-7/U-6/U-8 back to old values).
+let _invSynced={};
+function _invSig(v){ return v?JSON.stringify([v.qty||0,v.rack||null,v.shelf||null,Array.isArray(v.locations)&&v.locations.length?v.locations:null]):''; }
+function _markInvSynced(sku){ const v=inv[sku]; _invSynced[sku]={sig:_invSig(v),qty:v?(v.qty||0):0}; }
 async function saveInv(){
   setSyncStatus('syncing');
   // Guarded: a full localStorage (history cache is large) must never abort
@@ -3011,14 +3024,29 @@ async function saveInv(){
   if(typeof supabase === 'undefined' || !supa){ setSyncStatus('offline'); return {success:false,error:'offline'}; }
   try {
     const now=new Date().toISOString();
-    const rows = Object.entries(inv).map(([sku,v]) => ({sku, qty:v.qty||0, rack:v.rack, shelf:v.shelf, locations:Array.isArray(v.locations)?v.locations:null, updated_at:now}));
-    // Conflict resolution: fetch current DB state first, merge with local changes
-    const {data:dbRows}=await supa.from('inventory').select('sku,qty,updated_at');
-    const dbMap={};
-    if(dbRows) dbRows.forEach(r=>{ dbMap[r.sku]={qty:r.qty,updated_at:r.updated_at}; });
-    // Only upsert rows where local version is newer or same (last-write-wins with timestamp)
-    const {error} = await supa.from('inventory').upsert(rows, {onConflict:'sku'});
-    if(error){ console.error('saveInv Supabase error:', error.message); throw new Error(error.message); }
+    // Only SKUs this browser actually changed since it last synced them.
+    const dirty=Object.keys(inv).filter(sku=>!_invSynced[sku] || _invSynced[sku].sig!==_invSig(inv[sku]));
+    if(dirty.length){
+      // Merge quantity as a DELTA on top of the server's current value, so a
+      // change made elsewhere since this tab loaded is kept, not overwritten.
+      const {data:dbRows}=await supa.from('inventory').select('sku,qty').in('sku',dirty);
+      const dbQty={};
+      if(dbRows) dbRows.forEach(r=>{ dbQty[r.sku]=r.qty||0; });
+      dirty.forEach(sku=>{
+        const v=inv[sku], base=_invSynced[sku];
+        if(base && dbQty[sku]!=null && dbQty[sku]!==base.qty){
+          const merged=Math.max(0,dbQty[sku]+((v.qty||0)-base.qty));
+          console.warn(`saveInv: ${sku} changed on the server since this tab loaded (was ${base.qty}, now ${dbQty[sku]}) — merging this tab's change of ${(v.qty||0)-base.qty} → ${merged}`);
+          v.qty=merged;
+          // Keep a single-bin SKU's bin qty in line with the merged total.
+          if(Array.isArray(v.locations) && v.locations.length===1) v.locations[0].qty=merged;
+        }
+      });
+      const rows=dirty.map(sku=>{ const v=inv[sku]; return {sku, qty:v.qty||0, rack:v.rack, shelf:v.shelf, locations:Array.isArray(v.locations)?v.locations:null, updated_at:now}; });
+      const {error} = await supa.from('inventory').upsert(rows, {onConflict:'sku'});
+      if(error){ console.error('saveInv Supabase error:', error.message); throw new Error(error.message); }
+      dirty.forEach(_markInvSynced);
+    }
     setSyncStatus('ok');
     try{localStorage.setItem('cl_wms_inv2', JSON.stringify(inv));}catch(e){} // local backup (best-effort)
     // Save version snapshot to history table
@@ -3265,6 +3293,7 @@ function setupRealtimeSync(){
         if(r && r.sku){
           inv[r.sku]={qty:r.qty||0, rack:r.rack, shelf:r.shelf};
           if(Array.isArray(r.locations) && r.locations.length) inv[r.sku].locations=r.locations;
+          _markInvSynced(r.sku);
         }
       }
       renderDash(); renderInv(); renderRack();
@@ -9711,7 +9740,8 @@ function renderCapacityAlerts(){
 }
 function computeMonthlyBill(monthStr){
   const mh=getMonthHistory(monthStr);
-  const grns=mh.filter(h=>h.type==='grn');
+  // Voided GRNs (and voided reconciliation entries) are not billable.
+  const grns=mh.filter(h=>h.type==='grn'&&!h.voided);
   const totalBoxes=grns.reduce((a,g)=>a+(g.cartons||0),0);
   const totalUnits=grns.reduce((a,g)=>a+(g.items||[]).reduce((b,i)=>b+(i.qty||0),0),0);
   const grnCount=grns.length;
@@ -11110,7 +11140,10 @@ function downloadMonthlyMasterCSV(){
     const monthLabel=start.toLocaleDateString('en-IN',{month:'long',year:'numeric'});
     const mOrders=getMonthOrders(monthStr);
     const mHist=getMonthHistory(monthStr);
-    const grns=mHist.filter(h=>h.type==='grn');
+    // Voided GRNs are listed on the Inbound GRN sheet (marked Voided) but
+    // NOT counted as received — voiding already reverses their stock.
+    const grnsAll=mHist.filter(h=>h.type==='grn');
+    const grns=grnsAll.filter(h=>!h.voided);
     const monthDisps=mHist.filter(h=>h.type==='dispatched');
     const packDispatch=history.filter(h=>h.type==='packed'||h.type==='dispatched');
     const picks=history.filter(h=>h.type==='pick');
@@ -11131,7 +11164,7 @@ function downloadMonthlyMasterCSV(){
     const prevMonthLabel=prevMonthDate.toLocaleDateString('en-IN',{month:'long',year:'numeric'});
     const prevOrders=getMonthOrders(prevMonthStr);
     const prevHist=getMonthHistory(prevMonthStr);
-    const prevGrns=prevHist.filter(h=>h.type==='grn');
+    const prevGrns=prevHist.filter(h=>h.type==='grn'&&!h.voided);
     const prevDisps=prevHist.filter(h=>h.type==='dispatched');
     const prevUnitsIn=prevGrns.reduce((a,g)=>{const items=g.items||[];return a+items.filter(i=>i.qc==='PASS').reduce((b,i)=>b+(i.qty||0),0);},0);
     const prevUnitsOut=prevDisps.reduce((a,d)=>{const items=d.items||[];return a+items.reduce((b,i)=>b+(i.qty||0),0);},0);
@@ -11257,7 +11290,7 @@ function downloadMonthlyMasterCSV(){
     // ── Inbound / GRN sheet (per SKU line) ──
     const grnHeader=['GRN ID','Date/Time Received','ASN','Carrier','Vehicle','Cartons','SKU','Item Name','Variant','Qty Received','QC Result','Bin Location','Voided'];
     const grnRows=[];
-    grns.forEach(g=>{
+    grnsAll.forEach(g=>{
       (g.items||[]).forEach(i=>{
         grnRows.push([g.id,g.ts,g.asn||'N/A',g.carrier||'N/A',g.vehicle||'N/A',g.cartons||0,i.sku,i.name||'',i.variant||'',i.qty||0,i.qc||'',i.bin||'',g.voided?'YES':'']);
       });
