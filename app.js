@@ -8981,13 +8981,49 @@ function downloadMonthlyMasterCSV(){
     // up — its closing state IS the live current inventory (same meaning
     // as "CURRENT INVENTORY (as of generation)" on the Dashboard sheet).
     const closingSnap=reportMonthStillOngoing?null:await getInventorySnapshotAsOf(monthEndIso);
+    // Net GRN-PASS-in minus dispatched-out per SKU for history records
+    // matching a time predicate — used to reconstruct opening/closing
+    // stock when no inventory snapshot exists for that point in time.
+    const netMovementBySku=(pred)=>{
+      const net={};
+      history.forEach(h=>{
+        if(h.voided) return;
+        const t=parseDisplayTs(h.ts);
+        if(!t||!pred(t)) return;
+        if(h.type==='grn') (h.items||[]).forEach(it=>{ if(it.qc==='PASS') net[it.sku]=(net[it.sku]||0)+(Number(it.qty)||0); });
+        else if(h.type==='dispatched') (h.items||[]).forEach(it=>{ net[it.sku]=(net[it.sku]||0)-(Number(it.qty)||0); });
+      });
+      return net;
+    };
+    const startMs=start.getTime(), endMs=end.getTime();
     const openingBySku={};
+    let openingSource='snapshot';
     if(openingSnap&&openingSnap.items){ openingSnap.items.forEach(it=>{ openingBySku[it.sku]=it.qty||0; }); }
+    else {
+      // No snapshot before the month started — previously this defaulted
+      // every SKU to 0, so all earlier receipts (e.g. August's VM GRN)
+      // showed up as unexplained "Other Movement". Rebuild it from every
+      // GRN receipt and dispatch recorded before the month began.
+      openingSource='history';
+      const pre=netMovementBySku(t=>t<startMs);
+      Object.keys(pre).forEach(sku=>{ openingBySku[sku]=Math.max(0,pre[sku]); });
+    }
     const closingBySku={};
+    let closingSource='snapshot';
     if(closingSnap&&closingSnap.items){
       closingSnap.items.forEach(it=>{ closingBySku[it.sku]=it.qty||0; });
-    } else {
+    } else if(reportMonthStillOngoing){
+      closingSource='live';
       SKUS.forEach(s=>{ closingBySku[s.sku]=(inv[s.sku]||{qty:0}).qty; });
+    } else {
+      // Month is over but no month-end snapshot was found. This used to
+      // fall back to LIVE stock, so anything received/dispatched after
+      // the month ended (e.g. a 1 Oct GRN) leaked into the closing
+      // figure. Instead, take live stock and undo everything recorded
+      // after the month ended.
+      closingSource='live-adjusted';
+      const post=netMovementBySku(t=>t>endMs);
+      SKUS.forEach(s=>{ closingBySku[s.sku]=Math.max(0,(inv[s.sku]||{qty:0}).qty-(post[s.sku]||0)); });
     }
     // Per-SKU inward (received, PASS only) and outward (dispatched) for
     // the month — same source data as the aggregate totalUnitsIn/
@@ -9016,9 +9052,10 @@ function downloadMonthlyMasterCSV(){
     const totalOutward=movRows.reduce((a,r)=>a+r[5],0);
     const totalOtherMovement=movRows.reduce((a,r)=>a+r[6],0);
     const totalClosing=movRows.reduce((a,r)=>a+r[7],0);
-    const movNote=(!openingSnap)
-      ? `* No inventory snapshot exists at or before ${monthLabel}'s start — this appears to be before the WMS went live, so Opening Stock defaults to 0 for every SKU. "Other Movement" also captures returns restocked, manual qty corrections, cycle-count adjustments, and void-GRN reversals during the month.`
-      : `* "Other Movement" captures anything that changed stock this month besides GRN receipts and dispatches — returns restocked, manual qty corrections, cycle-count adjustments, void-GRN reversals, etc.`;
+    const movNote=`* "Other Movement" captures anything that changed stock this month besides GRN receipts and dispatches — returns restocked, manual qty corrections, cycle-count adjustments, void-GRN reversals, etc.`
+      +(openingSource==='history'?` Opening Stock was rebuilt from all GRN receipts minus dispatches recorded before ${monthLabel} (no inventory snapshot existed at the month start).`:'')
+      +(closingSource==='live-adjusted'?` Closing Stock is current live stock with everything received/dispatched after ${monthLabel} ended taken back out (no month-end inventory snapshot was found).`:'')
+      +(closingSource==='live'?` Closing Stock is current live stock (month still in progress).`:'');
     // Row numbers below mirror the fixed layout just built: 4 meta rows +
     // 1 blank + header row, then movRows.length data rows, then a blank
     // and the TOTAL row — used by styleOpsBySheet further down.
@@ -10387,6 +10424,17 @@ async function loadOrderEvents(orderId){
 // The original display string is always shown to the user unchanged.
 function parseDisplayTs(str){
   if(!str) return 0;
+  // Records written by SQL (backfills, reconciliation entries) carry an
+  // ISO/Postgres timestamp like "2026-09-28 14:42:01.26479+00" instead
+  // of the app's "28 Sept, 02:30 pm" display string. The regex below
+  // can't read those, so they returned 0 and were silently dropped from
+  // every date-filtered report (e.g. RECON-BACKFILL-20260928-SHIRTS was
+  // missing from September's Inbound GRN / Units Received).
+  if(/^\d{4}-\d{2}-\d{2}/.test(String(str).trim())){
+    const iso=String(str).trim().replace(' ','T').replace(/([+-]\d{2})$/,'$1:00');
+    const t=Date.parse(iso);
+    if(!isNaN(t)) return t;
+  }
   // The month group used to be a fixed \w{3} — but the en-IN locale
   // (used by ts()'s toLocaleString call) renders September as "Sept",
   // not "Sep". A 3-char-only match can't consume "Sept" and leaves a
