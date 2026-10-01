@@ -1065,9 +1065,15 @@ function nav(tab){
     return;
   }
   document.querySelectorAll('.ntab').forEach(t=>t.classList.toggle('active',t.dataset.tab===tab));
+  // Keep the top bar title in sync even when a page is opened from a
+  // button (Today board, dashboard tiles) rather than the sidebar.
+  const _tabEl=document.querySelector(`.ntab[data-tab="${tab}"] span`);
+  const _titleEl=document.getElementById('topbar-title');
+  if(_tabEl&&_titleEl) _titleEl.textContent=_tabEl.textContent;
   document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.id==='page-'+tab));
   updateNotificationBadge();
   if(tab==='dashboard')renderDash();
+  if(tab==='today')refreshToday();
   if(tab==='inventory'){loadReservedMap().then(renderInv);renderInvVersionHistory();}
   if(tab==='labels'){renderLabelPage();}
   if(tab==='audit'){renderAuditLog();renderDataIntegrityCheck();}
@@ -1701,6 +1707,78 @@ function renderOrderAgingAlert(){
     </div>
   </div>`;
 }
+// ═══ TODAY — one screen for supervisors: what needs doing right now ═══
+function _ageStr(iso){
+  if(!iso) return '';
+  const ms=Date.now()-new Date(iso).getTime();
+  if(isNaN(ms)||ms<0) return '';
+  const h=Math.floor(ms/3600000), d=Math.floor(h/24);
+  return d>0?`${d}d ${h%24}h`:h>0?`${h}h`:`${Math.max(1,Math.floor(ms/60000))}m`;
+}
+function openTodayOrder(id){
+  nav('orderstatus');
+  const i=document.getElementById('os-order-id');
+  if(i){ i.value=id; if(typeof lookupOrderStatus==='function') lookupOrderStatus(); }
+}
+function refreshToday(){
+  renderToday();
+  if(typeof loadOrders==='function') loadOrders().then(renderToday).catch(()=>{});
+}
+function renderToday(){
+  const board=document.getElementById('today-board');
+  if(!board) return;
+  const now=new Date();
+  const todayKey=dateKeyFor(now);
+  const dEl=document.getElementById('today-date');
+  if(dEl) dEl.textContent='Today — '+now.toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long'});
+  const uEl=document.getElementById('today-updated');
+  if(uEl) uEl.textContent='Updated '+now.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+  const units=o=>(o.items||[]).reduce((a,i)=>a+(Number(i.qty)||0),0);
+  const byAge=(a,b)=>new Date(a.createdAt||0)-new Date(b.createdAt||0);
+  const toAssign=orders.filter(o=>o.status==='unassigned').sort(byAge);
+  const picking=orders.filter(o=>o.status==='assigned').sort(byAge);
+  const toPack=orders.filter(o=>o.status==='picked').sort(byAge);
+  const awaitingAwb=orders.filter(o=>o.status==='packed'||o.status==='left_warehouse').sort(byAge);
+  const dispToday=history.filter(h=>h.type==='dispatched'&&dispatchDateKey(h.dispatchedAt||h.ts)===todayKey);
+  const grnsToday=history.filter(h=>h.type==='grn'&&!h.voided&&(()=>{const t=parseDisplayTs(h.ts);if(!t)return false;const d=new Date(t);return d.toDateString()===now.toDateString();})());
+  const unitsOut=dispToday.reduce((a,d)=>a+(d.items||[]).reduce((b,i)=>b+(Number(i.qty)||0),0),0);
+  const unitsIn=grnsToday.reduce((a,g)=>a+(g.items||[]).filter(i=>i.qc==='PASS').reduce((b,i)=>b+(Number(i.qty)||0),0),0);
+  const late=o=>o.createdAt&&(Date.now()-new Date(o.createdAt).getTime())>24*3600000;
+  const kpi=(icon,label,val,sub,color)=>`<div class="sc"><div class="sl"><i class="ti ${icon}"></i>${label}</div><div class="sv"${color?` style="color:${color}"`:''}>${val}</div><div class="ss">${sub}</div></div>`;
+  document.getElementById('today-kpis').innerHTML=
+    kpi('ti-clipboard-list','To assign',toAssign.length,`${toAssign.filter(late).length} older than 24h`,toAssign.length?'var(--wt)':'')
+   +kpi('ti-scan','Picking',picking.length,'assigned, not yet picked')
+   +kpi('ti-box','To pack',toPack.length,'picked, awaiting packing')
+   +kpi('ti-truck-loading','Awaiting AWB',awaitingAwb.length,'packed, not dispatched',awaitingAwb.length?'var(--it)':'')
+   +kpi('ti-truck-delivery','Dispatched today',dispToday.length,`${unitsOut} units`,'var(--st)')
+   +kpi('ti-package-import','Received today',grnsToday.length,`${unitsIn} units passed QC`);
+  const card=o=>`<div class="today-card${late(o)?' late':''}" onclick="openTodayOrder('${esc(o.id)}')" title="Open order status">
+      <div class="tc-top"><span>${esc(o.id)}</span><span style="font-weight:400;color:${late(o)?'var(--dt)':'var(--t3)'}">${_ageStr(o.createdAt)}</span></div>
+      <div class="tc-sub">${esc(o.customerName||'—')}</div>
+      <div class="tc-sub">${(o.items||[]).length} SKU · ${units(o)} units${o.assignedPicker?` · ${esc(o.assignedPicker)}`:''}</div></div>`;
+  const col=(icon,title,list,render,openTab,openLabel)=>`<div class="today-col">
+      <div class="today-col-h"><i class="ti ${icon}"></i>${title}<span class="n">${list.length}</span></div>
+      <div class="today-col-b">${list.length?list.slice(0,40).map(render).join('')+(list.length>40?`<div class="today-empty">+${list.length-40} more</div>`:''):'<div class="today-empty">Nothing here</div>'}</div>
+      <div class="today-col-f"><button class="btn-sm" onclick="nav('${openTab}')">${openLabel} <i class="ti ti-arrow-right"></i></button></div>
+    </div>`;
+  const dispCard=d=>`<div class="today-card"><div class="tc-top"><span>${esc(d.orderId||d.id)}</span><span style="font-weight:400;color:var(--t3)">${esc((d.dispatchedAt||'').split(',').slice(1).join(',').trim())}</span></div><div class="tc-sub">${esc(d.courierPartner||'—')} · <span class="mono">${esc(d.awb||'')}</span></div><div class="tc-sub">${esc(d.recipientName||'')}</div></div>`;
+  board.innerHTML=
+     col('ti-clipboard-list','To assign',toAssign,card,'orders','Assign on Orders')
+    +col('ti-scan','Picking',picking,card,'picking','Open Picking')
+    +col('ti-box','To pack',toPack,card,'packing','Open Packing')
+    +col('ti-truck-loading','Awaiting AWB',awaitingAwb,card,'dispatch','Open Dispatch')
+    +col('ti-truck-delivery','Dispatched today',dispToday.slice().reverse(),dispCard,'dispatch','Dispatch log');
+  // Picker workload
+  const load={};
+  orders.filter(o=>o.status==='assigned'||o.status==='picked').forEach(o=>{
+    const p=o.assignedPicker||'Unassigned';
+    if(!load[p]) load[p]={assigned:0,picked:0,units:0};
+    load[p][o.status==='assigned'?'assigned':'picked']++; load[p].units+=units(o);
+  });
+  const pk=Object.entries(load).sort((a,b)=>(b[1].assigned+b[1].picked)-(a[1].assigned+a[1].picked));
+  document.getElementById('today-pickers').innerHTML=pk.length?`<div class="tw"><table><thead><tr><th>Picker</th><th style="text-align:right">To pick</th><th style="text-align:right">Picked, to pack</th><th style="text-align:right">Units</th></tr></thead><tbody>${pk.map(([n,v])=>`<tr><td>${esc(n)}</td><td style="text-align:right">${v.assigned}</td><td style="text-align:right">${v.picked}</td><td style="text-align:right">${v.units}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">No open picking work</div>';
+  document.getElementById('today-grns').innerHTML=grnsToday.length?grnsToday.slice().reverse().map(g=>`<div class="hist-entry"><div class="hist-head"><span class="hist-id">${esc(g.id)}</span><span class="hist-ts">${esc(g.ts||'')}</span></div><div class="hist-body">${esc(g.detail||'')}</div></div>`).join(''):'<div class="empty">No GRNs today</div>';
+}
 function renderDash(){
   const total=SKUS.length,ins=SKUS.filter(s=>inv[s.sku]&&inv[s.sku].qty>0).length;
   const low=SKUS.filter(s=>inv[s.sku]&&getSt(inv[s.sku].qty)==='low');
@@ -1732,11 +1810,11 @@ function renderDash(){
     const totalHeld=Object.values(reservedMap).reduce((a,v)=>a+v,0);
     el.textContent=totalHeld;
   });
-  const alerts=[...out.map(s=>({...s,st:'out'})),...low.map(s=>({...s,st:'low'}))].slice(0,5);
+  const alerts=[...out.map(s=>({...s,st:'out'})),...low.map(s=>({...s,st:'low'}))].slice(0,30);
   const ae=document.getElementById('dash-alerts');
   ae.innerHTML=alerts.length?alerts.map(s=>`<div class="hist-entry"><div class="hist-head"><span style="font-size:11px;font-weight:600">${s.sub} — ${s.variant}</span>${s.st==='out'?'<span class="pill p-out">Out</span>':'<span class="pill p-low">Low</span>'}</div><div class="hist-body">${s.sku} · BIN ${(inv[s.sku]||{rack:s.rack,shelf:s.shelf}).rack}-${(inv[s.sku]||{rack:s.rack,shelf:s.shelf}).shelf} · <b>${(inv[s.sku]||{qty:0}).qty}</b> units</div></div>`).join(''):'<div class="empty">No stock alerts — all items healthy ✓</div>';
   const re=document.getElementById('dash-recent');
-  const rec=history.slice(-5).reverse();
+  const rec=history.slice(-15).reverse();
   re.innerHTML=rec.length?rec.map(h=>`<div class="hist-entry"><div class="hist-head"><span class="hist-id">${h.id}</span><span class="pill ${h.type==='dispatch'?'p-low':h.type==='return'?'p-info':'p-ok'}">${h.type}</span></div><div class="hist-body">${h.ts} · ${esc(h.detail||'')}</div></div>`).join(''):'<div class="empty">No recent activity</div>';
   renderDashRackSummary();
 }
@@ -3780,21 +3858,58 @@ function populateSkuSelFromList(id_, items){
     return `<option value="${it.sku}">${full?full.sub:it.name} — ${full?full.variant:it.variant} (${it.sku}) · need ${it.qty}</option>`;
   }).join('');
 }
+// ── Keep the picker's place in a long order list ──────────────────────
+// Picking order no. 23 out of 50 and completing it used to drop the
+// picker back at the top of the list. We remember the list order at the
+// moment a pick starts; when it finishes we scroll to (and highlight) the
+// order that came right after it — or back to the same order if the
+// pick was cancelled.
+let _pickNav=null; // {sel, ids:[...], id, pending:'next'|'same'|null}
+function _rememberPickPosition(sel,orderId){
+  const ids=[...document.querySelectorAll(sel+' [data-oid]')].map(e=>e.dataset.oid);
+  _pickNav={sel,ids,id:orderId,pending:null};
+}
+function _queuePickPosition(sel,mode){ if(_pickNav&&_pickNav.sel===sel) _pickNav.pending=mode; }
+function _applyPickPosition(sel){
+  if(!_pickNav||_pickNav.sel!==sel||!_pickNav.pending) return;
+  const {ids,id,pending}=_pickNav; _pickNav=null;
+  const at=ids.indexOf(id);
+  const tryIds=pending==='same'?[id,...ids.slice(at+1),...ids.slice(0,Math.max(0,at)).reverse()]:[...ids.slice(at+1),...ids.slice(0,Math.max(0,at)).reverse()];
+  for(const oid of tryIds){
+    const card=[...document.querySelectorAll(sel+' [data-oid]')].find(e=>e.dataset.oid===oid);
+    if(!card) continue;
+    if(pending==='next'){
+      const h=card.querySelector('.ph, [data-oid-title]');
+      if(h&&!h.querySelector('.pick-next-tag')) h.insertAdjacentHTML('beforeend','<span class="pick-next-tag">Up next</span>');
+    }
+    requestAnimationFrame(()=>card.scrollIntoView({block:'center',behavior:'smooth'}));
+    card.classList.add('pick-next-hl');
+    setTimeout(()=>card.classList.remove('pick-next-hl'),3000);
+    return;
+  }
+}
+function _pickListFilter(list,inputId){
+  const q=((document.getElementById(inputId)||{}).value||'').toLowerCase().trim();
+  if(!q) return list;
+  return list.filter(o=>String(o.id).toLowerCase().includes(q)||String(o.customerName||'').toLowerCase().includes(q));
+}
 function renderMyAssignedOrders(){
   const el=document.getElementById('pk-my-orders');
   if(!el) return;
   const me=currentProfile?.full_name||'';
   const seeAll=getPerms().canManageOrders;
-  const visible=seeAll?orders.filter(o=>o.status==='assigned'):orders.filter(o=>o.status==='assigned' && o.assignedPicker===me);
+  const allVisible=seeAll?orders.filter(o=>o.status==='assigned'):orders.filter(o=>o.status==='assigned' && o.assignedPicker===me);
+  const visible=_pickListFilter(allVisible,'pk-orders-q');
   el.innerHTML=visible.length?visible.map(o=>`
-    <div class="panel" style="margin-bottom:10px">
+    <div class="panel" style="margin-bottom:10px" data-oid="${esc(o.id)}">
       <div class="ph"><i class="ti ti-clipboard-list"></i>${esc(o.id)}<span class="pill ${o.priority==='Express'?'p-out':'p-info'}" style="margin-left:auto">${o.priority}</span></div>
       <div class="pb">
         <div style="font-size:11px;color:var(--t2);margin-bottom:8px">${o.items.length} SKU(s) · ${o.method}${o.customerName?' · '+esc(o.customerName):''}${seeAll?' · Assigned to '+esc(o.assignedPicker):''}</div>
         <button class="btn-primary" style="width:100%;justify-content:center" onclick="startDesktopPick('${esc(o.id)}')"><i class="ti ti-player-play"></i>Start pick</button>
       </div>
     </div>
-  `).join(''):`<div class="empty">${seeAll?'No orders currently assigned to anyone':'No orders assigned to you right now — check with your supervisor or the Orders tab'}</div>`;
+  `).join(''):(allVisible.length?`<div class="empty">No assigned order matches that search</div>`:`<div class="empty">${seeAll?'No orders currently assigned to anyone':'No orders assigned to you right now — check with your supervisor or the Orders tab'}</div>`);
+  _applyPickPosition('#pk-my-orders');
 }
 function showPickOrdersList(){
   const listWrap=document.getElementById('pk-my-orders-wrap');
@@ -3805,6 +3920,7 @@ function showPickOrdersList(){
 function startDesktopPick(orderId){
   const o=orders.find(x=>x.id===orderId);
   if(!o){ toast('Order not found','w'); return; }
+  _rememberPickPosition('#pk-my-orders',orderId);
   activeOrder=o;
   pkSessionId=newId('SESS');
   pkPickStartTime=Date.now();
@@ -3831,6 +3947,8 @@ async function cancelActivePick(){
   updateToteBadge();
   renderPkItemsList();
   showPickOrdersList();
+  _queuePickPosition('#pk-my-orders','same');
+  renderMyAssignedOrders();
 }
 function fmtLoc(bin){
   if(!bin) return '—';
@@ -4044,6 +4162,7 @@ async function releaseToPacking(){
   const el=document.getElementById('pk-log');
   el.innerHTML=history.filter(h=>h.type==='pick').slice(-6).reverse().map(h=>`<div class="hist-entry"><div class="hist-head"><span class="hist-id">${h.id}</span><span class="hist-ts">${h.ts}</span></div><div class="hist-body">${h.detail}</div></div>`).join('');
   showPickOrdersList();
+  _queuePickPosition('#pk-my-orders','next');
   renderMyAssignedOrders();
   toast(`Pick task ${tid} released to packing queue`,'s');
 }
@@ -5438,6 +5557,7 @@ async function confirmCourierDispatch(){
   if(document.getElementById('page-orders')?.classList.contains('active')){renderOrdersBoard();}
   toast(`Dispatch ${did} confirmed · AWB ${awb} assigned to ${name} · ${dispatchWeight}kg`,'s');
 }
+let _dispLogLimit=50;
 function renderDispatchCompletedLog(){
   const el=document.getElementById('disp-dispatch-log');
   if(!el)return;
@@ -5457,7 +5577,12 @@ function renderDispatchCompletedLog(){
   if(recentIds.some(id=>{ const h=history.find(x=>x.id===id); return h && h.podPhoto===undefined; })){
     loadHistPhotos(recentIds).then(changed=>{ if(changed) renderDispatchCompletedLog(); });
   }
-  el.innerHTML=dispatched.length?dispatched.slice().reverse().map(d=>{
+  // Render the most recent _dispLogLimit entries only (each entry is a
+  // heavy card); "Show more" extends it. With 300+ dispatches the full
+  // list made this page slow to open and re-render after every scan.
+  const _shown=dispatched.slice(-_dispLogLimit);
+  const _moreBtn=dispatched.length>_shown.length?`<div style="text-align:center;padding:8px"><button class="btn-sm" onclick="_dispLogLimit+=50;renderDispatchCompletedLog()"><i class="ti ti-chevrons-down"></i>Show ${Math.min(50,dispatched.length-_shown.length)} more (${dispatched.length-_shown.length} older)</button></div>`:'';
+  el.innerHTML=_shown.length?_shown.slice().reverse().map(d=>{
     const hasDims=d.boxL&&d.boxW&&d.boxH;
     const dimsStr=hasDims?`${d.boxL}×${d.boxW}×${d.boxH} cm`:'—';
     const actualW=d.actualWeight?`${d.actualWeight} kg`:'—';
@@ -5497,7 +5622,7 @@ function renderDispatchCompletedLog(){
         </div>
       </div>
     </div>`;
-  }).join(''):(q?'<div class="empty">No matching dispatched order found</div>':'<div class="empty">No dispatches completed yet</div>');
+  }).join('')+_moreBtn:(q?'<div class="empty">No matching dispatched order found</div>':'<div class="empty">No dispatches completed yet</div>');
 }
 
 // ANALYTICS & COMPLIANCE
@@ -6090,21 +6215,24 @@ function renderMpMyOrders(){
   if(!el) return;
   const me=currentProfile?.full_name||'';
   const seeAll=getPerms().canManageOrders;
-  const visible=seeAll?orders.filter(o=>o.status==='assigned'):orders.filter(o=>o.status==='assigned' && o.assignedPicker===me);
+  const allVisible=seeAll?orders.filter(o=>o.status==='assigned'):orders.filter(o=>o.status==='assigned' && o.assignedPicker===me);
+  const visible=_pickListFilter(allVisible,'mp-orders-q');
   el.innerHTML=visible.length?visible.map(o=>`
-    <div class="mp-pack-card">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+    <div class="mp-pack-card" data-oid="${esc(o.id)}">
+      <div data-oid-title style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
         <span style="font-weight:700;font-size:13px">${esc(o.id)}</span>
         <span class="pill ${o.priority==='Express'?'p-out':'p-info'}">${o.priority}</span>
       </div>
       <div style="font-size:11px;color:var(--t2);margin-bottom:9px">${o.items.length} SKU(s) · ${o.method}${o.customerName?' · '+esc(o.customerName):''}${seeAll?' · Assigned to '+esc(o.assignedPicker):''}</div>
       <button class="btn-primary" style="width:100%;justify-content:center" onclick="startMobilePick('${esc(o.id)}')"><i class="ti ti-player-play"></i>Start scanning</button>
     </div>
-  `).join(''):`<div class="empty">${seeAll?'No orders currently assigned to anyone':'No orders assigned to you right now'}</div>`;
+  `).join(''):(allVisible.length?`<div class="empty">No assigned order matches that search</div>`:`<div class="empty">${seeAll?'No orders currently assigned to anyone':'No orders assigned to you right now'}</div>`);
+  _applyPickPosition('#mp-my-orders');
 }
 function startMobilePick(orderId){
   const o=orders.find(x=>x.id===orderId);
   if(!o){ toast('Order not found','w'); return; }
+  _rememberPickPosition('#mp-my-orders',orderId);
   mobilePickSession={orderId:o.id,priority:o.priority,method:o.method,items:[],sessionId:newId('SESS'),order:o,toteId:null,pickStartTime:Date.now(),pickStartTs:ts()};
   clearConfirmedShelf();
   updateToteBadge();
@@ -6301,6 +6429,7 @@ async function cancelMobilePick(){
   await releasePickSession(mobilePickSession.sessionId);
   mobilePickSession=null;
   disableBarcodeScanner();
+  _queuePickPosition('#mp-my-orders','same');
   initMobilePickView();
   renderMpMyOrders();
 }
@@ -6365,6 +6494,7 @@ async function completeMobilePick(){
   toast(`Pick complete — ${mobilePickSession.orderId} sent to packing`,'s');
   mobilePickSession=null;
   disableBarcodeScanner();
+  _queuePickPosition('#mp-my-orders','next');
   initMobilePickView();
   updateMobileKPIs();
 }
@@ -7695,12 +7825,47 @@ async function loadReservedMap(){
     (data||[]).forEach(r=>{ reservedMap[r.sku]=r.reserved_qty; });
   }catch(e){ console.warn('loadReservedMap failed:',e.message||e); }
 }
+// Inventory quick tabs — product family from the SKU code, plus a
+// one-click "needs restock" (low + out) filter.
+const INV_GROUPS=[
+  {key:'all',label:'All'},
+  {key:'shirts',label:'Shirts'},
+  {key:'denim',label:'Denim'},
+  {key:'shoes',label:'Shoes'},
+  {key:'sweaters',label:'Sweaters'},
+  {key:'other',label:'Other uniform'},
+  {key:'vm',label:'VM'},
+];
+function invGroupOf(s){
+  const k=String(s.sku||'');
+  if(k.startsWith('UNI-SHT-')) return 'shirts';
+  if(k.startsWith('UNI-DN-')) return 'denim';
+  if(k.startsWith('UNI-SH-')) return 'shoes';
+  if(k.startsWith('UNI-GS-')||k.startsWith('UNI-MC-')) return 'sweaters';
+  if(k.startsWith('VM-')||s.cat==='VM') return 'vm';
+  return 'other';
+}
+let invGroup='all', invRestockOnly=false;
+function setInvGroup(g){ invGroup=g; renderInv(); }
+function toggleInvRestock(){ invRestockOnly=!invRestockOnly; renderInv(); }
+function renderInvTabs(q){
+  const el=document.getElementById('inv-tabs');
+  if(!el) return;
+  const base=SKUS.filter(s=>!q||s.sku.toLowerCase().includes(q)||s.sub.toLowerCase().includes(q)||s.variant.toLowerCase().includes(q));
+  const cnt=g=>base.filter(s=>g==='all'||invGroupOf(s)===g).length;
+  const restock=base.filter(s=>(invGroup==='all'||invGroupOf(s)===invGroup)&&getSt((inv[s.sku]||{qty:0}).qty)!=='ok').length;
+  el.innerHTML=INV_GROUPS.filter(g=>g.key==='all'||cnt(g.key)>0).map(g=>`<button type="button" class="ordq-tab${invGroup===g.key?' on':''}" onclick="setInvGroup('${g.key}')">${g.label}<span class="n">${cnt(g.key)}</span></button>`).join('')
+    +`<button type="button" class="ordq-tab${invRestockOnly?' on':''}" style="margin-left:auto;${invRestockOnly?'':'border-color:var(--wt);color:var(--wt)'}" onclick="toggleInvRestock()" title="Show only low-stock and out-of-stock SKUs"><i class="ti ti-alert-triangle"></i>Needs restock<span class="n">${restock}</span></button>`;
+}
 function renderInv(){
   const q=(document.getElementById('inv-q').value||'').toLowerCase();
   const cat=document.getElementById('inv-cat').value;
   const st=document.getElementById('inv-st').value;
   const canEditBin=getPerms().canEdit;
+  renderInvTabs(q);
   const rows=SKUS.filter(s=>{
+    if(invGroup!=='all'&&invGroupOf(s)!==invGroup)return false;
+    if(invRestockOnly&&getSt((inv[s.sku]||{qty:0}).qty)==='ok')return false;
     if(cat&&s.cat!==cat)return false;
     const qty=(inv[s.sku]||{qty:0}).qty;
     if(st&&getSt(qty)!==st)return false;
@@ -8089,8 +8254,12 @@ function renderRack(){
     }).join('');
     // Each rack is its own single bay (physically 1 rack = 1 bay, 6
     // shelves) — no splitting into Bay 1/Bay 2 columns.
-    return `<div class="stitle" style="margin-top:14px">Rack ${r} <span style="font-weight:400;color:var(--t3);font-size:11px">— ${occupiedCount}/${SHELVES_PER_RACK} shelves in use</span></div>
-      <div class="rack-wrap"><div class="rack-card"><div class="rack-head"><span style="font-size:12px;font-weight:600">Rack ${r}</span><span style="font-size:10px;color:var(--t2)">${occupiedCount} occupied · ${SHELVES_PER_RACK-occupiedCount} available</span></div>${rows}</div></div>`;
+    // One card per rack, all flowing in a single responsive grid (2–4 per
+    // row depending on screen width). Previously each rack sat alone in
+    // its own half-width 2-column grid under a duplicate heading, so the
+    // right half of the page was always empty and 15 racks meant a very
+    // long scroll.
+    return `<div class="rack-card rack-tile"><div class="rack-head"><span style="font-size:13px;font-weight:700">Rack ${r}</span><span style="font-size:10px;color:var(--t2)">${occupiedCount}/${SHELVES_PER_RACK} in use · ${SHELVES_PER_RACK-occupiedCount} free</span></div>${rows}</div>`;
   }).join('');
   const unplaced=getUnplacedSKUs();
   const unplacedHTML=unplaced.length?`<div class="sep" style="margin:16px 0"></div>
@@ -8101,7 +8270,7 @@ function renderRack(){
         ${unplaced.map(s=>`<div style="font-size:11px"><span class="mono">${esc(s.sku)}</span> — ${esc(s.sub)} (${esc(s.variant)}) <span style="color:var(--t3)">currently tagged Rack ${esc(s.rack)} Shelf ${esc(s.shelf)}</span></div>`).join('')}
       </div>
     </div>`:'';
-  container.innerHTML=rackHTML+unplacedHTML;
+  container.innerHTML=`<div class="rack-grid">${rackHTML}</div>`+unplacedHTML;
   renderRackSummaryBar(totalOccupiedBins);
   filterRackView();
 }
@@ -10317,7 +10486,7 @@ async function onAuthSuccess(){
 // "users" is governed separately by canManageUsers (set in onAuthSuccess).
 const ROLE_TABS = {
   admin: null,
-  supervisor: ['dashboard','inbound','picking','packing','orders','dispatch','mobile','returns','inventory','rack','orderstatus','reports','sop','audit','labels','analytics','finance'],
+  supervisor: ['dashboard','today','inbound','picking','packing','orders','dispatch','mobile','returns','inventory','rack','orderstatus','reports','sop','audit','labels','analytics','finance'],
   picker: ['picking','mobile'],
   packer: ['packing','mobile'],
   viewer: null,
