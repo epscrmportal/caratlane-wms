@@ -646,7 +646,9 @@ async function initInv(){
 }
 async function saveInv(){
   setSyncStatus('syncing');
-  localStorage.setItem('cl_wms_inv2', JSON.stringify(inv)); // always save locally first
+  // Guarded: a full localStorage (history cache is large) must never abort
+  // the real Supabase save below — this local copy is only a fallback cache.
+  try{localStorage.setItem('cl_wms_inv2', JSON.stringify(inv));}catch(e){ console.warn('local inventory cache write skipped (quota):', e?.message||e); }
   if(typeof supabase === 'undefined' || !supa){ setSyncStatus('offline'); return {success:false,error:'offline'}; }
   try {
     const now=new Date().toISOString();
@@ -659,7 +661,7 @@ async function saveInv(){
     const {error} = await supa.from('inventory').upsert(rows, {onConflict:'sku'});
     if(error){ console.error('saveInv Supabase error:', error.message); throw new Error(error.message); }
     setSyncStatus('ok');
-    localStorage.setItem('cl_wms_inv2', JSON.stringify(inv)); // local backup
+    try{localStorage.setItem('cl_wms_inv2', JSON.stringify(inv));}catch(e){} // local backup (best-effort)
     // Save version snapshot to history table
     const snapId=newId('SNAP');
     const snapRow={
@@ -820,7 +822,13 @@ async function saveHist(){
     const {error} = await supa.from('history').upsert(row, {onConflict:'id'});
     if(error) throw error;
     setSyncStatus('ok');
-    localStorage.setItem('cl_wms_hist2', JSON.stringify(history)); // local backup
+    // Best-effort local backup ONLY. This line used to be unguarded: the
+    // Supabase upsert above had already succeeded, then this write hit the
+    // browser storage quota, threw, and the catch below reported the save
+    // as FAILED — a false "Not saved" alarm on GRNs that were actually on
+    // the server. If the cache no longer fits, drop the stale copy so it
+    // stops eating the quota other keys (inventory, settings) need.
+    try{localStorage.setItem('cl_wms_hist2', JSON.stringify(history));}catch(e){ try{localStorage.removeItem('cl_wms_hist2');}catch(e2){} }
     return {success:true};
   } catch(e) {
     console.error('saveHist error:', JSON.stringify(e), e?.message, e?.code);
@@ -2015,18 +2023,33 @@ async function applyCellStyles(buf,opsBySheet){
     let target=relTag.match(/Target="([^"]+)"/)[1];
     if(!target.startsWith('xl/')) target='xl/'+target;
     let xml=await zip.file(target).async('string');
+    // Resolve every op into one ref->style map FIRST (later ops still win
+    // on overlapping cells, same as before), then stamp all cells in a
+    // single pass over the sheet XML. The old version re-scanned the whole
+    // sheet with a fresh RegExp once per styled cell — quadratic in sheet
+    // size. A month with a few hundred orders meant tens of thousands of
+    // full-sheet scans, which froze the tab on "Building workbook…" with
+    // no error (measured: 100 orders = 42s; real Sept volume = minutes).
+    const styleByRef=new Map();
     for(const op of opsBySheet[sheetName]){
       const idx=REPORT_STYLE_IDX[op.style];
       if(idx==null) continue;
       if(op.ref){
-        xml=_patchCellStyleAttr(xml,op.ref,idx);
+        styleByRef.set(op.ref,idx);
       }else if(op.range){
-        for(let r=op.range.r1;r<=op.range.r2;r++){
-          for(let c=op.range.c1;c<=op.range.c2;c++){
-            xml=_patchCellStyleAttr(xml,_colToLetter(c)+r,idx);
-          }
+        for(let c=op.range.c1;c<=op.range.c2;c++){
+          const col=_colToLetter(c);
+          for(let r=op.range.r1;r<=op.range.r2;r++) styleByRef.set(col+r,idx);
         }
       }
+    }
+    if(styleByRef.size){
+      xml=xml.replace(/<c r="([A-Z]+\d+)"([^>]*?)(\/?)>/g,(m,ref,attrs,selfClose)=>{
+        const idx=styleByRef.get(ref);
+        if(idx==null) return m;
+        const newAttrs=/\ss="\d+"/.test(attrs)?attrs.replace(/\ss="\d+"/,` s="${idx}"`):` s="${idx}"`+attrs;
+        return `<c r="${ref}"${newAttrs}${selfClose}>`;
+      });
     }
     zip.file(target,xml);
   }
@@ -3531,18 +3554,100 @@ function downloadOrdersCSVTemplate(){
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+// Order queue view state — status tab, current page. 100 rows per page:
+// with several hundred orders (e.g. bulk CSV imports) rendering the whole
+// list at once made the page very long and slow to scroll/re-render.
+const ORDQ_PAGE_SIZE=100;
+let ordqStatus='all';
+let ordqPage=1;
+const ORDQ_TABS=[
+  {key:'all',label:'All'},
+  {key:'active',label:'Active'},
+  {key:'unassigned',label:'Unassigned'},
+  {key:'assigned',label:'Assigned'},
+  {key:'picked',label:'Picked'},
+  {key:'packed',label:'Awaiting Dispatch'},
+  {key:'left_warehouse',label:'Left Warehouse'},
+  {key:'dispatched',label:'Dispatched'},
+  {key:'cancelled',label:'Cancelled'},
+];
+function _ordqMatchesTab(o,key){
+  if(key==='all') return true;
+  if(key==='active') return o.status!=='dispatched' && o.status!=='cancelled';
+  return o.status===key;
+}
+function setOrdqStatus(key){ ordqStatus=key; ordqPage=1; renderOrdersBoard(); }
+function setOrdqPage(p){
+  ordqPage=p; renderOrdersBoard();
+  const board=document.getElementById('ordq-tabs');
+  if(board && board.scrollIntoView) board.scrollIntoView({block:'start',behavior:'smooth'});
+}
+function _ordqPagerHtml(page,pages,from,to,total){
+  if(total===0) return '';
+  const btn=(p,label,opts={})=>`<button class="btn-sm${opts.on?' on':''}" ${opts.disabled?'disabled':''} onclick="setOrdqPage(${p})"${opts.title?` title="${opts.title}"`:''}>${label}</button>`;
+  // Compact page list: first, last, current ±2, with ellipses in between.
+  const nums=[];
+  for(let p=1;p<=pages;p++){
+    if(p===1||p===pages||Math.abs(p-page)<=2) nums.push(p);
+    else if(nums[nums.length-1]!=='…') nums.push('…');
+  }
+  const numsHtml=nums.map(p=>p==='…'?'<span style="padding:4px 4px;color:var(--t3)">…</span>':btn(p,p,{on:p===page})).join('');
+  return `<div class="ordq-pager"><div>Showing <b>${from}–${to}</b> of <b>${total}</b> order(s)</div>${pages>1?`<div class="pg">${btn(page-1,'<i class="ti ti-chevron-left"></i>',{disabled:page<=1,title:'Previous page'})}${numsHtml}${btn(page+1,'<i class="ti ti-chevron-right"></i>',{disabled:page>=pages,title:'Next page'})}</div>`:''}</div>`;
+}
 function renderOrdersBoard(){
   const el=document.getElementById('orders-board');
   if(!el) return;
   const searchEl=document.getElementById('ordq-search');
   const searchQ=(searchEl?searchEl.value:'').toLowerCase().trim();
-  const boardOrders=searchQ?orders.filter(o=>o.id.toLowerCase().includes(searchQ)):orders;
-  if(!orders.length){ el.innerHTML='<div class="empty">No orders yet</div>'; return; }
-  if(!boardOrders.length){ el.innerHTML=`<div class="empty">No orders match order no. "${esc(searchQ)}"</div>`; return; }
+  const prioEl=document.getElementById('ordq-priority');
+  const prioQ=prioEl?prioEl.value:'';
+  const sortEl=document.getElementById('ordq-sort');
+  const sortQ=sortEl?sortEl.value:'new';
+  // Search + priority narrow the set first; tab counts are computed on
+  // that narrowed set so each tab's number matches what clicking it shows.
+  const narrowed=orders.filter(o=>{
+    if(prioQ && o.priority!==prioQ) return false;
+    if(!searchQ) return true;
+    return String(o.id||'').toLowerCase().includes(searchQ)
+      || String(o.customerName||'').toLowerCase().includes(searchQ)
+      || String(o.assignedPicker||'').toLowerCase().includes(searchQ);
+  });
+  const tabsEl=document.getElementById('ordq-tabs');
+  if(tabsEl){
+    tabsEl.innerHTML=ORDQ_TABS.map(t=>{
+      const n=narrowed.filter(o=>_ordqMatchesTab(o,t.key)).length;
+      return `<button type="button" class="ordq-tab${ordqStatus===t.key?' on':''}" onclick="setOrdqStatus('${t.key}')">${t.label}<span class="n">${n}</span></button>`;
+    }).join('');
+  }
+  const summaryEl=document.getElementById('ordq-summary');
+  if(summaryEl){
+    const pending=orders.filter(o=>o.status==='unassigned').length;
+    summaryEl.innerHTML=`${orders.length} total · <b style="color:var(--t)">${pending}</b> waiting for assignment`;
+  }
+  const tsOf=o=>{ const t=o.createdAt?new Date(o.createdAt).getTime():0; return isNaN(t)?0:t; };
+  let boardOrders=narrowed.filter(o=>_ordqMatchesTab(o,ordqStatus));
+  if(sortQ==='old') boardOrders=[...boardOrders].sort((a,b)=>tsOf(a)-tsOf(b));
+  else if(sortQ==='id') boardOrders=[...boardOrders].sort((a,b)=>String(a.id).localeCompare(String(b.id),undefined,{numeric:true}));
+  else boardOrders=[...boardOrders].sort((a,b)=>tsOf(b)-tsOf(a));
+  if(!orders.length){ el.innerHTML='<div class="empty">No orders yet</div>'; renderOrderAgingAlert(); return; }
+  if(!boardOrders.length){
+    const tabLabel=(ORDQ_TABS.find(t=>t.key===ordqStatus)||{}).label||'';
+    el.innerHTML=`<div class="empty">No ${ordqStatus==='all'?'':esc(tabLabel.toLowerCase())+' '}orders${searchQ?` matching "${esc(searchQ)}"`:''}${prioQ?` with ${esc(prioQ)} priority`:''}</div>`;
+    renderOrderAgingAlert();
+    return;
+  }
+  const total=boardOrders.length;
+  const pages=Math.max(1,Math.ceil(total/ORDQ_PAGE_SIZE));
+  if(ordqPage>pages) ordqPage=pages;
+  if(ordqPage<1) ordqPage=1;
+  const startIdx=(ordqPage-1)*ORDQ_PAGE_SIZE;
+  const pageOrders=boardOrders.slice(startIdx,startIdx+ORDQ_PAGE_SIZE);
+  const pagerHtml=_ordqPagerHtml(ordqPage,pages,startIdx+1,startIdx+pageOrders.length,total);
+  const fmtCreated=o=>{ const t=tsOf(o); return t?new Date(t).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'—'; };
   const canManage=getPerms().canManageOrders;
   const statusPill={unassigned:'p-hold',assigned:'p-info',picked:'p-out',packed:'p-low',left_warehouse:'p-info',dispatched:'p-ok',cancelled:'p-hold'};
   const statusLabel={packed:'Awaiting Dispatch',left_warehouse:'Left Warehouse',dispatched:'Dispatched'};
-  el.innerHTML=`<div class="tw"><table><thead><tr><th>Order ID</th><th>Customer</th><th>Priority</th><th>Items</th><th>Status</th><th>Assigned To</th>${canManage?'<th>Invoice</th><th>Action</th>':''}</tr></thead><tbody>${boardOrders.map(o=>{
+  el.innerHTML=`${pagerHtml}<div class="tw"><table><thead><tr><th>Order ID</th><th>Created</th><th>Customer</th><th>Priority</th><th>Items</th><th>Status</th><th>Assigned To</th>${canManage?'<th>Invoice</th><th>Action</th>':''}</tr></thead><tbody>${pageOrders.map(o=>{
     let action='';
     if(canManage && o.status==='unassigned'){
       const opts=pickerNames.length?pickerNames.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join(''):'<option value="">No pickers registered</option>';
@@ -3551,8 +3656,9 @@ function renderOrdersBoard(){
       action=`<button class="btn-sm btn-danger" onclick="unassignOrder('${esc(o.id)}')">Unassign</button>`;
     }
     const invoiceCell=canManage?`<td><button class="btn-sm" onclick="printProformaInvoice('${esc(o.id)}')" title="Print Proforma Invoice"><i class="ti ti-file-invoice"></i></button></td>`:'';
-    return `<tr${o.status==='cancelled'?' style="opacity:0.5"':''}><td class="mono">${esc(o.id)}</td><td style="font-size:11px">${esc(o.customerName||'—')}</td><td><span class="pill ${o.priority==='Express'?'p-out':o.priority==='Standard'?'p-info':'p-hold'}">${o.priority}</span></td><td>${o.items.length} SKU(s)</td><td><span class="pill ${statusPill[o.status]||'p-info'}">${esc(statusLabel[o.status]||o.status)}</span></td><td style="font-size:11px">${o.assignedPicker?esc(o.assignedPicker):'—'}${o.status==='picked'&&o.pickedTaskId?` <span style="color:var(--t3)">(${esc(o.pickedTaskId)})</span>`:''}</td>${canManage?`${invoiceCell}<td>${action}</td>`:''}</tr>`;
-  }).join('')}</tbody></table></div>`;
+    const units=(o.items||[]).reduce((a,i)=>a+(Number(i.qty)||0),0);
+    return `<tr${o.status==='cancelled'?' style="opacity:0.5"':''}><td class="mono">${esc(o.id)}</td><td class="ordq-date">${fmtCreated(o)}</td><td style="font-size:11px">${esc(o.customerName||'—')}</td><td><span class="pill ${o.priority==='Express'?'p-out':o.priority==='Standard'?'p-info':'p-hold'}">${esc(o.priority||'—')}</span></td><td style="font-size:11px;white-space:nowrap">${(o.items||[]).length} SKU · ${units} unit${units===1?'':'s'}</td><td><span class="pill ${statusPill[o.status]||'p-info'}">${esc(statusLabel[o.status]||o.status)}</span></td><td style="font-size:11px">${o.assignedPicker?esc(o.assignedPicker):'—'}${o.status==='picked'&&o.pickedTaskId?` <span style="color:var(--t3)">(${esc(o.pickedTaskId)})</span>`:''}</td>${canManage?`${invoiceCell}<td>${action}</td>`:''}</tr>`;
+  }).join('')}</tbody></table></div>${pages>1?pagerHtml:''}`;
   renderOrderAgingAlert();
 }
 async function cancelOrder(orderId){
@@ -8624,8 +8730,11 @@ function downloadMonthlyMasterCSV(){
   // uploaded Excel manifests (loadXLSXLib).
   toast('Building workbook…','s');
   loadXLSXLib(async()=>{
+   try{
     const sel=document.getElementById('rpt-month-select');
-    const monthStr=sel?sel.value:getMonthKey(new Date());
+    // An empty selector (dropdown not populated yet) used to give
+    // getMonthBounds('') -> Invalid Date -> "Invalid time value" crash.
+    const monthStr=(sel&&/^\d{4}-\d{2}$/.test(sel.value))?sel.value:getMonthKey(new Date());
     const {start,end}=getMonthBounds(monthStr);
     const monthLabel=start.toLocaleDateString('en-IN',{month:'long',year:'numeric'});
     const mOrders=getMonthOrders(monthStr);
@@ -9078,6 +9187,15 @@ function downloadMonthlyMasterCSV(){
         toast('Monthly master report downloaded (without charts/formatting — see console)','w');
       }
     });
+   }catch(err){
+     // Without this, any error while building the report's data (a bad
+     // month selection, an unexpected null in orders/history/billing,
+     // etc.) threw silently inside this async callback — the "Building
+     // workbook…" toast just sat there forever with nothing downloaded
+     // and no indication anything had gone wrong.
+     console.error('Monthly Master Report build failed:',err);
+     toast('Could not build the monthly report — '+(err && err.message ? err.message : 'see browser console for details'),'w');
+   }
   });
 }
 function printWeeklyReport(){
