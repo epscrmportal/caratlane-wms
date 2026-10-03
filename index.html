@@ -488,8 +488,8 @@ td{font-variant-numeric:tabular-nums}
 /* Create Order / Expected Shipment: form in a narrower sticky column on
    the left, the list it feeds on the right, on wide screens. Only kicks
    in when the form is actually shown to this user (managers). */
-@media(min-width:1280px){
-  .split-form:has(> .split-left[style*="block"]){display:grid;grid-template-columns:minmax(420px,540px) minmax(0,1fr);gap:18px;align-items:start}
+@media(min-width:1600px){
+  .split-form:has(> .split-left[style*="block"]){display:grid;grid-template-columns:minmax(400px,500px) minmax(0,1fr);gap:18px;align-items:start}
   .split-form > .split-left[style*="block"]{position:sticky;top:64px;max-height:calc(100vh - 80px);overflow-y:auto;margin-bottom:0!important}
 }
 /* Dashboard: alerts | recent | racks side by side */
@@ -516,9 +516,17 @@ td{font-variant-numeric:tabular-nums}
 
 /* Order queue: compact table + collapsible create form */
 .split-left.form-collapsed{display:none!important}
-@media(min-width:1280px){
+@media(min-width:1600px){
   .split-form:has(> .split-left.form-collapsed){display:block}
 }
+/* Never let the form/queue push the page sideways: grid children may
+   shrink, and anything still too wide scrolls inside its own box. */
+.split-left,.split-right{min-width:0}
+.wrap{overflow-x:clip}
+.ordq-table th:nth-child(2),.ordq-table td:nth-child(2){width:130px;white-space:nowrap}
+.ordq-table th:nth-child(3),.ordq-table td:nth-child(3){width:170px}
+.ordq-table th:nth-child(4),.ordq-table td:nth-child(4){width:1%;white-space:nowrap}
+.ordq-act{flex-wrap:nowrap}
 .ordq-table{min-width:0}
 .ordq-table td{vertical-align:middle}
 .ordq-sub{font-size:11.5px;color:var(--t3);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:420px}
