@@ -1371,6 +1371,17 @@ td{font-variant-numeric:tabular-nums}
       </div>
     </div>
   </div>
+  <div class="panel" style="margin-bottom:14px">
+    <div class="ph"><i class="ti ti-file-spreadsheet"></i>Movin Dispatch Sheet</div>
+    <div class="pb">
+      <div style="font-size:10px;color:var(--t2);margin-bottom:8px;line-height:1.5">Generates a dispatch sheet for Movin — every order dispatched that day via a Movin courier, one row per AWB. Download it and send it to them as-is.</div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <label for="movin-sheet-date" style="font-size:10px;font-weight:600;color:var(--t2)">Date:</label>
+        <input type="date" id="movin-sheet-date" style="padding:6px 9px;font-size:11px;border:0.5px solid var(--b);border-radius:4px">
+        <button class="btn-primary" onclick="downloadMovinDispatchSheet()"><i class="ti ti-download"></i>Movin Dispatch Sheet</button>
+      </div>
+    </div>
+  </div>
   <div class="fg2">
     <div>
       <div class="stitle">Packed orders awaiting dispatch</div>
@@ -1413,7 +1424,7 @@ td{font-variant-numeric:tabular-nums}
                 <option value="Air">Air (Next day)</option>
               </select>
             </div>
-            <div class="frow"><label for="disp-courier">Courier partner name</label><input type="text" id="disp-courier" placeholder="e.g. Bluedart, Delhivery, Ekart, DTDC, XpressBees"></div>
+            <div class="frow"><label for="disp-courier">Courier partner name</label><input type="text" id="disp-courier" placeholder="e.g. Shree Maruti, Gati, Movin, Bluedart, DTDC"></div>
             <div class="frow"><label for="disp-awb">Courier AWB number (from 3rd party)</label><input type="text" id="disp-awb" placeholder="e.g. 1234567890123"></div>
             <div class="frow">
               <label for="disp-weight">Final weight at dispatch (kg)</label>
@@ -7024,6 +7035,11 @@ function renderDispatchPage(){
     const now=new Date();
     gatiDateEl.value=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
   }
+  const movinDateEl=document.getElementById('movin-sheet-date');
+  if(movinDateEl && !movinDateEl.value){
+    const now=new Date();
+    movinDateEl.value=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+  }
 }
 // dispatchedAt is compared against a chosen calendar date in a few places
 // (the Shree Maruti sheet, below). That used to be done by string-prefix
@@ -7216,6 +7232,70 @@ function downloadGatiDispatchSheet(){
     setTimeout(()=>URL.revokeObjectURL(url),2000);
     logAudit('GATI_SHEET_DOWNLOADED',null,null,null,{date:dateVal,orderCount:rows.length});
     toast(`✓ Downloaded Gati Dispatch Sheet — ${rows.length} order(s) for ${datePrefix}`,'s');
+  });
+}
+// ── Movin Dispatch Sheet ────────────────────────────────────────────────
+// Same layout as the Gati / Shree Maruti sheets, for orders dispatched via
+// Movin. Movin AWBs always start with D (see detectCourierFromAwb).
+function downloadMovinDispatchSheet(){
+  const dateEl=document.getElementById('movin-sheet-date');
+  const dateVal=dateEl&&dateEl.value;
+  if(!dateVal){ toast('Pick a date first','w'); return; }
+  const d=new Date(dateVal+'T00:00:00');
+  if(isNaN(d.getTime())){ toast('Invalid date','w'); return; }
+  const datePrefix=d.toLocaleString('en-IN',{day:'2-digit',month:'short'});
+  const targetKey=dateKeyFor(d);
+  const rows=history.filter(h=>h.type==='dispatched' && h.awb && detectCourierFromAwb(h.awb,h.courierPartner)==='Movin' && h.dispatchedAt && dispatchDateKey(h.dispatchedAt)===targetKey);
+  if(!rows.length){ toast(`No Movin dispatches found for ${datePrefix}`,'w'); return; }
+  loadXLSXLib(()=>{
+    const header=['Awb No.','Parent Awb No.','Name','Address1','Address2','Pin','Tel','Weight','Width (cm)','Height (cm)','Length (cm)','Value','Product Category','Service Type','Parcel By','Content','Remark','E-Way Bills'];
+    const aoa=[header];
+    rows.slice().sort((a,b)=>(a.orderId||'').localeCompare(b.orderId||'')).forEach(h=>{
+      const ord=orders.find(x=>x.id===h.orderId);
+      const items=h.items||[];
+      let value=0;
+      items.forEach(it=>{
+        const sku=SKUS.find(s=>s.sku===it.sku);
+        const price=sku&&sku.price!=null?sku.price:null;
+        if(price!=null) value+=price*(it.qty||0);
+      });
+      const cp=(h.courierPartner||'').toUpperCase();
+      const parcelBy=cp.includes('SUF')?'SURFACE':cp.includes('AIR')?'AIR':'SURFACE';
+      aoa.push([
+        h.awb||'',
+        '',
+        h.recipientName||(ord&&ord.customerName)||'',
+        h.address||(ord&&ord.address)||'',
+        '',
+        h.pincode||(ord&&ord.pincode)||'',
+        h.phone||(ord&&ord.phone)||'',
+        h.dispatchWeight||h.chargeableWeight||h.actualWeight||'',
+        h.boxW||'',
+        h.boxH||'',
+        h.boxL||'',
+        value||'',
+        'NON DOX',
+        'STANDARD',
+        parcelBy,
+        'NON DOX',
+        h.orderId||'',
+        ''
+      ]);
+    });
+    const ws=XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols']=[{wch:16},{wch:14},{wch:32},{wch:36},{wch:20},{wch:8},{wch:12},{wch:8},{wch:10},{wch:10},{wch:10},{wch:8},{wch:12},{wch:10},{wch:10},{wch:10},{wch:12},{wch:14}];
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,'Sheet 1');
+    const buf=XLSX.write(wb,{type:'array',bookType:'xlsx'});
+    const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const url=URL.createObjectURL(blob);
+    const link=document.createElement('a');
+    link.href=url;
+    link.download=`Movin Dispatch Sheet - ${dateVal}.xlsx`;
+    document.body.appendChild(link); link.click(); link.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),2000);
+    logAudit('MOVIN_SHEET_DOWNLOADED',null,null,null,{date:dateVal,orderCount:rows.length});
+    toast(`✓ Downloaded Movin Dispatch Sheet — ${rows.length} order(s) for ${datePrefix}`,'s');
   });
 }
 function printPackingSlip(historyId){
@@ -7490,6 +7570,9 @@ function renderPackedOrdersList(){
 // that's still added separately by a supervisor/admin via the existing
 // "Assign courier & AWB" form (confirmCourierDispatch, unchanged).
 async function handleDispatchExitScan(barcode){
+  // Scanners/keyboards can deliver the code in lowercase (e.g. "pkd-374936" for
+  // "PKD-374936", caps-lock / HT20 case quirk) — history ids are uppercase.
+  barcode=(barcode||'').trim().toUpperCase();
   const packed=history.find(h=>h.id===barcode && h.type==='packed');
   if(!packed){
     const already=history.find(h=>h.id===barcode);
@@ -7613,7 +7696,8 @@ function updateAwbScanCourier(){
 async function handleAwbStickerScan(barcode){
   const pending=_awbPendingOrder;
   if(!pending){ return; }
-  const awb=(barcode||'').trim();
+  let awb=(barcode||'').trim();
+  if(/^D\d{8,}$/i.test(awb)) awb=awb.toUpperCase(); // Movin AWBs are always stored with a capital D
   if(!validateAWB(awb)){
     toast(`"${awb}" doesn't look like a valid AWB — order ${pending.orderId} is still waiting for its AWB sticker to be scanned`,'w');
     return;
@@ -7812,6 +7896,8 @@ let _awbScanCourier='Shree Maruti'; // courier used for dispatches completed via
 // with an alpha-prefixed AWB).
 function detectCourierFromAwb(awb,fallbackCourier){
   const a=(awb||'').trim();
+  // Movin AWBs always start with the letter D followed by digits (e.g. D90305095568001)
+  if(/^D\d{8,}$/i.test(a)) return 'Movin';
   if(/^\d{14}$/.test(a)) return 'Shree Maruti';
   if(/^\d{6,13}$/.test(a)) return 'Gati';
   return fallbackCourier||_awbScanCourier||'Shree Maruti';

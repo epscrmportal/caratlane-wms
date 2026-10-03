@@ -5045,6 +5045,9 @@ function renderPackedOrdersList(){
 // that's still added separately by a supervisor/admin via the existing
 // "Assign courier & AWB" form (confirmCourierDispatch, unchanged).
 async function handleDispatchExitScan(barcode){
+  // Scanners/keyboards can deliver the code in lowercase (e.g. "pkd-374936" for
+  // "PKD-374936", caps-lock / HT20 case quirk) — history ids are uppercase.
+  barcode=(barcode||'').trim().toUpperCase();
   const packed=history.find(h=>h.id===barcode && h.type==='packed');
   if(!packed){
     const already=history.find(h=>h.id===barcode);
@@ -5168,7 +5171,8 @@ function updateAwbScanCourier(){
 async function handleAwbStickerScan(barcode){
   const pending=_awbPendingOrder;
   if(!pending){ return; }
-  const awb=(barcode||'').trim();
+  let awb=(barcode||'').trim();
+  if(/^D\d{8,}$/i.test(awb)) awb=awb.toUpperCase(); // Movin AWBs are always stored with a capital D
   if(!validateAWB(awb)){
     toast(`"${awb}" doesn't look like a valid AWB — order ${pending.orderId} is still waiting for its AWB sticker to be scanned`,'w');
     return;
