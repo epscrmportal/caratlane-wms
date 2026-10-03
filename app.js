@@ -656,6 +656,18 @@ async function initInv(){
 // before the correction, put UNI-SH-M-7/F-7/U-6/U-8 back to old values).
 let _invSynced={};
 function _invSig(v){ return v?JSON.stringify([v.qty||0,v.rack||null,v.shelf||null,Array.isArray(v.locations)&&v.locations.length?v.locations:null]):''; }
+// commit_pick_session (server) has ALREADY taken picked units off
+// inventory.qty. The browser then takes them off its local copy too (to
+// update shelf/bin quantities) and calls saveInv(). Without this, that
+// local deduction looked like a second, separate change and saveInv's
+// delta-merge applied it again — every pick was deducted TWICE from the
+// stock count (found 3 Oct 2026: Female 32 showed 1 left instead of 31).
+// Shifting the synced baseline by the same amount tells saveInv the
+// server already has this change, so only the bin breakdown is written.
+const _invQtyFromServer=new Set();
+function _invServerAlreadyDeducted(items){
+  (items||[]).forEach(it=>{ if(it&&it.sku) _invQtyFromServer.add(it.sku); });
+}
 function _markInvSynced(sku){ const v=inv[sku]; _invSynced[sku]={sig:_invSig(v),qty:v?(v.qty||0):0}; }
 async function saveInv(){
   setSyncStatus('syncing');
@@ -675,6 +687,13 @@ async function saveInv(){
       if(dbRows) dbRows.forEach(r=>{ dbQty[r.sku]=r.qty||0; });
       dirty.forEach(sku=>{
         const v=inv[sku], base=_invSynced[sku];
+        // Picks: the server already deducted these units (commit_pick_session),
+        // so its qty IS the truth — take it as-is and only write the bins.
+        if(_invQtyFromServer.has(sku) && dbQty[sku]!=null){
+          v.qty=dbQty[sku];
+          if(Array.isArray(v.locations) && v.locations.length===1) v.locations[0].qty=v.qty;
+          return;
+        }
         if(base && dbQty[sku]!=null && dbQty[sku]!==base.qty){
           const merged=Math.max(0,dbQty[sku]+((v.qty||0)-base.qty));
           console.warn(`saveInv: ${sku} changed on the server since this tab loaded (was ${base.qty}, now ${dbQty[sku]}) — merging this tab's change of ${(v.qty||0)-base.qty} → ${merged}`);
@@ -688,6 +707,7 @@ async function saveInv(){
       if(error){ console.error('saveInv Supabase error:', error.message); throw new Error(error.message); }
       dirty.forEach(_markInvSynced);
     }
+    _invQtyFromServer.clear();
     setSyncStatus('ok');
     try{localStorage.setItem('cl_wms_inv2', JSON.stringify(inv));}catch(e){} // local backup (best-effort)
     // Save version snapshot to history table
@@ -4180,6 +4200,7 @@ async function releaseToPacking(){
     if(rk&&sh) removeStockAtLocation(item.sku,rk,sh,item.qty);
     else if(inv[item.sku]) inv[item.sku].qty-=item.qty;
   });
+  _invServerAlreadyDeducted(pkItemsList);
   saveInv();
   activeOrder.status='picked';
   activeOrder.pickedTaskId=tid;
@@ -6514,7 +6535,9 @@ async function completeMobilePick(){
     const [rk,sh]=(it.bin||'').split('-');
     if(rk&&sh) removeStockAtLocation(it.sku,rk,sh,it.qty);
     else if(inv[it.sku]) inv[it.sku].qty-=it.qty;
+  
   });
+  _invServerAlreadyDeducted(mobilePickSession.items);
   saveInv();
   const o=mobilePickSession.order;
   o.status='picked';
