@@ -3314,6 +3314,19 @@ async function showDispatchPhotos(id){
   if(h && !h.podPhoto && !h.weightPhoto) toast('No photos saved for this dispatch','w');
   renderDispatchCompletedLog();
 }
+// Supabase/PostgREST returns at most 1000 rows per request. A single
+// select() silently dropped the NEWEST rows once a table passed 1000 rows
+// (history is ordered oldest-first), so new packs/dispatches never showed.
+async function _fetchAllRows(makeQuery){
+  const out=[];
+  for(let from=0;;from+=1000){
+    const {data,error}=await makeQuery().range(from,from+999);
+    if(error) return {data:null,error};
+    out.push(...(data||[]));
+    if(!data||data.length<1000) break;
+  }
+  return {data:out,error:null};
+}
 async function loadHist(){
   setSyncStatus('syncing');
   if(typeof supabase === 'undefined' || !supa){
@@ -3327,7 +3340,7 @@ async function loadHist(){
     // refresh on every device pulled every photo ever taken, which pushed
     // the Supabase project over its monthly egress quota. They're now left
     // out here and fetched only when actually shown (loadHistPhotos).
-    const {data,error} = await supa.from('history').select(HIST_LIST_COLUMNS).order('created_at',{ascending:true});
+    const {data,error} = await _fetchAllRows(()=>supa.from('history').select(HIST_LIST_COLUMNS).order('created_at',{ascending:true}).order('id',{ascending:true}));
     if(error){ console.error('loadHist error:', error.message, error.code); throw new Error(error.message); }
     if(data) {
       history = data.map(r => ({
@@ -3351,7 +3364,7 @@ async function loadHist(){
         voided:r.voided||false, voidedBy:r.voided_by||null, voidedAt:r.voided_at||null, voidReason:r.void_reason||null
       }));
       // Also load packing queue
-      const {data:pq} = await supa.from('packing_queue').select('*').order('created_at',{ascending:true});
+      const {data:pq} = await _fetchAllRows(()=>supa.from('packing_queue').select('*').order('created_at',{ascending:true}).order('id',{ascending:true}));
       if(pq) packingQueue = pq.map(r => ({
         id:r.id, orderId:r.order_id, priority:r.priority, method:r.method,
         picker:r.picker, items:r.items||[], ts:r.ts, status:r.status,
@@ -3693,14 +3706,14 @@ function getSameDayPending(){
   const todayY=now.getFullYear(),todayM=now.getMonth(),todayD=now.getDate();
   const packed=history.filter(h=>h.type==='packed');
   const dispatched=new Set(history.filter(h=>h.type==='dispatched').map(h=>h.packedId||h.orderId));
-  return packed.filter(p=>{
-    const notDispatched=!dispatched.has(p.id)&&!dispatched.has(p.orderId);
-    if(!notDispatched) return false;
-    const t=parseDisplayTs(p.ts);
-    if(!t) return false;
-    const d=new Date(t);
-    return d.getFullYear()===todayY && d.getMonth()===todayM && d.getDate()===todayD;
-  });
+  // Includes packed orders from EARLIER days too (they are overdue, not
+  // hidden) — packedIsToday() lets the banner call them out separately.
+  return packed.filter(p=>!dispatched.has(p.id)&&!dispatched.has(p.orderId));
+}
+function packedIsToday(p){
+  const t=parseDisplayTs(p.ts); if(!t) return false;
+  const d=new Date(t),n=new Date();
+  return d.getFullYear()===n.getFullYear()&&d.getMonth()===n.getMonth()&&d.getDate()===n.getDate();
 }
 function getHoursPassed(tsString){
   // Uses the same parseDisplayTs() as everywhere else in the app (fixed
@@ -3735,7 +3748,7 @@ function renderSameDayAlert(){
           </div>
           <div>
             <div style="font-weight:700;font-size:13px;color:${color}">${urgencyLabel} — Same-Day Dispatch</div>
-            <div style="font-size:11px;color:var(--t2);margin-top:2px">${pending.length} packed order${pending.length>1?'s':''} must be dispatched <strong>today</strong> · ${timeMsg}</div>
+            <div style="font-size:11px;color:var(--t2);margin-top:2px">${pending.length} packed order${pending.length>1?'s':''} must be dispatched <strong>today</strong>${pending.filter(p=>!packedIsToday(p)).length?` (<strong>${pending.filter(p=>!packedIsToday(p)).length} packed on earlier days — overdue</strong>)`:''} · ${timeMsg}</div>
           </div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -5938,7 +5951,7 @@ let pickerNames=[];
 
 async function loadOrders(){
   try{
-    const {data,error}=await supa.from('orders').select('*').order('created_at',{ascending:false});
+    const {data,error}=await _fetchAllRows(()=>supa.from('orders').select('*').order('created_at',{ascending:false}).order('id',{ascending:true}));
     if(error) throw error;
     orders=(data||[]).map(r=>({
       id:r.id, customerName:r.customer_name, address:r.address, pincode:r.pincode, phone:r.phone,
