@@ -7663,6 +7663,35 @@ function renderPackedOrdersList(){
 // the Proforma Invoice's barcode, but the courier AWB has not been assigned yet —
 // that's still added separately by a supervisor/admin via the existing
 // "Assign courier & AWB" form (confirmCourierDispatch, unchanged).
+// ── Dispatch scan sounds ───────────────────────────────────────────────
+// Two clearly different confirmations so the person scanning knows which
+// step just registered without looking at the screen:
+//   'order' — Proforma Invoice / order scanned  → two quick high beeps ("beep-beep")
+//   'awb'   — AWB scanned & assigned (dispatched) → rising three-note chime ("ding-ding-DING")
+//   'error' — scan not accepted                   → one low buzz
+let _dispSoundCtx=null;
+function dispatchScanSound(kind){
+  try{ if(navigator.vibrate) navigator.vibrate(kind==='error'?[60,60,60]:kind==='awb'?[40,40,120]:[40,40,40]); }catch(e){}
+  try{
+    const AC=window.AudioContext||window.webkitAudioContext; if(!AC) return;
+    if(!_dispSoundCtx||_dispSoundCtx.state==='closed') _dispSoundCtx=new AC();
+    const ctx=_dispSoundCtx; if(ctx.state==='suspended') ctx.resume();
+    const notes=kind==='awb'?[[784,0,0.12],[988,0.13,0.12],[1319,0.26,0.30]]
+               :kind==='error'?[[220,0,0.35]]
+               :[[1760,0,0.07],[1760,0.12,0.07]];
+    const t0=ctx.currentTime+0.01;
+    notes.forEach(([f,at,dur])=>{
+      const o=ctx.createOscillator(), g=ctx.createGain();
+      o.type=kind==='error'?'square':(kind==='awb'?'triangle':'sine');
+      o.frequency.value=f;
+      g.gain.setValueAtTime(0.0001,t0+at);
+      g.gain.exponentialRampToValueAtTime(kind==='error'?0.12:0.28,t0+at+0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001,t0+at+dur);
+      o.connect(g); g.connect(ctx.destination);
+      o.start(t0+at); o.stop(t0+at+dur+0.02);
+    });
+  }catch(e){}
+}
 async function handleDispatchExitScan(barcode){
   // Scanners/keyboards can deliver the code in lowercase (e.g. "pkd-374936" for
   // "PKD-374936", caps-lock / HT20 case quirk) — history ids are uppercase.
@@ -7675,6 +7704,7 @@ async function handleDispatchExitScan(barcode){
     } else {
       toast('Unrecognized barcode: '+barcode+' — scan a packed order\'s own Proforma Invoice barcode','w');
     }
+    dispatchScanSound('error');
     return;
   }
   await markLeftWarehouse(packed);
@@ -7699,10 +7729,11 @@ async function markLeftWarehouse(packed){
     // still pending is the real mis-scan case — that's handled below.
     _awbPendingOrder={orderId:ord.id,packedId:packed.id,armedAt:Date.now()};
     renderAwbPendingBanner();
+    dispatchScanSound('order');
     toast(`Order ${ord.id} is already "Left Warehouse — AWB Pending" — armed again for its AWB scan. Scan the AWB sticker now.`,'w');
     return;
   }
-  if(ord.status==='dispatched'){ toast(`Order ${ord.id} is already fully dispatched`,'w'); return; }
+  if(ord.status==='dispatched'){ dispatchScanSound('error'); toast(`Order ${ord.id} is already fully dispatched`,'w'); return; }
   if(!rateLimit('dispatch-exit-'+packed.id,2000)){ toast('Please wait before scanning again','w'); return; }
   // A DIFFERENT order is still armed, waiting for its AWB — scanning this
   // Proforma Invoice instead means that other order's AWB never came in.
@@ -7725,6 +7756,7 @@ async function markLeftWarehouse(packed){
   const prevArmed=_awbPendingOrder;
   _awbPendingOrder={orderId:ord.id,packedId:packed.id,armedAt:Date.now()};
   renderAwbPendingBanner();
+  dispatchScanSound('order');
   const prevStatus=ord.status;
   ord.status='left_warehouse';
   const statusOk=await saveOrderRow(ord);
@@ -7732,6 +7764,7 @@ async function markLeftWarehouse(packed){
     ord.status=prevStatus; // don't let the UI show a status that failed to save
     _awbPendingOrder=prevArmed; // undo the optimistic arm — this order never actually got confirmed left_warehouse
     renderAwbPendingBanner();
+    dispatchScanSound('error');
     console.error('Order status sync to \'left_warehouse\' failed for',ord.id);
     logAudit('ORDER_STATUS_SYNC_FAILED','orders',ord.id,null,{orderId:ord.id,attemptedStatus:'left_warehouse'});
     toast(`Order ${ord.id} scan recorded, but its status could not be updated to "left warehouse" — try scanning again, or flag this to a supervisor.`,'w');
@@ -7793,6 +7826,7 @@ async function handleAwbStickerScan(barcode){
   let awb=(barcode||'').trim();
   if(/^D\d{8,}$/i.test(awb)) awb=awb.toUpperCase(); // Movin AWBs are always stored with a capital D
   if(!validateAWB(awb)){
+    dispatchScanSound('error');
     toast(`"${awb}" doesn't look like a valid AWB — order ${pending.orderId} is still waiting for its AWB sticker to be scanned`,'w');
     return;
   }
@@ -7813,6 +7847,7 @@ async function handleAwbStickerScan(barcode){
   // onto this box).
   const dupe=history.find(h=>h.type==='dispatched' && h.awb && h.awb.toUpperCase()===awb.toUpperCase());
   if(dupe){
+    dispatchScanSound('error');
     toast(`⚠ AWB ${awb} is already assigned to order ${dupe.orderId} — can't reuse it for ${pending.orderId}. Check the sticker sheet.`,'w');
     logAudit('AWB_DUPLICATE_SCAN','history',pending.packedId,null,{orderId:pending.orderId,awb,alreadyUsedBy:dupe.orderId});
     return;
@@ -7835,6 +7870,7 @@ async function handleAwbStickerScan(barcode){
     // No usable weight on file — completing the dispatch record without
     // one would defeat validateWeight's own purpose. Hand the AWB straight
     // into the manual form instead of losing it.
+    dispatchScanSound('error');
     toast(`Order ${pending.orderId} has no usable pack weight on file — can't auto-complete dispatch by scan. AWB ${awb} filled into "Assign courier & AWB" below — finish it there.`,'w');
     _awbPendingOrder=null; renderAwbPendingBanner();
     selectDispatchOrder(pending.packedId);
@@ -7852,6 +7888,7 @@ async function handleAwbStickerScan(barcode){
   if(!histRes.success){
     console.error('Scan-to-dispatch failed to save for',pending.packedId,histRes.error);
     logAudit('AWB_SCAN_DISPATCH_FAILED','history',pending.packedId,null,{orderId:pending.orderId,awb,error:String(histRes.error)});
+    dispatchScanSound('error');
     toast(`Could not complete dispatch for ${pending.orderId} — connection issue. Nothing was changed; scan the AWB again, or use "Assign courier & AWB" manually.`,'w');
     return;
   }
@@ -7877,6 +7914,7 @@ async function handleAwbStickerScan(barcode){
   _awbPendingOrder=null;
   renderDispatchPage();
   if(document.getElementById('page-orders')?.classList.contains('active')){renderOrdersBoard();}
+  dispatchScanSound('awb');
   toast(`✓ Dispatch ${did} confirmed via AWB scan · ${awb} → ${pending.orderId} · ${dispatchWeight}kg`,'s');
 }
 function filterDispatchOrders(){
