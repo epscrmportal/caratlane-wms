@@ -4851,43 +4851,88 @@ function printPackingSlip(historyId){
   printWindow.focus();
   setTimeout(()=>printWindow.print(),300);
 }
-function printProformaInvoice(orderId){
+// ── Proforma invoices (4×6 label / A4) ─────────────────────────────────
+// One renderer for a single invoice, every packed order at once, and a
+// dispatched order's invoice (with courier + AWB, saved straight to PDF).
+function proformaOrderFor(orderId,rec){
   const o=orders.find(x=>x.id===orderId);
-  if(!o){ toast('Order not found','w'); return; }
-  // If this order has already been packed, the invoice's barcode encodes
-  // that packed record's own id — the same id "Scan Proforma Invoice Barcode" on the
-  // Dispatch page looks for (see handleDispatchExitScan/markLeftWarehouse)
-  // to mark the order as physically left the warehouse. AWB/courier is
-  // still assigned separately, afterwards, by a supervisor or admin.
-  const packed=history.find(h=>h.orderId===orderId && h.type==='packed');
+  if(o) return o;
+  if(!rec) return null;
+  return {id:orderId,customerName:rec.recipientName,address:rec.address,pincode:rec.pincode,
+          phone:rec.phone,priority:'—',status:rec.type||'—',items:rec.items||[]};
+}
+function _pfiBarcodeURI(value){
+  if(typeof JsBarcode==='undefined') return '';
+  const svgNS='http://www.w3.org/2000/svg';
+  const tmpSvg=document.createElementNS(svgNS,'svg');
+  document.body.appendChild(tmpSvg);
+  let uri='';
+  try {
+    JsBarcode(tmpSvg, value, {format:'CODE128',width:2,height:45,displayValue:false,margin:4,background:'#ffffff',lineColor:'#000000'});
+    uri='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(new XMLSerializer().serializeToString(tmpSvg))));
+  } catch(e){ console.warn('Proforma invoice barcode error:',e); }
+  document.body.removeChild(tmpSvg);
+  return uri;
+}
+function _pfiLabelHtml(o,packed,disp){
+  const items=o.items||[];
+  let subtotal=0, hasMissingPrice=false;
+  const rows=items.map(it=>{
+    const s=SKUS.find(x=>x.sku===it.sku);
+    const price=s&&s.price!=null?s.price:null;
+    if(price==null) hasMissingPrice=true;
+    const lineTotal=price!=null?price*(it.qty||0):null;
+    if(lineTotal!=null) subtotal+=lineTotal;
+    return `<tr><td>${esc(it.sku)}</td><td style="text-align:center">${it.qty}</td><td style="text-align:right">${lineTotal!=null?'₹'+lineTotal.toFixed(2):'—'}</td></tr>`;
+  }).join('');
+  // Barcode = the packed record's id (what "Scan Proforma Invoice Barcode"
+  // looks for); a dispatched record keeps that same id.
+  const barcodeValue=disp?disp.id:(packed?packed.id:o.id);
+  const bcDataURI=_pfiBarcodeURI(barcodeValue);
+  const scanNote=disp?`Dispatched${disp.dispatchedAt?' '+esc(disp.dispatchedAt):''} via ${esc(disp.courierPartner||'—')} · AWB ${esc(disp.awb||'—')}`
+    :(packed?'Scan at "Scan Proforma Invoice Barcode" on the Dispatch page to mark left warehouse — AWB is added separately by a supervisor/admin.':'Not yet packed — this barcode becomes scannable to mark "left warehouse" once packing is complete.');
+  return `<div class="label">
+        <div class="header">
+          <div>
+            <div class="company">CaratLane WMS</div>
+            <div class="subtitle">Proforma Invoice · EPS Worldwide Integrated Logistics</div>
+          </div>
+          <div class="orderid">${esc(o.id)}</div>
+        </div>
+        <div class="meta">
+          <div><b>Customer:</b> ${esc(o.customerName||'—')}</div>
+          <div><b>Address:</b> ${esc(o.address||'—')}</div>
+          <div><b>Pincode/Phone:</b> ${esc(o.pincode||'—')} / ${esc(o.phone||'—')}</div>
+          <div><b>Priority:</b> ${esc(o.priority||'—')} · <b>Status:</b> ${esc(disp?'dispatched':(o.status||'—'))}</div>
+          ${disp?`<div><b>Courier:</b> ${esc(disp.courierPartner||'—')} · <b>AWB:</b> ${esc(disp.awb||'—')}</div>`:''}
+        </div>
+        <table><thead><tr><th>SKU</th><th style="text-align:center">Qty</th><th style="text-align:right">Total</th></tr></thead><tbody>
+          ${rows}
+        </tbody></table>
+        <div class="totals">
+          <div>${items.reduce((a,it)=>a+(it.qty||0),0)} unit(s) · ${items.length} SKU(s)</div>
+          <div class="grand">Est. Subtotal: ₹${subtotal.toFixed(2)}${hasMissingPrice?' *':''}</div>
+        </div>
+        ${hasMissingPrice?'<div class="note">* Some items have no catalog price yet — excluded above.</div>':''}
+        <div class="note">Proforma estimate only — excludes taxes, not a demand for payment.</div>
+        <div class="barcode-wrap">
+          ${bcDataURI?`<img src="${bcDataURI}" alt="${esc(barcodeValue)}">`:''}
+          <div class="barcode-id">${esc(barcodeValue)}</div>
+        </div>
+        <div class="scan-note">${scanNote}</div>
+        <div class="footer pfi-footer">Printed ${new Date().toLocaleString('en-IN')} · CaratLane WMS · 4×6in thermal label</div>
+      </div>`;
+}
+// entries: [{o, packed, disp}] · opts: {title, filename, download}
+function openProformaInvoices(entries,opts){
+  opts=opts||{};
+  const win=window.open('','PFI_'+Date.now(),'width=500,height=750');
+  if(!win){ toast('Please allow popups to print','w'); return; }
   loadJsBarcode(()=>{
-    const printWindow=window.open('','PFI_'+orderId,'width=500,height=750');
-    if(!printWindow){ toast('Please allow popups to print','w'); return; }
-    const items=o.items||[];
-    let subtotal=0;
-    let hasMissingPrice=false;
-    const rows=items.map(it=>{
-      const s=SKUS.find(x=>x.sku===it.sku);
-      const price=s&&s.price!=null?s.price:null;
-      if(price==null) hasMissingPrice=true;
-      const lineTotal=price!=null?price*(it.qty||0):null;
-      if(lineTotal!=null) subtotal+=lineTotal;
-      return `<tr><td>${esc(it.sku)}</td><td style="text-align:center">${it.qty}</td><td style="text-align:right">${lineTotal!=null?'₹'+lineTotal.toFixed(2):'—'}</td></tr>`;
-    }).join('');
-    const barcodeValue=packed?packed.id:o.id;
-    const svgNS='http://www.w3.org/2000/svg';
-    const tmpSvg=document.createElementNS(svgNS,'svg');
-    tmpSvg.setAttribute('id','tmp_bc_pfi');
-    document.body.appendChild(tmpSvg);
-    let bcDataURI='';
-    try {
-      JsBarcode(tmpSvg, barcodeValue, {format:'CODE128',width:2,height:45,displayValue:false,margin:4,background:'#ffffff',lineColor:'#000000'});
-      const svgStr=new XMLSerializer().serializeToString(tmpSvg);
-      bcDataURI='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(svgStr)));
-    } catch(e){ console.warn('Proforma invoice barcode error:',e); }
-    document.body.removeChild(tmpSvg);
-    printWindow.document.write(`
-      <!DOCTYPE html><html><head><title>Proforma Invoice — ${esc(o.id)}</title>
+    const labels=entries.map(e=>_pfiLabelHtml(e.o,e.packed,e.disp)).join('');
+    const filename=(opts.filename||'ProformaInvoice.pdf').replace(/[^A-Za-z0-9._-]/g,'_');
+    win.document.write(`
+      <!DOCTYPE html><html><head><title>${esc(opts.title||'Proforma Invoice')}</title>
       <style id="pfi-page-style">
         @page{size:4in 6in;margin:0}
       </style>
@@ -4946,42 +4991,19 @@ function printProformaInvoice(orderId){
           .no-print{display:none !important}
           body{margin:0}
         }
+      
+        /* one invoice per printed page */
+        .label{page-break-after:always;break-after:page}
+        .label:last-child{page-break-after:auto;break-after:auto}
       </style></head><body class="size-46">
       <div class="no-print">
         <button onclick="setPfiSize('46')" style="padding:8px 14px;background:#B8860B;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px">🖨 Print 4×6</button>
         <button onclick="setPfiSize('a4')" style="padding:8px 14px;background:#444;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px">🖨 Print A4</button>
+        <button onclick="downloadPfiPdf()" style="padding:8px 14px;background:#1F7A4D;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px">⬇ PDF</button>
         <button onclick="window.close()" style="padding:8px 14px;background:#f0f0f0;border:none;border-radius:6px;cursor:pointer;font-size:12px">Close</button>
       </div>
-      <div class="label">
-        <div class="header">
-          <div>
-            <div class="company">CaratLane WMS</div>
-            <div class="subtitle">Proforma Invoice · EPS Worldwide Integrated Logistics</div>
-          </div>
-          <div class="orderid">${esc(o.id)}</div>
-        </div>
-        <div class="meta">
-          <div><b>Customer:</b> ${esc(o.customerName||'—')}</div>
-          <div><b>Address:</b> ${esc(o.address||'—')}</div>
-          <div><b>Pincode/Phone:</b> ${esc(o.pincode||'—')} / ${esc(o.phone||'—')}</div>
-          <div><b>Priority:</b> ${esc(o.priority||'—')} · <b>Status:</b> ${esc(o.status||'—')}</div>
-        </div>
-        <table><thead><tr><th>SKU</th><th style="text-align:center">Qty</th><th style="text-align:right">Total</th></tr></thead><tbody>
-          ${rows}
-        </tbody></table>
-        <div class="totals">
-          <div>${items.reduce((a,it)=>a+(it.qty||0),0)} unit(s) · ${items.length} SKU(s)</div>
-          <div class="grand">Est. Subtotal: ₹${subtotal.toFixed(2)}${hasMissingPrice?' *':''}</div>
-        </div>
-        ${hasMissingPrice?'<div class="note">* Some items have no catalog price yet — excluded above.</div>':''}
-        <div class="note">Proforma estimate only — excludes taxes, not a demand for payment.</div>
-        <div class="barcode-wrap">
-          ${bcDataURI?`<img src="${bcDataURI}" alt="${barcodeValue}">`:''}
-          <div class="barcode-id">${esc(barcodeValue)}</div>
-        </div>
-        <div class="scan-note">${packed?'Scan at "Scan Proforma Invoice Barcode" on the Dispatch page to mark left warehouse — AWB is added separately by a supervisor/admin.':'Not yet packed — this barcode becomes scannable to mark "left warehouse" once packing is complete.'}</div>
-        <div class="footer" id="pfi-footer">Printed ${new Date().toLocaleString('en-IN')} · CaratLane WMS · 4×6in thermal label</div>
-      </div>
+      ${entries.length>1?`<div class="no-print" style="position:static;padding:8px 10px;font-size:12px;color:#555">${entries.length} proforma invoices · one per page</div>`:''}
+      <div id="pfi-labels">${labels}</div>
       <script>
         // Two print sizes share one document — toggling swaps the body
         // class (drives all the size-scoped CSS above) and the @page rule
@@ -4995,18 +5017,71 @@ function printProformaInvoice(orderId){
           pageStyle.textContent = mode === 'a4'
             ? '@page{size:A4;margin:15mm}'
             : '@page{size:4in 6in;margin:0}';
-          const footer = document.getElementById('pfi-footer');
-          if(footer){
+          document.querySelectorAll('.pfi-footer').forEach(function(footer){
             footer.textContent = footer.textContent.replace(/(4×6in thermal label|A4)$/, mode === 'a4' ? 'A4' : '4×6in thermal label');
-          }
+          });
           setTimeout(()=>window.print(), 50);
         }
+      
+        // Save as PDF in the layout currently shown (4×6 by default).
+        // html2pdf is loaded on demand so a slow CDN never blocks the
+        // print buttons above.
+        function downloadPfiPdf(){
+          if(typeof html2pdf==='undefined'){
+            if(window._pfiPdfLoading) return;
+            window._pfiPdfLoading=true;
+            const sc=document.createElement('script');
+            sc.src='https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js';
+            sc.onload=function(){ window._pfiPdfLoading=false; downloadPfiPdf(); };
+            sc.onerror=function(){ window._pfiPdfLoading=false; alert('PDF library failed to load — check your internet connection, or use Print → Save as PDF instead.'); };
+            document.head.appendChild(sc);
+            return;
+          }
+          const a4=document.body.className==='size-a4';
+          html2pdf().set({margin:a4?10:0,filename:${JSON.stringify(filename)},image:{type:'jpeg',quality:0.98},
+            html2canvas:{scale:2,useCORS:true},
+            jsPDF:a4?{unit:'mm',format:'a4',orientation:'portrait'}:{unit:'in',format:[4,6],orientation:'portrait'},
+            pagebreak:{mode:['css','legacy']}}).from(document.getElementById('pfi-labels')).save();
+        }
+        ${opts.download?"window.addEventListener('load',function(){setTimeout(downloadPfiPdf,300);});":''}
       <\/script>
       </body></html>
     `);
-    printWindow.document.close();
-    printWindow.focus();
+    win.document.close();
+    win.focus();
   });
+}
+function printProformaInvoice(orderId){
+  const o=orders.find(x=>x.id===orderId);
+  if(!o){ toast('Order not found','w'); return; }
+  const packed=history.find(h=>h.orderId===orderId && h.type==='packed');
+  openProformaInvoices([{o,packed}],{title:'Proforma Invoice — '+o.id,filename:'ProformaInvoice-'+o.id+'.pdf'});
+}
+// Every packed order awaiting dispatch (respecting the search box), one per page.
+function printAllPackedProformaInvoices(){
+  const searchEl=document.getElementById('dispatch-packed-search');
+  const q=((searchEl&&searchEl.value)||'').toLowerCase().trim();
+  let packed=history.filter(h=>h.type==='packed');
+  if(q) packed=packed.filter(p=>p.orderId.toLowerCase().includes(q)||p.id.toLowerCase().includes(q));
+  if(!packed.length){ toast('No packed orders awaiting dispatch','w'); return; }
+  const seen=new Set(), entries=[]; let missing=0;
+  packed.slice().sort((a,b)=>String(a.orderId).localeCompare(String(b.orderId))).forEach(p=>{
+    if(seen.has(p.orderId)) return; seen.add(p.orderId);
+    const o=proformaOrderFor(p.orderId,p);
+    if(o) entries.push({o,packed:p}); else missing++;
+  });
+  if(!entries.length){ toast('Orders not found','w'); return; }
+  const day=new Date().toISOString().slice(0,10);
+  openProformaInvoices(entries,{title:`Proforma Invoices — ${entries.length} packed orders`,filename:`ProformaInvoices-Packed-${day}.pdf`});
+  toast(`Opened ${entries.length} proforma invoice(s) — choose Print 4×6 or A4`+(missing?` · ${missing} order(s) not found`:''),missing?'w':'s');
+}
+// Proforma for a dispatched order, with courier + AWB — saved straight to PDF.
+function downloadDispatchedProforma(dispatchId){
+  const d=history.find(h=>h.id===dispatchId&&h.type==='dispatched');
+  if(!d){ toast('Dispatch record not found','w'); return; }
+  const o=proformaOrderFor(d.orderId,d);
+  if(!o){ toast('Order not found','w'); return; }
+  openProformaInvoices([{o,disp:d}],{title:'Proforma Invoice — '+o.id,filename:`ProformaInvoice-${o.id}-AWB-${d.awb||'NA'}.pdf`,download:true});
 }
 function renderPackedOrdersList(){
   const el=document.getElementById('dispatch-packed-list');
@@ -5050,6 +5125,11 @@ function renderPackedOrdersList(){
     </div>`;
   }).join(''):(q?'<div class="empty">No matching packed order found</div>':'<div class="empty">No packed orders yet — create and pack orders first</div>');
   el.innerHTML=listHtml;
+  const pfiAllBtn=document.getElementById('dispatch-print-all-pfi');
+  if(pfiAllBtn){
+    pfiAllBtn.disabled=!packed.length;
+    pfiAllBtn.innerHTML=`<i class="ti ti-files"></i>Print all proforma invoices (${packed.length})`;
+  }
 }
 // ── Scan-to-mark "left warehouse" ────────────────────────────────────────
 // A distinct, intermediate milestone between 'packed' and 'dispatched':
@@ -5741,6 +5821,7 @@ function renderDispatchCompletedLog(){
         <span class="hist-id">${d.id}</span>
         <span class="pill p-ok">Dispatched</span>
         <button onclick="printDispatch('${d.id}')" style="background:none;border:none;cursor:pointer;color:var(--t2);font-size:11px;padding:4px 8px;border-radius:3px" onmouseover="this.style.background='var(--s2)'" onmouseout="this.style.background='transparent'"><i class="ti ti-printer"></i>Print</button>
+        <button onclick="downloadDispatchedProforma('${d.id}')" title="Download this order's proforma invoice (PDF, with courier &amp; AWB)" style="background:none;border:none;cursor:pointer;color:var(--t2);font-size:11px;padding:4px 8px;border-radius:3px" onmouseover="this.style.background='var(--s2)'" onmouseout="this.style.background='transparent'"><i class="ti ti-file-download"></i>Proforma</button>
       </div>
       <div class="hist-body">
         <div style="margin-bottom:6px"><span style="font-weight:600">${d.orderId}</span> · AWB: <span class="mono">${d.awb}</span></div>
