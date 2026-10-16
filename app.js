@@ -668,7 +668,92 @@ const _invQtyFromServer=new Set();
 function _invServerAlreadyDeducted(items){
   (items||[]).forEach(it=>{ if(it&&it.sku) _invQtyFromServer.add(it.sku); });
 }
-function _markInvSynced(sku){ const v=inv[sku]; _invSynced[sku]={sig:_invSig(v),qty:v?(v.qty||0):0}; }
+function _markInvSynced(sku){ const v=inv[sku]; _invSynced[sku]={sig:_invSig(v),qty:v?(v.qty||0):0,locs:(v&&Array.isArray(v.locations))?JSON.parse(JSON.stringify(v.locations)):null,rack:v?v.rack:null,shelf:v?v.shelf:null}; }
+// Bin list → {"B-4":{rack,shelf,qty}} (summing duplicate bins).
+function _locMap(locs){ const m={}; (Array.isArray(locs)?locs:[]).forEach(l=>{ if(!l||l.rack==null) return; const k=String(l.rack)+'-'+String(l.shelf); if(!m[k]) m[k]={rack:l.rack,shelf:l.shelf,qty:0}; m[k].qty+=Number(l.qty)||0; }); return m; }
+// After a pick is committed: the server (commit_pick_session) has already
+// taken the units off inventory.qty. Here we only take them off the right
+// BIN, working on a fresh copy of each row read straight from the server —
+// never this device's possibly-old copy, and never re-deducting qty. Only
+// locations/rack/shelf are written back. (Fix 16 Oct 2026: the previous
+// local-deduct-then-saveInv path could deduct a pick twice when two saves
+// overlapped, and could write an old bin list back.)
+async function applyPickToInventory(items){
+  items=(items||[]).filter(it=>it&&it.sku&&it.qty>0);
+  const skus=[...new Set(items.map(it=>it.sku))];
+  if(!skus.length) return;
+  let rows=null;
+  try{
+    const {data,error}=await supa.from('inventory').select('sku,qty,rack,shelf,locations').in('sku',skus);
+    if(error) throw error;
+    rows=data||[];
+  }catch(e){ console.error('applyPickToInventory: could not read inventory —',e?.message||e); }
+  if(!rows){
+    // Offline fallback — the old path (server qty is still trusted by saveInv).
+    items.forEach(it=>{ const [rk,sh]=(it.bin||'').split('-'); if(rk&&sh) removeStockAtLocation(it.sku,rk,sh,it.qty); else if(inv[it.sku]) inv[it.sku].qty=Math.max(0,inv[it.sku].qty-it.qty); });
+    _invServerAlreadyDeducted(items);
+    return saveInv();
+  }
+  const writes=[];
+  rows.forEach(r=>{
+    const serverQty=r.qty||0;
+    const locs=Array.isArray(r.locations)?r.locations.map(l=>({rack:l.rack,shelf:l.shelf,qty:Number(l.qty)||0})):[];
+    if(locs.length){
+      items.filter(it=>it.sku===r.sku).forEach(it=>{
+        let left=it.qty;
+        const [rk,sh]=(it.bin||'').split('-');
+        const hit=locs.find(l=>l.rack===rk&&String(l.shelf)===String(sh));
+        if(hit){ const take=Math.min(hit.qty,left); hit.qty-=take; left-=take; }
+        // Bin not on record (or not enough in it): take the rest from the fullest bins.
+        while(left>0){ const big=locs.filter(l=>l.qty>0).sort((a,b)=>b.qty-a.qty)[0]; if(!big) break; const take=Math.min(big.qty,left); big.qty-=take; left-=take; }
+      });
+      let kept=locs.filter(l=>l.qty>0).sort((a,b)=>b.qty-a.qty);
+      // Bins can never hold more than the server's total.
+      let over=kept.reduce((a,l)=>a+l.qty,0)-serverQty;
+      for(let i=kept.length-1;i>=0&&over>0;i--){ const take=Math.min(kept[i].qty,over); kept[i].qty-=take; over-=take; }
+      kept=kept.filter(l=>l.qty>0);
+      if(kept.length===1) kept[0].qty=serverQty;
+      const upd={locations:kept,updated_at:new Date().toISOString()};
+      if(kept.length){ upd.rack=kept[0].rack; upd.shelf=kept[0].shelf; }
+      writes.push(supa.from('inventory').update(upd).eq('sku',r.sku).then(({error})=>{ if(error) console.error('applyPickToInventory bin update failed for',r.sku,error.message); }));
+      inv[r.sku]={qty:serverQty,rack:kept.length?kept[0].rack:r.rack,shelf:kept.length?kept[0].shelf:r.shelf};
+      if(kept.length) inv[r.sku].locations=kept;
+    } else {
+      inv[r.sku]={qty:serverQty,rack:r.rack,shelf:r.shelf};
+    }
+    _markInvSynced(r.sku);
+  });
+  await Promise.all(writes);
+  try{ localStorage.setItem('cl_wms_inv2', JSON.stringify(inv)); }catch(e){}
+}
+// Re-reads inventory rows from the server for every SKU this device hasn't
+// changed locally — so a phone/PC that slept or lost its live connection
+// catches up before anyone works from its old numbers.
+let _invLastRefresh=Date.now();
+async function refreshInvFromServer(reason){
+  if(typeof supa==='undefined'||!supa||!Object.keys(inv).length) return;
+  try{
+    const {data,error}=await supa.from('inventory').select('*');
+    if(error) throw error;
+    let changed=0;
+    (data||[]).forEach(r=>{
+      const v=inv[r.sku];
+      if(v && _invSynced[r.sku] && _invSynced[r.sku].sig!==_invSig(v)) return; // unsaved local change — leave it
+      const nv={qty:r.qty||0,rack:r.rack,shelf:r.shelf};
+      if(Array.isArray(r.locations)&&r.locations.length) nv.locations=r.locations;
+      if(_invSig(nv)!==_invSig(v)){ inv[r.sku]=nv; changed++; }
+      _markInvSynced(r.sku);
+    });
+    _invLastRefresh=Date.now();
+    if(changed){
+      console.log(`refreshInvFromServer (${reason||'refresh'}): ${changed} SKU(s) updated from the server`);
+      try{ renderDash(); renderInv(); renderRack(); }catch(e){}
+    }
+  }catch(e){ console.warn('refreshInvFromServer failed:',e?.message||e); }
+}
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible' && Date.now()-_invLastRefresh>30000) refreshInvFromServer('screen woke up'); });
+window.addEventListener('online',()=>refreshInvFromServer('back online'));
+setInterval(()=>{ if(document.visibilityState==='visible') refreshInvFromServer('periodic'); },5*60*1000);
 async function saveInv(){
   setSyncStatus('syncing');
   // Guarded: a full localStorage (history cache is large) must never abort
@@ -680,27 +765,44 @@ async function saveInv(){
     // Only SKUs this browser actually changed since it last synced them.
     const dirty=Object.keys(inv).filter(sku=>!_invSynced[sku] || _invSynced[sku].sig!==_invSig(inv[sku]));
     if(dirty.length){
-      // Merge quantity as a DELTA on top of the server's current value, so a
-      // change made elsewhere since this tab loaded is kept, not overwritten.
-      const {data:dbRows}=await supa.from('inventory').select('sku,qty').in('sku',dirty);
-      const dbQty={};
-      if(dbRows) dbRows.forEach(r=>{ dbQty[r.sku]=r.qty||0; });
+      // Merge with the server's CURRENT row instead of overwriting it.
+      // Fix 16 Oct 2026: this used to merge only qty, and then write this
+      // device's whole bin list (locations) back as-is. A phone that had
+      // slept / lost its live connection still held an old bin list, so its
+      // next GRN/adjustment silently put old bins back over newer ones —
+      // stock "disappearing" from bins or bins going unassigned. Now only
+      // THIS device's own changes (qty change and per-bin change since it
+      // last synced) are applied on top of whatever the server has now.
+      const {data:dbRows,error:readErr}=await supa.from('inventory').select('sku,qty,rack,shelf,locations').in('sku',dirty);
+      if(readErr){ console.error('saveInv read error:', readErr.message); throw new Error(readErr.message); }
+      const dbRow={};
+      if(dbRows) dbRows.forEach(r=>{ dbRow[r.sku]=r; });
       dirty.forEach(sku=>{
-        const v=inv[sku], base=_invSynced[sku];
-        // Picks: the server already deducted these units (commit_pick_session),
-        // so its qty IS the truth — take it as-is and only write the bins.
-        if(_invQtyFromServer.has(sku) && dbQty[sku]!=null){
-          v.qty=dbQty[sku];
-          if(Array.isArray(v.locations) && v.locations.length===1) v.locations[0].qty=v.qty;
-          return;
-        }
-        if(base && dbQty[sku]!=null && dbQty[sku]!==base.qty){
-          const merged=Math.max(0,dbQty[sku]+((v.qty||0)-base.qty));
-          console.warn(`saveInv: ${sku} changed on the server since this tab loaded (was ${base.qty}, now ${dbQty[sku]}) — merging this tab's change of ${(v.qty||0)-base.qty} → ${merged}`);
-          v.qty=merged;
-          // Keep a single-bin SKU's bin qty in line with the merged total.
-          if(Array.isArray(v.locations) && v.locations.length===1) v.locations[0].qty=merged;
-        }
+        const v=inv[sku], base=_invSynced[sku], srv=dbRow[sku];
+        if(!srv||!base) return; // new SKU, or never read from the server: write as-is
+        // Picks: the server already deducted these units (commit_pick_session).
+        const fromServer=_invQtyFromServer.has(sku);
+        const srvSig=_invSig({qty:srv.qty,rack:srv.rack,shelf:srv.shelf,locations:srv.locations});
+        if(srvSig===base.sig && !fromServer) return; // nobody else changed it — this device's version is current
+        const qtyDelta=fromServer?0:((v.qty||0)-base.qty);
+        const mergedQty=Math.max(0,(srv.qty||0)+qtyDelta);
+        const S=_locMap(srv.locations), B=_locMap(base.locs), L=_locMap(v.locations);
+        const keys=new Set([...Object.keys(S),...Object.keys(B),...Object.keys(L)]);
+        let out=[];
+        keys.forEach(k=>{
+          const q=(S[k]?S[k].qty:0)+((L[k]?L[k].qty:0)-(B[k]?B[k].qty:0));
+          if(q>0){ const ref=L[k]||S[k]||B[k]; out.push({rack:ref.rack,shelf:ref.shelf,qty:q}); }
+        });
+        out.sort((a,b)=>b.qty-a.qty);
+        if(out.length===1) out[0].qty=mergedQty;
+        const hadBins=Object.keys(S).length||Object.keys(L).length;
+        if(srvSig!==base.sig) console.warn(`saveInv: ${sku} was changed elsewhere since this device last synced (server qty ${srv.qty}) — applying only this device's change (${qtyDelta>=0?'+':''}${qtyDelta}) → ${mergedQty}`);
+        v.qty=mergedQty;
+        if(hadBins){ v.locations=out; }
+        // Primary bin: keep this device's choice only if IT changed it.
+        const localMoved=(v.rack!==base.rack)||(String(v.shelf)!==String(base.shelf));
+        if(out.length){ v.rack=out[0].rack; v.shelf=out[0].shelf; }
+        else if(!localMoved){ v.rack=srv.rack; v.shelf=srv.shelf; }
       });
       const rows=dirty.map(sku=>{ const v=inv[sku]; return {sku, qty:v.qty||0, rack:v.rack, shelf:v.shelf, locations:Array.isArray(v.locations)?v.locations:null, updated_at:now}; });
       const {error} = await supa.from('inventory').upsert(rows, {onConflict:'sku'});
@@ -4008,6 +4110,7 @@ function startDesktopPick(orderId){
 async function cancelActivePick(){
   if(pkItemsList.length && !(await uxConfirm('Everything reserved will be released back to stock.',{title:'Discard this pick?',confirmText:'Discard pick',cancelText:'Keep picking',danger:true}))) return;
   if(pkSessionId) await releasePickSession(pkSessionId);
+  if(activeOrder) delete _pickExc[activeOrder.id];
   pkItemsList=[]; pkSessionId=null; activeOrder=null;
   pkPickStartTime=null; pkPickStartTs=null;
   clearConfirmedShelf();
@@ -4032,10 +4135,10 @@ function fmtLoc(bin){
 function advancePkSkuSelect(){
   const sel=document.getElementById('pk-sku');
   if(!sel||!activeOrder) return;
+  const _exc=getPickExceptions(activeOrder.id);
   const next=activeOrder.items.find(it=>{
-    const picked=pkItemsList.find(p=>p.sku===it.sku);
-    const pq=picked?picked.qty:0;
-    return pq<it.qty;
+    const pq=pkItemsList.filter(p=>p.sku===it.sku).reduce((a,p)=>a+p.qty,0);
+    return pq+(_exc[it.sku]?_exc[it.sku].qty:0)<it.qty;
   });
   if(next) sel.value=next.sku;
   const qtyEl=document.getElementById('pk-qty');
@@ -4049,12 +4152,16 @@ function advancePkSkuSelect(){
 function renderPkChecklist(){
   const el=document.getElementById('pk-checklist');
   if(!el||!activeOrder) return;
-  el.innerHTML=`<div class="tw"><table><thead><tr><th>SKU</th><th>Item</th><th>Location</th><th>Ordered</th><th>Picked</th></tr></thead><tbody>${activeOrder.items.map(exp=>{
+  const exc=getPickExceptions(activeOrder.id);
+  el.innerHTML=`<div class="tw"><table><thead><tr><th>SKU</th><th>Item</th><th>Location</th><th>Ordered</th><th>Picked</th><th></th></tr></thead><tbody>${activeOrder.items.map(exp=>{
     const pq=pkItemsList.filter(p=>p.sku===exp.sku).reduce((a,p)=>a+p.qty,0);
+    const ex=exc[exp.sku];
     const done=pq>=exp.qty;
     const locs=getSkuLocations(exp.sku);
     const locText=locs.length?locs.map(l=>fmtLoc(`${l.rack}-${l.shelf}`)).join(' or '):fmtLoc(exp.bin);
-    return `<tr${done?' style="color:var(--st)"':''}><td class="mono">${exp.sku}</td><td style="font-size:11px">${esc(exp.name)} — ${esc(exp.variant)}</td><td style="font-weight:700;font-size:11px;color:var(--gold)"><i class="ti ti-map-pin"></i> ${locText}</td><td>${exp.qty}</td><td>${pq}${done?' <i class="ti ti-check"></i>':''}</td></tr>`;
+    const action=ex?`<span class="pill p-out" title="${esc(ex.note||'')}">Sending without ${ex.qty} — out of stock</span> <button class="btn-sm" onclick="undoPickOutOfStock('desktop','${exp.sku}')">Undo</button>`
+      :(!done?`<button class="btn-sm btn-danger" onclick="markPickOutOfStock('desktop','${exp.sku}')" title="Stock not on the shelf — send the order without it (adds a note to the order)"><i class="ti ti-alert-triangle"></i>Out of stock</button>`:'');
+    return `<tr${done?' style="color:var(--st)"':(ex?' style="opacity:0.75"':'')}><td class="mono">${exp.sku}</td><td style="font-size:11px">${esc(exp.name)} — ${esc(exp.variant)}</td><td style="font-weight:700;font-size:11px;color:var(--gold)"><i class="ti ti-map-pin"></i> ${locText}</td><td>${exp.qty}</td><td>${pq}${done?' <i class="ti ti-check"></i>':''}</td><td>${action}</td></tr>`;
   }).join('')}</tbody></table></div>`;
 }
 async function addPkItem(){
@@ -4156,20 +4263,79 @@ async function removePkItem(i){
 // leave stale — a refresh just drops the whole in-progress pick and the
 // picker has to resume or redo it; it can never leave a ticket half-
 // picked but marked complete.
-function getShortPickedItems(orderItems, pickedItems){
+function getShortPickedItems(orderItems, pickedItems, orderId){
+  const exc=orderId?getPickExceptions(orderId):{};
   return (orderItems||[]).map(exp=>{
     const pq=(pickedItems||[]).filter(p=>p.sku===exp.sku).reduce((a,p)=>a+p.qty,0);
-    return {sku:exp.sku,name:exp.name,variant:exp.variant,expected:exp.qty,picked:pq,short:exp.qty-pq};
+    const ex=exc[exp.sku]?exc[exp.sku].qty:0;
+    return {sku:exp.sku,name:exp.name,variant:exp.variant,expected:exp.qty,picked:pq,excepted:ex,short:exp.qty-pq-ex};
   }).filter(x=>x.short>0);
+}
+// ── Pick exception: item genuinely out of stock ─────────────────────────
+// The hard gate above stays — but a picker can now explicitly mark a line
+// "Out of stock — send without it". That is a deliberate, confirmed click
+// (never automatic), recorded with who/when/why, and on completing the pick
+// the order's items are reduced to what was actually picked and a note is
+// added to the order (it shows on the proforma invoice and order history).
+const _pickExc={}; // orderId → {sku:{qty,note,by,at}}
+function getPickExceptions(orderId){ return _pickExc[orderId]||{}; }
+function _pickCtx(ctx){
+  if(ctx==='mobile') return mobilePickSession?{order:mobilePickSession.order,items:mobilePickSession.items}:null;
+  return activeOrder?{order:activeOrder,items:pkItemsList}:null;
+}
+function _rerenderPick(ctx){ if(ctx==='mobile'){ renderMpPickChecklist(); } else { renderPkChecklist(); advancePkSkuSelect(); } }
+async function markPickOutOfStock(ctx,sku){
+  const c=_pickCtx(ctx); if(!c){ toast('No active pick','w'); return; }
+  const exp=c.order.items.find(it=>it.sku===sku); if(!exp) return;
+  const picked=c.items.filter(p=>p.sku===sku).reduce((a,p)=>a+p.qty,0);
+  const missing=exp.qty-picked;
+  if(missing<=0){ toast(sku+' is already fully picked','w'); return; }
+  const dlg=await uxDialog({title:`Send without ${sku}?`,danger:true,confirmText:`Out of stock — send without ${missing}`,cancelText:'Go back',
+    message:`${missing} × ${sku}${exp.variant?' ('+exp.variant+')':''} could not be picked.${picked?' '+picked+' already picked will still go.':''}\n\nThe order will go to packing WITHOUT ${missing===exp.qty?'this item':'the missing '+missing}, and a note will be added to order ${c.order.id} saying it was out of stock. Only do this if the stock is really not on the shelf.`,
+    input:{placeholder:'Note (optional) — e.g. bin empty, checked B-4 and K-1'}});
+  if(!dlg||!dlg.ok) return;
+  const by=currentProfile?.full_name||'Unknown';
+  if(!_pickExc[c.order.id]) _pickExc[c.order.id]={};
+  _pickExc[c.order.id][sku]={qty:missing,note:(dlg.value||'').trim(),by,at:ts()};
+  logOrderEvent(c.order.id,'pick_out_of_stock',by,{sku,missing,picked,note:dlg.value||''});
+  logAudit('PICK_OUT_OF_STOCK','orders',c.order.id,null,{orderId:c.order.id,sku,missing,picked,note:dlg.value||'',by});
+  toast(`${sku} marked out of stock — order will be sent without ${missing}`,'w');
+  _rerenderPick(ctx);
+}
+function undoPickOutOfStock(ctx,sku){
+  const c=_pickCtx(ctx); if(!c) return;
+  const e=_pickExc[c.order.id];
+  if(e&&e[sku]){ delete e[sku]; logOrderEvent(c.order.id,'pick_out_of_stock_undone',currentProfile?.full_name,{sku}); toast(`${sku} is required again`,'s'); }
+  _rerenderPick(ctx);
+}
+// Called just before the order is saved as 'picked': shrink the order to
+// what was actually picked and write the note. Returns a short summary.
+function applyPickExceptionsToOrder(order,pickedItems){
+  const exc=getPickExceptions(order.id); const skus=Object.keys(exc);
+  if(!skus.length) return '';
+  const parts=[];
+  skus.forEach(sku=>{
+    const e=exc[sku];
+    const line=(order.items||[]).find(it=>it.sku===sku);
+    if(line){ line.qty=Math.max(0,line.qty-e.qty); }
+    parts.push(`${sku} x${e.qty}${e.note?' ('+e.note+')':''}`);
+  });
+  order.items=(order.items||[]).filter(it=>it.qty>0);
+  const first=exc[skus[0]];
+  const note=`OUT OF STOCK at pick — sent without: ${parts.join(', ')} · marked by ${first.by}, ${first.at}`;
+  order.notes=order.notes?order.notes+' | '+note:note;
+  logOrderEvent(order.id,'sent_without_out_of_stock',first.by,{items:skus.map(k=>({sku:k,qty:exc[k].qty,note:exc[k].note}))});
+  delete _pickExc[order.id];
+  return parts.join(', ');
 }
 async function releaseToPacking(){
   if(!activeOrder){ toast('No active pick in progress','w'); return; }
-  if(!pkItemsList.length){toast('Add items to the pick list first','w');return;}
+  if(!pkItemsList.length){toast(Object.keys(getPickExceptions(activeOrder.id)).length?'Every item is marked out of stock — nothing to send. Cancel this pick and leave the order unassigned until stock arrives.':'Add items to the pick list first','w');return;}
   if(!pkToteId){toast('Scan a tote bag barcode before releasing to packing','w');return;}
-  const shortItems=getShortPickedItems(activeOrder.items,pkItemsList);
+  const shortItems=getShortPickedItems(activeOrder.items,pkItemsList,activeOrder.id);
   if(shortItems.length){
     const list=shortItems.map(x=>`${x.sku} (${x.picked}/${x.expected})`).join(', ');
-    toast(`Cannot release — still short: ${list}. Scan the remaining qty before closing this pick — see a supervisor if the stock genuinely isn't there.`,'w');
+    toast(`Cannot release — still short: ${list}. Scan the remaining qty, or tap "Out of stock" on that line if it genuinely isn't there.`,'w');
     renderPkChecklist();
     return;
   }
@@ -4184,7 +4350,8 @@ async function releaseToPacking(){
   const tid=newId('PCK');
   const newTask={id:tid,orderId:oid,priority:pri,method,picker,toteId:pkToteId,items:[...pkItemsList],ts:ts(),status:'awaiting_packing'};
   const pickDurationSecs=pkPickStartTime?Math.floor((Date.now()-pkPickStartTime)/1000):null;
-  const histEntry={id:tid,type:'pick',ts:ts(),detail:`${oid} · ${method} pick · ${pri} · ${pkItemsList.length} SKUs · Picker: ${picker} · Tote ${pkToteId}`,orderId:oid,items:[...pkItemsList],picker,pickStartTs:pkPickStartTs,pickDurationSecs};
+  const _excD=Object.entries(getPickExceptions(oid)).map(([k,e])=>`${k} x${e.qty}`).join(', ');
+  const histEntry={id:tid,type:'pick',ts:ts(),detail:`${oid} · ${method} pick · ${pri} · ${pkItemsList.length} SKUs · Picker: ${picker} · Tote ${pkToteId}${_excD?' · OUT OF STOCK, sent without: '+_excD:''}`,orderId:oid,items:[...pkItemsList],picker,pickStartTs:pkPickStartTs,pickDurationSecs};
   // The packing_queue row is the critical write: if it silently fails while
   // the order still gets marked 'picked' below, the order is permanently
   // stuck — too "picked" for Picking to re-show, with no task for Packing
@@ -4208,13 +4375,8 @@ async function releaseToPacking(){
   }
   history.push(histEntry);
   packingQueue.push(newTask);
-  pkItemsList.forEach(item=>{
-    const [rk,sh]=(item.bin||'').split('-');
-    if(rk&&sh) removeStockAtLocation(item.sku,rk,sh,item.qty);
-    else if(inv[item.sku]) inv[item.sku].qty-=item.qty;
-  });
-  _invServerAlreadyDeducted(pkItemsList);
-  saveInv();
+  applyPickToInventory([...pkItemsList]).then(()=>{ try{ renderDash(); renderInv(); renderRack(); }catch(e){} });
+  const _sentWithout=applyPickExceptionsToOrder(activeOrder,pkItemsList);
   activeOrder.status='picked';
   activeOrder.pickedTaskId=tid;
   const statusOk=await saveOrderRow(activeOrder);
@@ -4233,7 +4395,7 @@ async function releaseToPacking(){
   showPickOrdersList();
   _queuePickPosition('#pk-my-orders','next');
   renderMyAssignedOrders();
-  toast(`Pick task ${tid} released to packing queue`,'s');
+  toast(`Pick task ${tid} released to packing queue${_sentWithout?' — sent without '+_sentWithout+' (noted on the order)':''}`,'s');
 }
 
 // PACKING QUEUE
@@ -6636,28 +6798,33 @@ async function adjustMobilePickQty(sku,delta){
 function renderMpPickChecklist(){
   const el=document.getElementById('mp-pick-checklist');
   if(!el||!mobilePickSession) return;
+  const exc=getPickExceptions(mobilePickSession.order.id);
   const rows=mobilePickSession.order.items.map(exp=>{
     const pq=mobilePickSession.items.filter(p=>p.sku===exp.sku).reduce((a,p)=>a+p.qty,0);
     const locs=getSkuLocations(exp.sku);
-    return {exp,pq,done:pq>=exp.qty,locs,locText:locs.length?locs.map(l=>fmtLoc(`${l.rack}-${l.shelf}`)).join(' or '):fmtLoc(exp.bin)};
+    const ex=exc[exp.sku]||null;
+    return {exp,pq,ex,done:pq>=exp.qty,cleared:pq+(ex?ex.qty:0)>=exp.qty,locs,locText:locs.length?locs.map(l=>fmtLoc(`${l.rack}-${l.shelf}`)).join(' or '):fmtLoc(exp.bin)};
   });
   el.innerHTML=`<div style="display:grid;gap:6px">${rows.map(r=>{
-    return `<div style="display:flex;justify-content:space-between;align-items:center;background:var(--s2);padding:10px 12px;border-radius:8px;${r.done?'opacity:0.6':''}">
+    const act=r.ex?`<div style="margin-top:6px;display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="pill p-out">Sending without ${r.ex.qty} — out of stock</span><button class="btn-sm" onclick="undoPickOutOfStock('mobile','${r.exp.sku}')">Undo</button></div>`
+      :(!r.done?`<div style="margin-top:6px"><button class="btn-sm btn-danger" onclick="markPickOutOfStock('mobile','${r.exp.sku}')"><i class="ti ti-alert-triangle"></i>Out of stock — send without</button></div>`:'');
+    return `<div style="display:flex;justify-content:space-between;align-items:center;background:var(--s2);padding:10px 12px;border-radius:8px;${r.cleared?'opacity:0.6':''}">
       <div>
         <div style="font-size:12px;font-weight:700">${r.exp.sku} — ${esc(r.exp.name)}</div>
         <div style="font-size:12px;font-weight:700;color:var(--gold-d);margin-top:2px"><i class="ti ti-map-pin"></i> ${r.locText}</div>
+        ${act}
       </div>
       <div style="font-size:14px;font-weight:800;${r.done?'color:var(--st)':''}">${r.pq}/${r.exp.qty}${r.done?' <i class="ti ti-check"></i>':''}</div>
     </div>`;
   }).join('')}</div>`;
   const totalQty=rows.reduce((a,r)=>a+r.exp.qty,0);
-  const doneQty=rows.reduce((a,r)=>a+Math.min(r.pq,r.exp.qty),0);
+  const doneQty=rows.reduce((a,r)=>a+Math.min(r.pq+(r.ex?r.ex.qty:0),r.exp.qty),0);
   const pct=totalQty?Math.round(doneQty/totalQty*100):0;
   const prog=document.getElementById('mp-progress');
   if(prog) prog.innerHTML=`<div class="mp-progress-label"><span>${doneQty} of ${totalQty} items picked</span><span>${pct}%</span></div><div class="mp-progress"><div style="width:${pct}%"></div></div>`;
   const hero=document.getElementById('mp-next-item');
   if(hero){
-    const nx=rows.find(r=>!r.done);
+    const nx=rows.find(r=>!r.cleared);
     if(nx){
       const l=nx.locs.length?`${nx.locs[0].rack}-${nx.locs[0].shelf}`:String(nx.exp.bin||'—');
       hero.innerHTML=`<div class="mp-next"><div class="mp-next-bin"><small>GO TO</small><b>${l}</b></div><div class="mp-next-info"><div class="mp-next-sku">${esc(nx.exp.sku)}</div><div class="mp-next-name">${esc(nx.exp.name)}${nx.exp.variant?' — '+esc(nx.exp.variant):''}</div><div class="mp-next-qty">Pick ${nx.exp.qty-nx.pq} more <span>(${nx.pq}/${nx.exp.qty})</span></div></div></div>`;
@@ -6690,6 +6857,7 @@ async function cancelMobilePick(){
   if(!mobilePickSession) return;
   if(mobilePickSession.items.length && !(await uxConfirm('Everything reserved will be released back to stock.',{title:'Discard this pick?',confirmText:'Discard pick',cancelText:'Keep picking',danger:true}))) return;
   await releasePickSession(mobilePickSession.sessionId);
+  delete _pickExc[mobilePickSession.order.id];
   mobilePickSession=null;
   disableBarcodeScanner();
   _queuePickPosition('#mp-my-orders','same');
@@ -6698,14 +6866,14 @@ async function cancelMobilePick(){
 }
 
 async function completeMobilePick(){
-  if(!mobilePickSession || !mobilePickSession.items.length){ toast('Scan at least one item first','w'); return; }
+  if(!mobilePickSession || !mobilePickSession.items.length){ toast(mobilePickSession&&Object.keys(getPickExceptions(mobilePickSession.order.id)).length?'Every item is marked out of stock — nothing to send. Cancel this pick instead.':'Scan at least one item first','w'); return; }
   // Same hard gate as the desktop pick flow — see getShortPickedItems()
   // for why: every line on the order must be fully scanned before this
   // ticket can close, checked fresh against live state every call.
-  const shortItems=getShortPickedItems(mobilePickSession.order.items,mobilePickSession.items);
+  const shortItems=getShortPickedItems(mobilePickSession.order.items,mobilePickSession.items,mobilePickSession.order.id);
   if(shortItems.length){
     const list=shortItems.map(x=>`${x.sku} (${x.picked}/${x.expected})`).join(', ');
-    toast(`Cannot complete — still short: ${list}. Scan the remaining qty first — see a supervisor if the stock genuinely isn't there.`,'w');
+    toast(`Cannot complete — still short: ${list}. Scan the remaining qty, or tap "Out of stock — send without" on that line if it genuinely isn't there.`,'w');
     renderMpPickChecklist();
     return;
   }
@@ -6717,7 +6885,8 @@ async function completeMobilePick(){
   const picker=currentProfile?.full_name||'Mobile picker';
   const newTask={id:tid,orderId:mobilePickSession.orderId,priority:mobilePickSession.priority,method:mobilePickSession.method,picker,toteId:mobilePickSession.toteId||null,items:[...mobilePickSession.items],ts:ts(),status:'awaiting_packing'};
   const pickDurationSecs=mobilePickSession.pickStartTime?Math.floor((Date.now()-mobilePickSession.pickStartTime)/1000):null;
-  const histEntry={id:tid,type:'pick',ts:ts(),detail:`${mobilePickSession.orderId} · ${mobilePickSession.method} pick · ${mobilePickSession.priority} · ${mobilePickSession.items.length} SKUs · Picker: ${picker} (mobile scan)`,orderId:mobilePickSession.orderId,items:[...mobilePickSession.items],picker,pickStartTs:mobilePickSession.pickStartTs,pickDurationSecs};
+  const _excM=Object.entries(getPickExceptions(mobilePickSession.orderId)).map(([k,e])=>`${k} x${e.qty}`).join(', ');
+  const histEntry={id:tid,type:'pick',ts:ts(),detail:`${mobilePickSession.orderId} · ${mobilePickSession.method} pick · ${mobilePickSession.priority} · ${mobilePickSession.items.length} SKUs · Picker: ${picker} (mobile scan)${_excM?' · OUT OF STOCK, sent without: '+_excM:''}`,orderId:mobilePickSession.orderId,items:[...mobilePickSession.items],picker,pickStartTs:mobilePickSession.pickStartTs,pickDurationSecs};
   // Same fix as the desktop releaseToPacking() flow (see comment there):
   // create the packing_queue row FIRST, awaited + retried once, and abort
   // with nothing mutated if it still fails.
@@ -6738,15 +6907,10 @@ async function completeMobilePick(){
   }
   history.push(histEntry);
   packingQueue.push(newTask);
-  mobilePickSession.items.forEach(it=>{
-    const [rk,sh]=(it.bin||'').split('-');
-    if(rk&&sh) removeStockAtLocation(it.sku,rk,sh,it.qty);
-    else if(inv[it.sku]) inv[it.sku].qty-=it.qty;
-  
-  });
-  _invServerAlreadyDeducted(mobilePickSession.items);
-  saveInv();
+  applyPickToInventory([...mobilePickSession.items]).then(()=>{ try{ renderDash(); renderInv(); renderRack(); }catch(e){} });
   const o=mobilePickSession.order;
+  const _sentWithoutM=applyPickExceptionsToOrder(o,mobilePickSession.items);
+  if(_sentWithoutM) toast(`Sent without ${_sentWithoutM} — noted on order ${o.id}`,'w');
   o.status='picked';
   o.pickedTaskId=tid;
   const statusOk=await saveOrderRow(o);
