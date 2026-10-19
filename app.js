@@ -839,12 +839,15 @@ async function saveInv(){
     // Save version snapshot to history table
     const snapId=newId('SNAP');
     const snapRow={
-      id:snapId, type:'inventory_snapshot', ts:new Date().toLocaleString('en-IN'),
+      id:snapId, ts:new Date().toLocaleString('en-IN'),
       detail:'Inventory snapshot — '+Object.keys(inv).length+' SKUs',
       items:Object.entries(inv).map(([sku,v])=>({sku,qty:v.qty||0,rack:v.rack,shelf:v.shelf,locations:Array.isArray(v.locations)?v.locations:null})),
       created_at:new Date().toISOString()
     };
-    await supa.from('inventory_snapshots').upsert(snapRow,{onConflict:'id'}).then(()=>{}).catch(()=>{});
+    // Fix 19 Oct 2026: errors here were silently swallowed, and no
+    // snapshots have been saved for weeks — which is why monthly reports
+    // had to rebuild opening/closing stock. Log the reason so it can be fixed.
+    try{ const {error:snapErr}=await supa.from('inventory_snapshots').upsert(snapRow,{onConflict:'id'}); if(snapErr) console.error('inventory snapshot NOT saved:',snapErr.message,snapErr.details||'',snapErr.hint||''); }catch(e){ console.error('inventory snapshot NOT saved:',e?.message||e); }
     return {success:true};
   } catch(e) {
     console.error('saveInv error:', JSON.stringify(e), e?.message, e?.code);
@@ -9809,9 +9812,14 @@ function downloadMonthlyMasterCSV(){
       // the month ended (e.g. a 1 Oct GRN) leaked into the closing
       // figure. Instead, take live stock and undo everything recorded
       // after the month ended.
-      closingSource='live-adjusted';
-      const post=netMovementBySku(t=>t>endMs);
-      SKUS.forEach(s=>{ closingBySku[s.sku]=Math.max(0,(inv[s.sku]||{qty:0}).qty-(post[s.sku]||0)); });
+      // Fix 19 Oct 2026: "live stock minus later movements" pushed every
+      // later correction (e.g. the 7 Oct physical count) back into EVERY
+      // earlier month — Aug and Sept both showed Male 28 closing 98 with
+      // only 2 ever received, and Sept closing didn't equal Oct opening.
+      // A finished month with no snapshot now closes at opening + received
+      // − dispatched, so it chains exactly into the next month's opening;
+      // unrecorded corrections show up only in the month they happened.
+      closingSource='rebuilt';
     }
     // Per-SKU inward (received, PASS only) and outward (dispatched) for
     // the month — same source data as the aggregate totalUnitsIn/
@@ -9824,9 +9832,9 @@ function downloadMonthlyMasterCSV(){
     const movHeader=['SKU','Item Name','Variant','Opening Stock','Received (In)','Dispatched (Out)','Other Movement*','Closing Stock','Status'];
     const movRows=SKUS.map(s=>{
       const opening=openingBySku[s.sku]||0;
-      const closingQty=closingBySku[s.sku]!=null?closingBySku[s.sku]:0;
       const inward=inwardBySku[s.sku]||0;
       const outward=outwardBySku[s.sku]||0;
+      const closingQty=closingSource==='rebuilt'?Math.max(0,opening+inward-outward):(closingBySku[s.sku]!=null?closingBySku[s.sku]:0);
       // Residual = whatever changed qty this month that wasn't a GRN
       // receipt or a dispatch — returns restocked, manual qty
       // corrections, cycle-count adjustments, void-GRN reversals, etc.
@@ -9842,7 +9850,7 @@ function downloadMonthlyMasterCSV(){
     const totalClosing=movRows.reduce((a,r)=>a+r[7],0);
     const movNote=`* "Other Movement" captures anything that changed stock this month besides GRN receipts and dispatches — returns restocked, manual qty corrections, cycle-count adjustments, void-GRN reversals, etc.`
       +(openingSource==='history'?` Opening Stock was rebuilt from all GRN receipts minus dispatches recorded before ${monthLabel} (no inventory snapshot existed at the month start).`:'')
-      +(closingSource==='live-adjusted'?` Closing Stock is current live stock with everything received/dispatched after ${monthLabel} ended taken back out (no month-end inventory snapshot was found).`:'')
+      +(closingSource==='rebuilt'?` Closing Stock = Opening + Received − Dispatched (no month-end inventory snapshot was found), so it carries straight into next month's Opening; stock corrections are shown in the month they were made.`:'')
       +(closingSource==='live'?` Closing Stock is current live stock (month still in progress).`:'');
     // Row numbers below mirror the fixed layout just built: 4 meta rows +
     // 1 blank + header row, then movRows.length data rows, then a blank
