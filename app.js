@@ -629,9 +629,12 @@ async function initInv(){
       console.log('✓ Inventory loaded from cloud:', data.length, 'SKUs');
     } else {
       // First run — seed all SKUs at zero qty
-      console.log('First run — seeding inventory at zero');
+      // Fix 19 Oct 2026: an empty read (e.g. login session not ready yet)
+      // used to zero EVERY SKU on the server here. Seed this screen only;
+      // rows are created on the server by the first GRN for each SKU.
+      console.warn('initInv: inventory read returned no rows — showing zeros locally, NOT writing to the server');
       SKUS.forEach(s => { inv[s.sku] = {qty:0, rack:s.rack, shelf:s.shelf}; });
-      await saveInv();
+      setTimeout(()=>refreshInvFromServer('empty first read'),5000);
     }
   } catch(e) {
     console.error('initInv error:', e?.message || JSON.stringify(e));
@@ -642,6 +645,10 @@ async function initInv(){
     if(!Object.keys(inv).length){
       SKUS.forEach(s=>{inv[s.sku]={qty:0,rack:s.rack,shelf:s.shelf};});
     }
+    // This cached copy may be days old. saveInv() will never write it over
+    // the server (see "no server baseline" in saveInv), and we re-read the
+    // server as soon as the connection is back.
+    setTimeout(()=>refreshInvFromServer('after failed first load'),5000);
   }
 }
 // What each SKU looked like the last time this browser read it from (or
@@ -754,6 +761,7 @@ async function refreshInvFromServer(reason){
 document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible' && Date.now()-_invLastRefresh>30000) refreshInvFromServer('screen woke up'); });
 window.addEventListener('online',()=>refreshInvFromServer('back online'));
 setInterval(()=>{ if(document.visibilityState==='visible') refreshInvFromServer('periodic'); },5*60*1000);
+let _invForceWrite=false;
 async function saveInv(){
   setSyncStatus('syncing');
   // Guarded: a full localStorage (history cache is large) must never abort
@@ -777,9 +785,22 @@ async function saveInv(){
       if(readErr){ console.error('saveInv read error:', readErr.message); throw new Error(readErr.message); }
       const dbRow={};
       if(dbRows) dbRows.forEach(r=>{ dbRow[r.sku]=r; });
+      const _skipStale=new Set();
       dirty.forEach(sku=>{
         const v=inv[sku], base=_invSynced[sku], srv=dbRow[sku];
-        if(!srv||!base) return; // new SKU, or never read from the server: write as-is
+        if(!srv) return; // brand-new SKU: write as-is
+        if(!base && !_invForceWrite){
+          // Fix 19 Oct 2026: this device never read this SKU from the server
+          // (it started from an old cached copy after a failed load). It
+          // used to write that old copy over the server — reducing stock
+          // and wiping bins on its own. Now the server's row wins.
+          console.warn(`saveInv: ${sku} — no server baseline on this device; keeping the server's value (qty ${srv.qty}) instead of the cached ${v&&v.qty}`);
+          inv[sku]={qty:srv.qty||0,rack:srv.rack,shelf:srv.shelf};
+          if(Array.isArray(srv.locations)&&srv.locations.length) inv[sku].locations=srv.locations;
+          _markInvSynced(sku); _skipStale.add(sku);
+          return;
+        }
+        if(!base) return; // forced write (rollback): write as-is
         // Picks: the server already deducted these units (commit_pick_session).
         const fromServer=_invQtyFromServer.has(sku);
         const srvSig=_invSig({qty:srv.qty,rack:srv.rack,shelf:srv.shelf,locations:srv.locations});
@@ -804,10 +825,13 @@ async function saveInv(){
         if(out.length){ v.rack=out[0].rack; v.shelf=out[0].shelf; }
         else if(!localMoved){ v.rack=srv.rack; v.shelf=srv.shelf; }
       });
-      const rows=dirty.map(sku=>{ const v=inv[sku]; return {sku, qty:v.qty||0, rack:v.rack, shelf:v.shelf, locations:Array.isArray(v.locations)?v.locations:null, updated_at:now}; });
-      const {error} = await supa.from('inventory').upsert(rows, {onConflict:'sku'});
-      if(error){ console.error('saveInv Supabase error:', error.message); throw new Error(error.message); }
-      dirty.forEach(_markInvSynced);
+      const toWrite=dirty.filter(sku=>!_skipStale.has(sku));
+      const rows=toWrite.map(sku=>{ const v=inv[sku]; return {sku, qty:v.qty||0, rack:v.rack, shelf:v.shelf, locations:Array.isArray(v.locations)?v.locations:null, updated_at:now}; });
+      if(rows.length){
+        const {error} = await supa.from('inventory').upsert(rows, {onConflict:'sku'});
+        if(error){ console.error('saveInv Supabase error:', error.message); throw new Error(error.message); }
+      }
+      toWrite.forEach(_markInvSynced);
     }
     _invQtyFromServer.clear();
     setSyncStatus('ok');
@@ -837,7 +861,9 @@ async function rollbackInventory(snapId){
     if(error||!data) throw new Error('Snapshot not found');
     const items=data.items||[];
     items.forEach(item=>{ inv[item.sku]={qty:item.qty,rack:item.rack,shelf:item.shelf}; if(Array.isArray(item.locations)&&item.locations.length) inv[item.sku].locations=item.locations; });
-    await saveInv();
+    logAudit('INVENTORY_ROLLBACK','inventory',snapId,null,{snapshot:snapId,by:currentProfile?.full_name||'Unknown'});
+    _invForceWrite=true;
+    try{ await saveInv(); } finally { _invForceWrite=false; }
     renderDash();renderInv();renderRack();
     toast('Inventory rolled back to '+data.ts,'s');
   } catch(e){ toast('Rollback failed: '+(e.message||'unknown error'),'w'); }
@@ -8320,11 +8346,36 @@ function renderInv(){
   }).join('');
   document.getElementById('inv-ct').textContent=`Showing ${rows.length} of ${SKUS.length} SKUs`;
 }
-function adjQ(sku,d){
+// Fix 19 Oct 2026: the − / + buttons changed stock on a single tap with no
+// confirmation and no record, and changed only the total — not the bin —
+// so one stray tap on a phone silently reduced stock and left bins not
+// adding up (found: UNI-DN-F-28 total 2 above its bins, UNI-SHT-M-42 1
+// below). Now: asks first, applies the change to a bin, and logs who did it.
+async function adjQ(sku,d){
   if(!getPerms().canEdit){ toast('You do not have permission to edit inventory quantities','w'); return; }
-  if(!inv[sku])inv[sku]={qty:0,rack:SKUS.find(s=>s.sku===sku).rack,shelf:SKUS.find(s=>s.sku===sku).shelf};
-  inv[sku].qty=Math.max(0,inv[sku].qty+d);
-  saveInv();renderInv();
+  const s=SKUS.find(x=>x.sku===sku)||{};
+  if(!inv[sku])inv[sku]={qty:0,rack:s.rack,shelf:s.shelf};
+  const before=inv[sku].qty||0;
+  if(d<0 && before<=0) return;
+  const locs=getSkuLocations(sku);
+  const binTxt=locs.length?locs.map(l=>`${l.rack}-${l.shelf}`).join(', '):'no bin';
+  const dlg=await uxDialog({title:`${d>0?'Add':'Remove'} ${Math.abs(d)} × ${sku}?`,danger:d<0,confirmText:d>0?'Add stock':'Remove stock',
+    message:`Stock will change from ${before} to ${Math.max(0,before+d)} (bin: ${binTxt}).\n\nOnly do this after a physical count. Picks, GRNs and returns already update stock by themselves.`,
+    input:{placeholder:'Reason (required) — e.g. counted shelf, damaged'}});
+  if(!dlg.ok) return;
+  const reason=(dlg.value||'').trim();
+  if(!reason){ toast('Enter a reason to change stock','w'); return; }
+  if(locs.length){
+    const tgt=d>0?locs[0]:locs.slice().sort((a,b)=>a.qty-b.qty)[0];
+    if(!Array.isArray(inv[sku].locations)||!inv[sku].locations.length) inv[sku].locations=locs.map(l=>({rack:l.rack,shelf:l.shelf,qty:l.qty}));
+    if(d>0) addStockAtLocation(sku,tgt.rack,tgt.shelf,d); else removeStockAtLocation(sku,tgt.rack,tgt.shelf,-d);
+  } else {
+    inv[sku].qty=Math.max(0,before+d);
+  }
+  await saveInv();
+  logAudit('QTY_ADJUST','inventory',sku,{qty:before},{qty:inv[sku].qty,reason,bins:getSkuLocations(sku)});
+  renderInv();renderRack();
+  toast(`${sku}: ${before} → ${inv[sku].qty}`,'s');
 }
 function startEditBin(sku){
   if(!getPerms().canEdit){ toast('You do not have permission to edit bin locations','w'); return; }
@@ -8376,9 +8427,11 @@ async function saveEditBin(sku){
     toast('At least one location with quantity > 0 is required — use Adjust Qty to zero out a SKU instead','w');
     return;
   }
+  const _newTotal=merged.reduce((a,r)=>a+r.qty,0), _oldTotal=(inv[sku]&&inv[sku].qty)||0;
+  if(_newTotal!==_oldTotal && !(await uxConfirm(`These bins add up to ${_newTotal}, but stock is ${_oldTotal}. Saving will change ${sku} stock by ${_newTotal-_oldTotal>0?'+':''}${_newTotal-_oldTotal}.`,{title:'Change stock total?',confirmText:'Save and change stock',danger:true}))) return;
   if(!inv[sku]) inv[sku]={qty:0,rack:s.rack,shelf:s.shelf,locations:[]};
   inv[sku].locations=merged;
-  inv[sku].qty=merged.reduce((a,r)=>a+r.qty,0);
+  inv[sku].qty=_newTotal;
   inv[sku].rack=merged[0].rack;
   inv[sku].shelf=merged[0].shelf;
   await saveInv();
