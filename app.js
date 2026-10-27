@@ -1215,7 +1215,17 @@ function setupRealtimeSync(){
     .subscribe();
 }
 function ts(){return new Date().toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});}
-function newId(pfx){return pfx+'-'+Date.now().toString().slice(-6);}
+// Fix 22 Oct 2026: the old id was only the last 6 digits of the clock in
+// milliseconds, which repeats every 16.7 minutes. A new pack on 13 Oct got
+// the same id as a September dispatch (PKD-805625) and, because history is
+// saved with upsert-on-id, silently overwrote order 000072's dispatch record.
+// Full timestamp + 3 random digits, and a check against ids already loaded.
+function newId(pfx){
+  let id;
+  do { id=pfx+'-'+Date.now().toString()+String(Math.floor(Math.random()*1000)).padStart(3,'0'); }
+  while((typeof history!=='undefined'&&Array.isArray(history)&&history.some(h=>h&&h.id===id))||(typeof packingQueue!=='undefined'&&Array.isArray(packingQueue)&&packingQueue.some(p=>p&&p.id===id)));
+  return id;
+}
 function getSt(q){return q<=0?'out':q<=3?'low':'ok';}
 function stPill(q){const s=getSt(q);return s==='out'?'<span class="pill p-out">Out</span>':s==='low'?'<span class="pill p-low">Low</span>':'<span class="pill p-ok">In stock</span>';}
 
@@ -5274,6 +5284,46 @@ function downloadDispatchedProforma(dispatchId){
   if(!o){ toast('Order not found','w'); return; }
   openProformaInvoices([{o,disp:d}],{title:'Proforma Invoice — '+o.id,filename:`ProformaInvoice-${o.id}-AWB-${d.awb||'NA'}.pdf`,download:true});
 }
+
+// ── Courier serviceability by pincode (added 27 Oct 2026) ─────────────────
+// Reads serviceability.json (deployed next to index.html): Gati list
+// (DIRECT / ESS1 / ESS2 — ESS = ODA), Movin list (Serviceable / ODA) and
+// Shree Maruti (store check + pincodes Shree Maruti has delivered to).
+// To update a list, replace serviceability.json and redeploy.
+let _svc=null,_svcLoading=null;
+function loadServiceability(){
+  if(_svc) return Promise.resolve(_svc);
+  if(_svcLoading) return _svcLoading;
+  _svcLoading=fetch('serviceability.json',{cache:'no-cache'}).then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+    .then(j=>{ _svc=j; try{ renderPackedOrdersList(); updateDispSvc(); }catch(e){} return j; })
+    .catch(e=>{ console.warn('serviceability.json not loaded:',e.message||e); _svc={gati:{},movin:{},sm:{},missing:true}; return _svc; });
+  return _svcLoading;
+}
+function svcInfo(pin){
+  pin=String(pin||'').replace(/\D/g,'').slice(0,6);
+  if(pin.length!==6||!_svc) return null;
+  const g=_svc.gati[pin], m=_svc.movin[pin], s=_svc.sm[pin];
+  return {
+    pin,
+    gati: g==='D'?{ok:true,oda:false,txt:'Gati ✓'}:(g==='1'||g==='2')?{ok:true,oda:true,txt:'Gati ODA (ESS'+g+')'}:{ok:false,txt:'Gati ✗'},
+    movin: m==='S'?{ok:true,oda:false,txt:'Movin ✓'}:m==='O'?{ok:true,oda:true,txt:'Movin ODA'}:{ok:false,txt:'Movin ✗'},
+    sm: s==='Y'?{ok:true,oda:false,txt:'Shree Maruti ✓'}:s==='N'?{ok:false,txt:'Shree Maruti ✗'}:{ok:null,txt:'Shree Maruti ?'}
+  };
+}
+function svcBadgesHtml(pin){
+  if(!_svc){ loadServiceability(); return ''; }
+  const i=svcInfo(pin);
+  if(!i) return `<span style="font-size:10px;color:var(--dt)"><i class="ti ti-map-pin-off"></i> No valid pincode — courier serviceability unknown</span>`;
+  const b=x=>{ const bg=x.ok===true?(x.oda?'#fff3cd':'#e2efda'):x.ok===false?'#fce4d6':'#eeeeee'; const fg=x.ok===true?(x.oda?'#8a6d00':'#2e6b1f'):x.ok===false?'#a33':'#666';
+    return `<span style="display:inline-block;padding:1px 6px;margin:1px 3px 1px 0;border-radius:3px;font-size:10px;font-weight:600;background:${bg};color:${fg}">${x.txt}</span>`; };
+  return `<span style="font-size:10px;color:var(--t2)"><i class="ti ti-map-pin"></i> ${i.pin}:</span> ${b(i.sm)}${b(i.gati)}${b(i.movin)}`;
+}
+function updateDispSvc(){
+  const el=document.getElementById('disp-svc'); const pinEl=document.getElementById('disp-pincode');
+  if(!el||!pinEl) return;
+  el.innerHTML=pinEl.value?svcBadgesHtml(pinEl.value):'';
+}
+
 function renderPackedOrdersList(){
   const el=document.getElementById('dispatch-packed-list');
   if(!el){console.log('ERROR: dispatch-packed-list element not found');return;}
@@ -5307,6 +5357,7 @@ function renderPackedOrdersList(){
       <div class="hist-body" onclick="selectDispatchOrder('${p.id}')">
         <div>${p.ts} · Order: <strong>${p.orderId}</strong> · ${itemCount} SKU(s)</div>
         <div style="font-size:10px;color:var(--t2);margin-top:2px">📦 ${dimsStr}${matStr?' · '+matStr:''}${durStr?' · ⏱ '+durStr:''}</div>
+        <div style="margin-top:3px">${svcBadgesHtml(ord&&ord.pincode)}</div>
       </div>
       <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
         <button class="btn-sm" onclick="event.stopPropagation();printPackingSlip('${p.id}')"><i class="ti ti-printer"></i>Print slip</button>
@@ -5842,6 +5893,7 @@ function loadDispatchOrder(){
   document.getElementById('disp-address').value=hasOrdAddr?(ord.address||''):'';
   document.getElementById('disp-pincode').value=hasOrdAddr?(ord.pincode||''):'';
   document.getElementById('disp-phone').value=hasOrdAddr?(ord.phone||''):'';
+  updateDispSvc();
   if(addrNote){
     if(hasOrdAddr){
       addrNote.style.display='block';
